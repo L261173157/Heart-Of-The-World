@@ -70,3 +70,92 @@ crashlytics-build.properties
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# 下面是问的gpt
+# =============== #
+# Unity生成的 #
+# =============== #
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+
+# 记录Crash报告的文件夹
+[Cc]rash[Rr]eports/
+
+# 编译的脚本DLL
+[Ll]ibrary/ScriptAssemblies/
+
+# Rider编辑器备份文件
+_ReSharper*/
+*.sln.docstates
+
+# ============ #
+# Visual Studio #
+# ============ #
+[Ee]xported[Oo]bj/
+.vs/
+/*.user
+/*.userprefs
+/*.unityproj
+/*.csproj
+/*.pidb
+/*.suo
+/*.sln*
+/*.cache
+/*.vsp
+/*.vspx
+/*.pdb
+/*.opendb
+
+# ============ #
+# Visual Studio Code #
+# ============ #
+.vscode/
+*.code-workspace
+
+# ============ #
+# OS生成的文件 #
+# ============ #
+.DS_Store*
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# =============== #
+# 其他编辑器或IDE可能产生的文件 #
+# =============== #
+.idea/
+*.swp
+*.swo
+
+# =============== #
+# macOS特有 #
+# =============== #
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# =============== #
+# Windows特有 #
+# =============== #
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# =============== #
+# Linux特有 #
+# =============== #
+.*.swp
+.*.swo
+.*.swn
+.*.swm
+.*.swl
+
+# 在这里添加任何你认为需要忽略的文件或文件夹
+# 例如项目特定的私有文件或上传到商店的包等
+
