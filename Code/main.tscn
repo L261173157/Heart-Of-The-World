@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3 uid="uid://3hfcnfnwhulp"]
+
+[ext_resource type="PackedScene" uid="uid://syi4wor2oyaq" path="res://ball.tscn" id="1_e5f5m"]
+[ext_resource type="Script" path="res://ToggleButton.cs" id="2_po8pu"]
+
+[node name="Node2D" type="Node2D"]
+
+[node name="ball" parent="." instance=ExtResource("1_e5f5m")]
+
+[node name="toggleButton" type="Button" parent="."]
+offset_right = 206.0
+offset_bottom = 114.0
+text = "Toggle motion"
+script = ExtResource("2_po8pu")

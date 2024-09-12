@@ -1,0 +1,18 @@
+[gd_scene load_steps=3 format=3 uid="uid://syi4wor2oyaq"]
+
+[ext_resource type="Texture2D" uid="uid://bu25kggtlduts" path="res://icon.svg" id="2_80u8a"]
+[ext_resource type="Script" path="res://Test.cs" id="3_4okak"]
+
+[node name="ball" type="Node2D"]
+
+[node name="Test" type="Sprite2D" parent="."]
+position = Vector2(535, 265)
+texture = ExtResource("2_80u8a")
+script = ExtResource("3_4okak")
+
+[node name="Button" type="Button" parent="."]
+offset_right = 222.0
+offset_bottom = 113.0
+text = "toggle"
+
+[connection signal="pressed" from="Button" to="Test" method="_on_toggle_button_pressed"]
