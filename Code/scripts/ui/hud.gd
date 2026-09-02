@@ -17,10 +17,10 @@ const TOAST_FADE := 0.5
 @onready var shop_panel: Control = %ShopPanel
 @onready var shop_gold_label: Label = %GoldLabel
 @onready var skill_cds: Array = [
-	{"panel": %SlotDash, "label": %SlotDash/VB/Cd, "max": 1.2, "mp": 12.0},
-	{"panel": %SlotHeavy, "label": %SlotHeavy/VB/Cd, "max": 4.0, "mp": 22.0},
-	{"panel": %SlotBolt, "label": %SlotBolt/VB/Cd, "max": 0.8, "mp": 8.0},
-	{"panel": %SlotHeal, "label": %SlotHeal/VB/Cd, "max": 8.0, "mp": 25.0},
+	{"panel": %SlotDash, "label": %SlotDash/VB/Cd, "mp": 12.0},
+	{"panel": %SlotHeavy, "label": %SlotHeavy/VB/Cd, "mp": 22.0},
+	{"panel": %SlotBolt, "label": %SlotBolt/VB/Cd, "mp": 8.0},
+	{"panel": %SlotHeal, "label": %SlotHeal/VB/Cd, "mp": 25.0},
 ]
 @onready var night_rect: ColorRect = %NightRect
 @onready var threat_rect: ColorRect = %ThreatRect
@@ -41,6 +41,8 @@ var _last_species := {}
 ## 技能冷却显示：最近一次推送的剩余值 + 本地流逝（订阅后本地衰减，不轮询玩法系统）
 var _cd_values := [0.0, 0.0, 0.0, 0.0]
 var _cd_elapsed := 0.0
+## 最近已知蓝量（技能槽"蓝不足"置灰用）
+var _mp_now := 0.0
 ## 三选一被动：待选择次数（连升排队）
 var _pending_passive_picks := 0
 var _night_tween: Tween
@@ -222,9 +224,10 @@ func _unhandled_input(event: InputEvent) -> void:
 # --- 技能冷却条 ---
 
 func _on_skills_changed(dash_cd: float, heavy_cd: float, bolt_cd: float, heal_cd: float,
-		_mp: float, _max_mp: float) -> void:
+		mp: float, _max_mp: float) -> void:
 	_cd_values = [dash_cd, heavy_cd, bolt_cd, heal_cd]
 	_cd_elapsed = 0.0
+	_mp_now = mp
 	_refresh_skill_bar()
 
 
@@ -245,6 +248,10 @@ func _refresh_skill_bar() -> void:
 		elif label.text != "就绪":
 			label.text = "就绪"
 			label.modulate = Color(0.7, 0.95, 0.7)
+		# 蓝不足置灰整格：技能按了没反应时玩家需要知道原因
+		var panel: Control = slot["panel"]
+		if panel != null and is_instance_valid(panel):
+			panel.modulate = Color(0.5, 0.5, 0.55) if _mp_now < float(slot["mp"]) else Color.WHITE
 
 
 # --- 暂停 / 主菜单 ---
@@ -322,6 +329,7 @@ func _on_leveled_up(_new_level: int) -> void:
 func _open_passive_pick() -> void:
 	if _pending_passive_picks <= 0:
 		passive_layer.visible = false
+		get_tree().paused = false
 		return
 	var pool: Array = []
 	for entry: Dictionary in CharacterStats.PASSIVE_POOL:
@@ -338,7 +346,10 @@ func _open_passive_pick() -> void:
 			btn.visible = true
 		else:
 			btn.visible = false
+	# 读卡时暂停世界：全屏选卡层挡操作，怪物却仍在攻击——升级应是奖励不是惩罚
 	passive_layer.visible = true
+	get_tree().paused = true
+	TouchInput.clear_queues()
 
 
 func _pick_passive(index: int) -> void:
@@ -412,6 +423,7 @@ func _on_hp_changed(current: float, maximum: float) -> void:
 
 
 func _on_mp_changed(current: float, maximum: float) -> void:
+	_mp_now = current
 	mp_bar.max_value = maximum
 	mp_bar.value = current
 

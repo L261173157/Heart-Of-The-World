@@ -52,12 +52,19 @@ var _hp_bar: MonsterHpBar
 
 func setup(p_inst: MonsterInstance) -> void:
 	inst = p_inst
-	anchor = WorldSim.sim.get_region_center(inst.region_id)
+	# 落点与巡逻锚点：区域内部随机扎根（±45% 半幅），
+	# 避免全员挤在区域中心一团、四周大片空旷；分裂子代在母体死亡处扎根
+	var region: SimRegion = WorldSim.sim.get_region(inst.region_id)
 	if inst.spawn_pos != Vector2.INF:
-		# 分裂子代：在母体死亡处小范围散开
+		anchor = inst.spawn_pos
 		global_position = inst.spawn_pos + Vector2(randf_range(-26.0, 26.0), randf_range(-26.0, 26.0))
+	elif region != null:
+		var half := region.size * 0.45
+		anchor = region.center + Vector2(randf_range(-half.x, half.x), randf_range(-half.y, half.y))
+		global_position = anchor
 	else:
-		global_position = anchor + Vector2(randf_range(-60.0, 60.0), randf_range(-60.0, 60.0))
+		anchor = WorldSim.sim.get_region_center(inst.region_id)
+		global_position = anchor
 	current_hp = inst.max_hp()
 	sprite_base_scale = visual.scale
 	if inst.is_elite:
@@ -162,6 +169,10 @@ func take_damage(amount: float, from_position := Vector2.INF, p_heavy := false,
 		_hp_bar.notify_change()
 	EventBus.damage_number.emit(global_position, int(round(dealt)), false, p_effective)
 	_pulse_red()
+	# 被玩家攻击会中断迁徙反击：迁徙中挨打毫无反应（不还手不停步）像坏掉了
+	if state == S_MIGRATING and from_position != Vector2.INF:
+		state = S_CHASE
+		_aggro_lock = 3.0
 	if from_position != Vector2.INF:
 		# 击退受双抗性叠乘：knockback_resist（物种）× poise（削韧/霸体）；
 		# 重击（连击第三段）击退翻倍 + 玩家重锤被动乘子——霸体怪（岩甲龟/龟王）纹丝不动
@@ -178,11 +189,16 @@ func take_damage(amount: float, from_position := Vector2.INF, p_heavy := false,
 		_die_by_player()
 
 
-## 生态迁移：锚点换到新区域中心，走过去（EcologySim.instance_migrated → game_world 调用）
+## 生态迁移：锚点换到新区域内部随机点，走过去（EcologySim.instance_migrated → game_world 调用）
 func on_migrate(to_region_id: String) -> void:
 	if state == S_CORPSE:
 		return
-	anchor = WorldSim.sim.get_region_center(to_region_id)
+	var region: SimRegion = WorldSim.sim.get_region(to_region_id)
+	if region != null:
+		var half := region.size * 0.45
+		anchor = region.center + Vector2(randf_range(-half.x, half.x), randf_range(-half.y, half.y))
+	else:
+		anchor = WorldSim.sim.get_region_center(to_region_id)
 	state = S_MIGRATING
 
 

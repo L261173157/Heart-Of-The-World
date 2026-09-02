@@ -88,6 +88,9 @@ func _seed_tint(region: SimRegion) -> void:
 
 
 func _seed_particles(region: SimRegion) -> void:
+	# 只有三种地形有环境粒子；其余直接跳过，不为一次释放白建节点
+	if not (region.terrain in ["snow", "lava", "swamp"]):
+		return
 	var p := CPUParticles2D.new()
 	match region.terrain:
 		"snow":

@@ -19,6 +19,11 @@ const DASH_BUFF_MULT := 1.3
 const RESPAWN_DELAY := 2.0
 ## 重生保护帧：出生点可能被怪围住，短暂无敌防止落地即死
 const RESPAWN_PROTECT := 1.0
+## 受击无敌帧：多只怪同帧命中只结算第一下——群体围攻是压力不是即死
+const HURT_IFRAME := 0.35
+## 冲刺期间只与墙壁碰撞（穿透怪物）：被围时的核心逃生手段
+const MASK_NORMAL := 3
+const MASK_DASH := 1
 const KNOCKBACK_DECAY := 700.0
 const DASH_SPEED := 620.0
 const DASH_TIME := 0.18
@@ -70,6 +75,10 @@ var _combo_timer := 0.0
 var _dash_buff_timer := 0.0
 ## 重生保护帧计时
 var _protect_timer := 0.0
+## 受击无敌帧计时
+var _hurt_iframes := 0.0
+## 冲刺中按下的攻击缓冲（冲刺→攻击增伤连招不丢输入；触屏本身经 TouchInput 排队已有缓冲）
+var _attack_buffered := false
 ## 最近一次致死伤害来源名（死亡信息用）
 var last_killed_by := ""
 
@@ -95,6 +104,7 @@ func _physics_process(delta: float) -> void:
 	_dash_buff_timer = maxf(0.0, _dash_buff_timer - delta)
 	_combo_timer = maxf(0.0, _combo_timer - delta)
 	_protect_timer = maxf(0.0, _protect_timer - delta)
+	_hurt_iframes = maxf(0.0, _hurt_iframes - delta)
 	if _combo_timer <= 0.0:
 		_combo = 0
 	if _attack_timer > 0.0:
@@ -106,16 +116,25 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		return
 
-	# 冲刺中：固定方向高速位移 + 无敌帧 + 残影，结束前不响应移动输入
+	# 冲刺中：固定方向高速位移 + 无敌帧 + 残影，结束前不响应移动输入；
+	# 期间按攻击进入缓冲（触屏队列本就保留），冲刺一结束立即兑现
 	if _dash_timer > 0.0:
 		_dash_timer -= delta
+		if _dash_timer <= 0.0:
+			collision_mask = MASK_NORMAL
 		velocity = facing * DASH_SPEED
 		_afterimage_accum -= delta
 		if _afterimage_accum <= 0.0:
 			_afterimage_accum = AFTERIMAGE_INTERVAL
 			_spawn_afterimage()
+		if Input.is_action_just_pressed("attack"):
+			_attack_buffered = true
 		move_and_slide()
 		return
+
+	if _attack_buffered:
+		_attack_buffered = false
+		_try_attack()
 
 	var dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	if TouchInput.joystick_active:
@@ -167,6 +186,7 @@ func _try_dash() -> void:
 	_afterimage_accum = 0.0
 	_attack_cooldown = 0.0
 	_dash_buff_timer = DASH_BUFF_TIME
+	collision_mask = MASK_DASH
 	EventBus.player_dashed.emit()
 
 
@@ -369,10 +389,11 @@ func _play_slash(combo_step := 0) -> void:
 func take_damage(amount: float, from_position := Vector2.INF, source_name := "") -> void:
 	if _is_dead:
 		return
-	# 冲刺无敌帧/重生保护帧：期间免疫一切伤害
-	if _dash_timer > 0.0 or _protect_timer > 0.0:
+	# 冲刺/重生保护/受击无敌帧：期间免疫一切伤害（群体同帧命中只结算第一下）
+	if _dash_timer > 0.0 or _protect_timer > 0.0 or _hurt_iframes > 0.0:
 		return
 	current_hp = maxf(0.0, current_hp - amount)
+	_hurt_iframes = HURT_IFRAME
 	EventBus.damage_number.emit(global_position, int(round(amount)), true, false)
 	if source_name != "":
 		last_killed_by = source_name
@@ -408,11 +429,14 @@ func _respawn() -> void:
 	current_hp = stats.max_hp()
 	current_mp = stats.max_mp()
 	visible = true
-	# 清战斗残留：致死击退/连击段/攻击窗口不带入重生
+	# 清战斗残留：致死击退/连击段/攻击窗口/冲刺穿怪状态不带入重生
 	_knockback = Vector2.ZERO
 	_combo = 0
 	_combo_timer = 0.0
 	_dash_timer = 0.0
+	collision_mask = MASK_NORMAL
+	_attack_buffered = false
+	_hurt_iframes = 0.0
 	_attack_timer = 0.0
 	_hit_this_swing.clear()
 	_protect_timer = RESPAWN_PROTECT

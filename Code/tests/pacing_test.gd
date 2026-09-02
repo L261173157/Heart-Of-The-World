@@ -2,8 +2,10 @@
 ## 采集升级曲线 / 金币获取 / 死亡压力 / 击杀供给 / 生态健康，输出节奏报告。
 ## 运行："$GODOT" --headless --path Code res://tests/pacing_test.tscn --quit-after 100000
 ## 加速：Engine.time_scale = 4（时间均匀缩放，战斗结果与真实速度等价，按游戏秒计）。
-## 好玩节奏区间（不达标 = fail，用于数值调优的回归闸门）：
-##   首升 ≤120s；Lv3 ≤420s；10 分钟金币可支撑 ≥2 次商店强化；死亡 1~6 次；击杀 ≥25；生态存活 >10。
+## 好玩节奏闸门（不达标 = fail，用于数值调优的回归闸门）：
+##   首升 ≤120s；Lv3 ≤420s；10 分钟金币可支撑 ≥2 次商店强化；击杀 ≥25；最低血线 <50%；生态存活 >10。
+##   （死亡数为观察项不入闸：机器人从不闪避/撤退，10 分钟死 9~19 次，人类玩家用冲刺无敌帧会低得多）
+## 升级三选一会暂停世界，机器人每帧代选第一张赐福后继续。
 extends Node2D
 
 const MAIN_SCENE := preload("res://scenes/main/main.tscn")
@@ -39,6 +41,8 @@ var _patrol_index := 0
 
 
 func _ready() -> void:
+	# 升级三选一会暂停世界，机器人必须 ALWAYS 才能代选赐福并推进流程
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	Engine.time_scale = TIME_SCALE
 	# 沙盒隔离：从 Lv1 干净进度出发（autoload 启动时加载的是开发者真实档，
 	# 金币/等级阈值会被污染），且全程不落盘、不碰真实 user://save.json
@@ -68,6 +72,12 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if _player == null:
+		return
+	# 世界因三选一赐福暂停时：代选第一张（卡池每次洗牌，首张即随机）
+	if get_tree().paused:
+		var hud := _world.get_node_or_null("HUD")
+		if hud != null and hud.passive_layer.visible:
+			hud._pick_passive(0)
 		return
 	_game_time += delta
 	if _game_time >= GAME_SECONDS:

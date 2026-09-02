@@ -103,8 +103,13 @@ func spawn_instance(species: SpeciesData, region_id: String, age := 0,
 	return inst
 
 
-## 物种在区域首次立足时建巢（已存在则不动——捣毁状态由 rebuild 倒计时恢复）
+## 物种在区域首次立足时建巢（已存在则不动——捣毁状态由 rebuild 倒计时恢复）。
+## Boss 物种不建巢：繁衍率恒为 0，捣毁"Boss 巢"没有任何生态效果，
+## 立一个可攻击却无意义的巢只会误导玩家
 func _ensure_nest(region_id: String, species_name: String) -> void:
+	var species := find_species(species_name)
+	if species != null and species.is_boss:
+		return
 	var key := "%s|%s" % [region_id, species_name]
 	if nests.has(key):
 		return
@@ -333,6 +338,10 @@ func _process_reintroduction() -> void:
 		if inst.is_alive:
 			totals[inst.species.species_name] = totals.get(inst.species.species_name, 0) + 1
 	for species in species_list:
+		# Boss 有独立的重生倒计时（boss_respawn_ticks），不走灭绝重引入——
+		# 否则倒计时未到就被"从世界边缘迁徙回来"刷出复数 Boss，破坏顶点节奏
+		if species.is_boss:
+			continue
 		if int(totals.get(species.species_name, 0)) > 0 or randf() >= REINTRODUCE_CHANCE:
 			continue
 		for region: SimRegion in regions.values():

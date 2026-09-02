@@ -29,8 +29,12 @@ const FIRST_MIGRATION_NEWS := {
 func _ready() -> void:
 	# 开场操作提示（已看过则不再打扰）
 	if not _seen("open1"):
+		# 触屏设备文案不提键位（iOS 首发的主要输入是虚拟摇杆与技能键）
+		var controls := "移动 WASD　攻击 空格/J　冲刺 Shift/K（冲刺中无敌！）"
+		if DisplayServer.is_touchscreen_available():
+			controls = "左侧摇杆移动　右侧按键攻击/冲刺（冲刺中无敌！）"
 		get_tree().create_timer(OPENING_DELAY).timeout.connect(func() -> void:
-			_hint("open1", "移动 WASD/摇杆　攻击 空格/攻击键　冲刺 Shift/K（冲刺中无敌！）")
+			_hint("open1", controls)
 		)
 	if not _seen("open2"):
 		get_tree().create_timer(SECOND_HINT_DELAY).timeout.connect(func() -> void:

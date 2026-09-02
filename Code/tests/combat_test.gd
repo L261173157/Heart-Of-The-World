@@ -195,6 +195,8 @@ func _find_alive_any() -> MonsterBase:
 
 
 func _ready() -> void:
+	# 升级三选一会暂停世界，测试节点必须 ALWAYS 才能代选赐福并推进流程
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_world = MAIN_SCENE.instantiate()
 	add_child(_world)
 	await get_tree().process_frame
@@ -214,6 +216,12 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if _player == null:
+		return
+	# 世界因三选一赐福暂停时：代选第一张（卡池每次洗牌，首张即随机）
+	if get_tree().paused:
+		var hud := _world.get_node_or_null("HUD")
+		if hud != null and hud.passive_layer.visible:
+			hud._pick_passive(0)
 		return
 	_elapsed += delta
 	# 法弹命中异步校验：贴脸发射几乎瞬间命中，0.35s 余量足够
@@ -280,6 +288,12 @@ func _step() -> void:
 	# 雪蝎：先在射程内观察吐息（远程机制验证），再上前击杀
 	if species_name == "雪蝎" and not _saw_projectile and _elapsed < TIME_LIMIT - 30.0:
 		_player.global_position = target.global_position - dir * 170.0
+		_player.facing = dir
+		return
+	# 野猪：先在中距离等它起冲锋（前摇机制验证），再上前击杀——
+	# 测试输出一刀秒杀野猪，贴身打法永远看不到前摇状态
+	if species_name == "野猪" and not _saw_custom_states.has("野猪") and _elapsed < TIME_LIMIT - 30.0:
+		_player.global_position = target.global_position - dir * 150.0
 		_player.facing = dir
 		return
 	_player.global_position = target.global_position - dir * 20.0
