@@ -1,0 +1,47 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/player/player.gd" id="1_player"]
+[ext_resource type="Texture2D" path="res://assets/creatures/player_knight.png" id="2_knight"]
+[ext_resource type="Script" path="res://scripts/player/player_camera.gd" id="3_camera"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
+size = Vector2(20, 20)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_hitbox"]
+size = Vector2(36, 34)
+
+[node name="Player" type="CharacterBody2D"]
+collision_layer = 1
+collision_mask = 3
+script = ExtResource("1_player")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("RectangleShape2D_body")
+
+[node name="Visual" type="Sprite2D" parent="."]
+scale = Vector2(2.2, 2.2)
+texture = ExtResource("2_knight")
+
+[node name="Slash" type="Polygon2D" parent="."]
+visible = false
+z_index = 5
+color = Color(1, 1, 1, 0.85)
+polygon = PackedVector2Array(4, -16, 22, -12, 34, 0, 22, 12, 4, 16)
+
+[node name="Camera2D" type="Camera2D" parent="."]
+limit_left = 0
+limit_top = 0
+limit_right = 3300
+limit_bottom = 1400
+position_smoothing_enabled = true
+position_smoothing_speed = 6.0
+zoom = Vector2(2, 2)
+script = ExtResource("3_camera")
+
+[node name="AttackHitbox" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 2
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="AttackHitbox"]
+disabled = true
+shape = SubResource("RectangleShape2D_hitbox")

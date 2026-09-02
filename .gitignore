@@ -159,3 +159,12 @@ Desktop.ini
 # 在这里添加任何你认为需要忽略的文件或文件夹
 # 例如项目特定的私有文件或上传到商店的包等
 
+# ZCode 工作区
+.zcode/
+
+
+# iOS 导出输出（一键脚本 ios-run.sh）
+build-output/
+
+# Mimosa 安全扫描工具状态目录
+.mimosa/

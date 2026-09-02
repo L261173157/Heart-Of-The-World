@@ -1,2 +1,5 @@
 # Godot 4+ specific ignores
 .godot/
+
+# iOS 导出产物
+build/
