@@ -4,6 +4,9 @@ extends CanvasLayer
 
 const TOAST_DURATION := 2.0
 const TOAST_FADE := 0.5
+## 战斗播报：更短生命周期（高频滚动，不给屏面留积压）
+const COMBAT_TOAST_DURATION := 1.2
+const COMBAT_TOAST_FADE := 0.3
 
 @onready var hp_bar: ProgressBar = %HPBar
 @onready var mp_bar: ProgressBar = %MPBar
@@ -34,6 +37,9 @@ const TOAST_FADE := 0.5
 @onready var passive_cards: Array = [%PassiveCard0, %PassiveCard1, %PassiveCard2]
 
 var _toast_timer := 0.0
+## 战斗播报位（击杀/商店反馈专用通道）
+var _combat_toast: Label = Label.new()
+var _combat_toast_timer := 0.0
 var _region_name := ""
 ## 生态面板趋势：上一次 tick 的各区域总数与物种构成（对比出 ↑↓＋✕）
 var _last_totals := {}
@@ -99,11 +105,35 @@ func _ready() -> void:
 	)
 
 	toast_label.modulate.a = 0.0
+	_setup_combat_toast()
 	_apply_theme()
 	_apply_safe_area()
 	_apply_vignette()
 	_on_progress_changed(1, 0, GameState.stats.xp_to_next(), 0)
 	_on_gold_changed(GameState.gold)
+
+
+## 战斗播报位：与顶部世界事件/引导提示分离的第二条 toast 通道。
+## 击杀与商店反馈高频而轻量（密集战斗时每秒数条），原单通道会被它们
+## 反复覆盖，生态事件/引导词一闪即逝——拆开后各走各位互不打架。
+func _setup_combat_toast() -> void:
+	_combat_toast.anchor_left = toast_label.anchor_left
+	_combat_toast.anchor_right = toast_label.anchor_right
+	_combat_toast.offset_left = toast_label.offset_left
+	_combat_toast.offset_right = toast_label.offset_right
+	_combat_toast.offset_top = toast_label.offset_top + 34.0
+	_combat_toast.offset_bottom = toast_label.offset_bottom + 34.0
+	_combat_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_combat_toast.add_theme_font_size_override("font_size", 16)
+	_combat_toast.add_theme_color_override("font_color", Color(1, 0.95, 0.8, 0.9))
+	_combat_toast.modulate.a = 0.0
+	toast_label.get_parent().add_child(_combat_toast)
+
+
+func _toast_combat(message: String) -> void:
+	_combat_toast.text = message
+	_combat_toast.modulate.a = 1.0
+	_combat_toast_timer = COMBAT_TOAST_DURATION
 
 
 ## iOS 刘海/Home 指示条：把 HUD 根收进安全区（无刘海设备安全区=全屏，零影响）。
@@ -204,6 +234,9 @@ func _process(delta: float) -> void:
 	if _toast_timer > 0.0:
 		_toast_timer -= delta
 		toast_label.modulate.a = clampf(_toast_timer / TOAST_FADE, 0.0, 1.0)
+	if _combat_toast_timer > 0.0:
+		_combat_toast_timer -= delta
+		_combat_toast.modulate.a = clampf(_combat_toast_timer / COMBAT_TOAST_FADE, 0.0, 1.0)
 	_cd_elapsed += delta
 	_refresh_skill_bar()
 
@@ -411,9 +444,9 @@ func _refresh_shop_btn(btn: Button, kind: String, display: String, effect: Strin
 func _try_buy(kind: String) -> void:
 	if GameState.buy_upgrade(kind):
 		SfxManager.play("levelup")
-		_toast("%s 强化成功！" % GameState.UPGRADE_NAMES[kind])
+		_toast_combat("%s 强化成功！" % GameState.UPGRADE_NAMES[kind])
 	else:
-		_toast("金币不足（需要 %d）" % GameState.upgrade_cost(kind))
+		_toast_combat("金币不足（需要 %d）" % GameState.upgrade_cost(kind))
 	_refresh_shop()
 
 
@@ -490,7 +523,8 @@ func _on_sim_tick(summary: Dictionary) -> void:
 
 
 func _on_kill(xp_reward: int, gold_reward: int, monster_name: String) -> void:
-	_toast("击杀 %s   +%d 经验  +%d 金币" % [monster_name, xp_reward, gold_reward])
+	# 击杀走战斗通道：连杀高频滚动时不再挤掉生态事件/引导词
+	_toast_combat("击杀 %s   +%d 经验  +%d 金币" % [monster_name, xp_reward, gold_reward])
 
 
 func _toast(message: String) -> void:
