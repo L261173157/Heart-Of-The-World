@@ -349,6 +349,12 @@ func _refresh_codex() -> void:
 				lines.append("— %s：空" % GameState.SLOT_NAMES[slot])
 			else:
 				lines.append("— %s：%s" % [GameState.SLOT_NAMES[slot], GameState.equip_description(item)])
+	# 寿命：剩余不多时给出衰老警示（升级延长/倒下缩短）
+	var left_days: float = GameState.stats.lifespan_remaining()
+	var life_line := "— 寿命：剩 %d / %d 天" % [int(ceil(maxf(left_days, 0.0))), int(GameState.stats.lifespan_days)]
+	if GameState.stats.aging_decay() < 1.0:
+		life_line += "（风烛残年：上限 ×%.0f%%）" % (GameState.stats.aging_decay() * 100.0)
+	lines.append(life_line)
 	codex_content.text = "\n".join(lines)
 	var ach_lines: Array[String] = []
 	for id in AchievementManager.ACHIEVEMENTS:

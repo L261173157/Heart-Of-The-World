@@ -196,7 +196,8 @@ func _process_aging() -> void:
 		if not inst.is_alive:
 			continue
 		inst.age += 1
-		if inst.age >= inst.lifespan:
+		# 老死判定走角色/怪物统一的 LifespanMath（寿命语义单点维护）
+		if LifespanMath.is_expired(inst.age, inst.lifespan):
 			aged_out.append(inst)
 	for inst in aged_out:
 		_die(inst, DEATH_AGING)

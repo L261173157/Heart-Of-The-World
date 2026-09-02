@@ -27,6 +27,8 @@ var settings: Dictionary = {"volume": 0.8, "screen_shake": true, "damage_numbers
 var session_kills: int = 0
 
 var _save_timer := 0.0
+## 寿命警告已触发过的阈值（避免重复播报；读档按剩余寿命重建）
+var _lifespan_warned: Array = []
 
 ## 游商营地：永久强化（金币消费出口），每类上限 5 级
 const UPGRADE_MAX_LEVEL := 5
@@ -44,6 +46,27 @@ func _ready() -> void:
 	_apply_settings()
 	# 图鉴/击杀统计：订阅击杀信号自动记录
 	EventBus.monster_killed_by_player.connect(_on_kill_record)
+	# 寿命：游戏日推进 + 倒下缩短（策划：死亡缩短寿命）
+	EventBus.game_day_advanced.connect(_on_game_day)
+	EventBus.player_died.connect(_on_player_died_lifespan)
+
+
+## 新游戏日：角色寿命 -1 天，剩余不多时一次性预警
+func _on_game_day(_day: int) -> void:
+	stats.age_days += 1.0
+	var left: float = stats.lifespan_remaining()
+	for threshold in [10.0, 5.0, 1.0]:
+		if left <= threshold and not _lifespan_warned.has(threshold):
+			_lifespan_warned.append(threshold)
+			EventBus.hint_requested.emit("⏳ 岁月不饶人：剩余寿命 %d 天（升级可延长）" % int(ceil(maxf(left, 0.0))))
+	_queue_save()
+
+
+## 倒下缩短寿命（与掉金币同为死亡代价；寿命归零后进入风烛残年而非删除）
+func _on_player_died_lifespan() -> void:
+	stats.lifespan_days = maxf(0.0, stats.lifespan_days - CharacterStats.DEATH_LIFESPAN_LOSS)
+	stats.changed.emit()
+	_queue_save()
 
 
 func _on_kill_record(_xp: int, _gold: int, monster_name: String) -> void:
@@ -226,6 +249,7 @@ func reset_all() -> void:
 	codex = {}
 	achievements = {}
 	session_kills = 0
+	_lifespan_warned.clear()
 	_save_now()
 	stats_rebuilt.emit()
 	EventBus.player_progress_changed.emit(stats.level, stats.xp, stats.xp_to_next(), stats.pending_points)
@@ -269,6 +293,8 @@ func _save_now() -> void:
 		},
 		"passives": stats.passives,
 		"equips": stats.equips,
+		"age_days": stats.age_days,
+		"lifespan_days": stats.lifespan_days,
 		"codex": codex,
 		"achievements": achievements,
 		"settings": settings,
@@ -315,6 +341,13 @@ func _load() -> void:
 	var saved_passives: Variant = data.get("passives", {})
 	if typeof(saved_passives) == TYPE_DICTIONARY:
 		stats.passives = saved_passives
+	# 寿命：读档重建（非法值回落默认）；已越过的警告阈值静默补记防重复播报
+	stats.age_days = maxf(0.0, float(data.get("age_days", 0.0)))
+	stats.lifespan_days = maxf(1.0, float(data.get("lifespan_days", CharacterStats.BASE_LIFESPAN_DAYS)))
+	_lifespan_warned.clear()
+	for threshold in [10.0, 5.0, 1.0]:
+		if stats.lifespan_remaining() <= threshold:
+			_lifespan_warned.append(threshold)
 	var saved_equips: Variant = data.get("equips", {})
 	if typeof(saved_equips) == TYPE_DICTIONARY:
 		# 只收合法槽位，旧档遗留字段不带入

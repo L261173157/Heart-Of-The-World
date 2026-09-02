@@ -15,6 +15,8 @@ var sim: EcologySim
 ## 当天进度 0~1（0 = 黎明）
 var day_time: float = 0.15
 var is_night: bool = false
+## 已流逝的游戏天数（寿命系统按天推进；每局从 0 重新计）
+var game_day: int = 0
 
 var _accum := 0.0
 var _running := false
@@ -26,6 +28,7 @@ func start(p_sim: EcologySim) -> void:
 	# 每局从清晨重新开始：autoload 的昼夜状态不跨局残留
 	# （否则新开局可能处于"夜幕层未显示但怪物侦测已提升"的隐形夜晚）
 	day_time = 0.15
+	game_day = 0
 	if is_night:
 		is_night = false
 		EventBus.day_phase_changed.emit(false)
@@ -51,7 +54,12 @@ func _process(delta: float) -> void:
 
 
 func _advance_day(delta: float) -> void:
+	var prev := day_time
 	day_time = fmod(day_time + delta / DAY_LENGTH, 1.0)
+	if day_time < prev:
+		# 绕回 = 新的一天（寿命/成就按天推进）
+		game_day += 1
+		EventBus.game_day_advanced.emit(game_day)
 	var night := day_time >= NIGHT_START
 	if night != is_night:
 		is_night = night

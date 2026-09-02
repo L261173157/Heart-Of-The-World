@@ -13,6 +13,7 @@ func _ready() -> void:
 	_test_roundtrip()
 	_test_shop()
 	_test_progress_meta()
+	_test_lifespan()
 	_test_corrupted_file()
 	# 收尾清档，不把测试数据留给真实游戏
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(GameState.SAVE_PATH))
@@ -141,6 +142,46 @@ func _test_progress_meta() -> void:
 	rewrite.close()
 	GameState._load()
 	_check(GameState.stats.equips.get("weapon", {}).get("name", "") == "古剑", "旧档单件装备迁移到武器槽")
+
+
+## 寿命系统：天数推进/升级延长/倒下缩短/风烛残年衰减/存档往返
+func _test_lifespan() -> void:
+	GameState.stats.age_days = 3.0
+	GameState.stats.lifespan_days = 30.0
+	GameState._save_now()
+	GameState.stats.age_days = 0.0
+	GameState.stats.lifespan_days = 1.0
+	GameState._load()
+	_check(absf(GameState.stats.age_days - 3.0) < 0.001
+			and absf(GameState.stats.lifespan_days - 30.0) < 0.001, "读档恢复寿命（%.0f/%.0f 天）"
+			% [GameState.stats.age_days, GameState.stats.lifespan_days])
+	# 游戏日推进：信号驱动年龄 +1
+	EventBus.game_day_advanced.emit(1)
+	_check(absf(GameState.stats.age_days - 4.0) < 0.001, "游戏日推进角色寿命（4 == %.0f）" % GameState.stats.age_days)
+	# 升级延长寿命
+	GameState.stats.level = 1
+	GameState.stats.xp = 0
+	var lifespan_before: float = GameState.stats.lifespan_days
+	GameState.stats.add_xp(GameState.stats.xp_to_next() + 1)
+	_check(GameState.stats.lifespan_days >= lifespan_before + CharacterStats.LEVELED_LIFESPAN_GAIN - 0.001,
+		"升级延长寿命（%.0f → %.0f）" % [lifespan_before, GameState.stats.lifespan_days])
+	# 倒下缩短寿命
+	lifespan_before = GameState.stats.lifespan_days
+	EventBus.player_died.emit()
+	_check(absf(lifespan_before - GameState.stats.lifespan_days - CharacterStats.DEATH_LIFESPAN_LOSS) < 0.001,
+		"倒下缩短寿命（%.0f → %.0f）" % [lifespan_before, GameState.stats.lifespan_days])
+	# 风烛残年：寿命充裕无衰减；剩余 2.5 天（窗口一半）衰减到 ~0.8；到点后维持下限 0.6
+	_check(absf(GameState.stats.aging_decay() - 1.0) < 0.001, "寿命充裕时无衰老衰减")
+	var hp_prime: float = GameState.stats.max_hp()  # 当前装备/被动下的无衰减基准
+	GameState.stats.age_days = GameState.stats.lifespan_days - 2.5
+	_check(absf(GameState.stats.max_hp() / hp_prime - 0.8) < 0.01,
+		"风烛残年渐进衰减（×%.2f）" % (GameState.stats.max_hp() / hp_prime))
+	GameState.stats.age_days = GameState.stats.lifespan_days + 10.0
+	_check(absf(GameState.stats.max_hp() / hp_prime - 0.6) < 0.01,
+		"寿命到点衰减下限（×%.2f）" % (GameState.stats.max_hp() / hp_prime))
+	GameState.stats.age_days = 0.0
+	GameState.stats.lifespan_days = CharacterStats.BASE_LIFESPAN_DAYS
+	GameState._lifespan_warned.clear()
 
 
 func _test_corrupted_file() -> void:

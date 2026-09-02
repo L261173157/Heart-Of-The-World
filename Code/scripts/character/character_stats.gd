@@ -3,7 +3,8 @@
 ##   能力值 = 力量/敏捷/智力，等级由经验决定，每级 1 点自由分配；
 ##   力量→生命上限/生命回复/物理攻击，敏捷→移动速度/攻击速度，
 ##   智力→魔法上限/魔法回复/魔法攻击/治疗力。
-## 寿命值（策划中的永久死亡机制）M0 暂不启用，字段预留给 M1。
+## 寿命：年龄随游戏天数推进（升级延长/倒下缩短），寿命将尽时属性渐进衰老（LifespanMath）；
+## 到点永久死亡（鬼魂玩法）后置在待定池。
 ## 所有衍生数值用方法即时计算，属性点分配立刻生效。
 class_name CharacterStats
 extends Resource
@@ -87,8 +88,24 @@ func equip_score(item: Dictionary) -> float:
 		total += 0.05
 	return total
 
-## 寿命值（自然时间递减，归零永久死亡）—— M0 未启用
-var lifespan_enabled: bool = false
+## --- 寿命（角色侧单位：游戏天，WorldSim 4 分钟/天；怪物侧为 tick） ---
+## 策划：寿命随自然时间减少、能力提升延长、倒下缩短；到点永久死亡（鬼魂玩法）后置，
+## 当前到点表现为"风烛残年"——生命/精力上限渐进衰减（见 LifespanMath）
+const BASE_LIFESPAN_DAYS := 30.0
+const LEVELED_LIFESPAN_GAIN := 2.0
+const DEATH_LIFESPAN_LOSS := 1.0
+
+var age_days: float = 0.0
+var lifespan_days: float = BASE_LIFESPAN_DAYS
+
+
+func lifespan_remaining() -> float:
+	return LifespanMath.remaining(age_days, lifespan_days)
+
+
+## 风烛残年乘子（寿命充裕 = 1.0），仅作用于生命/精力上限
+func aging_decay() -> float:
+	return LifespanMath.decay_mult(age_days, lifespan_days)
 
 
 ## 升级所需经验：首级低门槛（十余杀即首升的即时正反馈），后期增陡
@@ -104,6 +121,8 @@ func add_xp(amount: int) -> void:
 		xp -= xp_to_next()
 		level += 1
 		pending_points += 1
+		# 升级延长寿命（策划：能力提升延长寿命）
+		lifespan_days += LEVELED_LIFESPAN_GAIN
 		leveled = true
 	if leveled:
 		leveled_up.emit(level)
@@ -114,7 +133,7 @@ func add_xp(amount: int) -> void:
 
 func max_hp() -> float:
 	return (100.0 + strength * 12.0 + passive_level("hp") * 20.0) \
-			* (1.0 + upgrade_vigor * UPGRADE_BONUS) * (1.0 + equip_affix("hp"))
+			* (1.0 + upgrade_vigor * UPGRADE_BONUS) * (1.0 + equip_affix("hp")) * aging_decay()
 
 
 func hp_regen_per_sec() -> float:
@@ -122,7 +141,7 @@ func hp_regen_per_sec() -> float:
 
 
 func max_mp() -> float:
-	return 50.0 + intellect * 10.0
+	return (50.0 + intellect * 10.0) * aging_decay()
 
 
 func mp_regen_per_sec() -> float:

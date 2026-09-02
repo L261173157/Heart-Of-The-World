@@ -22,6 +22,8 @@ signal region_threat_warning(threat: float)
 signal achievement_unlocked(title: String)
 ## 昼夜切换（WorldSim 发出，night=true 入夜）
 signal day_phase_changed(night: bool)
+## 新的游戏日开始（WorldSim 发出，day 从 1 计数；角色寿命按天推进）
+signal game_day_advanced(day: int)
 ## 引导/剧情播报请求（tutorial → HUD toast 呈现）
 signal hint_requested(text: String)
 
