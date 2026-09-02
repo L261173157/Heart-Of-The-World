@@ -51,6 +51,9 @@ var _hit_stop_timer: SceneTreeTimer
 var _dmg_style_normal: LabelSettings
 var _dmg_style_player: LabelSettings
 var _dmg_style_effective: LabelSettings
+## 飘血数字对象池：Label 用完隐藏回池复用（0.7s 生命周期，密集战斗下
+## 每次 new/queue_free 的分配压力可观）；池按历史峰值增长，不收缩
+var _dmg_label_pool: Array[Label] = []
 
 
 func _ready() -> void:
@@ -246,7 +249,18 @@ func _on_damage_number(pos: Vector2, amount: int, is_player_hurt: bool, is_effec
 
 
 func _spawn_damage_number(pos: Vector2, amount: int, is_player_hurt: bool, is_effective := false) -> void:
-	var label := Label.new()
+	# 从池里取隐藏的 Label；池空时才新建（复用 = 隐藏标记，动画结束即回池）
+	var label: Label = null
+	for candidate: Label in _dmg_label_pool:
+		if not candidate.visible:
+			label = candidate
+			break
+	if label == null:
+		label = Label.new()
+		label.z_index = 50
+		add_child(label)
+		_dmg_label_pool.append(label)
+	label.visible = true
 	label.text = str(amount)
 	if is_player_hurt:
 		label.label_settings = _dmg_style_player
@@ -254,14 +268,13 @@ func _spawn_damage_number(pos: Vector2, amount: int, is_player_hurt: bool, is_ef
 		label.label_settings = _dmg_style_effective
 	else:
 		label.label_settings = _dmg_style_normal
-	label.z_index = 50
-	add_child(label)
+	label.modulate.a = 1.0
 	label.global_position = pos + Vector2(randf_range(-14.0, 14.0), randf_range(-30.0, -14.0))
 	var tween := label.create_tween()
 	tween.set_parallel(true)
 	tween.tween_property(label, "position:y", label.position.y - 42.0, 0.7)
 	tween.tween_property(label, "modulate:a", 0.0, 0.7).set_delay(0.2)
-	tween.chain().tween_callback(label.queue_free)
+	tween.chain().tween_callback(label.hide)
 
 
 func _make_dmg_style(font_size: int, color: Color) -> LabelSettings:

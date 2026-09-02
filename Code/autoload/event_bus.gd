@@ -28,8 +28,6 @@ signal hint_requested(text: String)
 # --- 战斗 ---
 ## 击杀者造成的击杀（经验/掉落在击杀方处理），monster_name 用于飘字等表现
 signal monster_killed_by_player(xp_reward: int, gold_reward: int, monster_name: String)
-## 仇恨连锁：某怪物受击时广播（物种名 + 受击位置），同物种邻近个体据此协同一拥而上
-signal combat_ally_hit(species_name: String, hit_position: Vector2)
 ## 飘血数字（受击位置、数值、是否玩家受伤、是否元素克制——克制时橙色加大）
 signal damage_number(position: Vector2, amount: int, is_player_hurt: bool, is_effective: bool)
 

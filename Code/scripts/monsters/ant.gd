@@ -10,11 +10,6 @@ const PACK_BONUS_MAX := 3
 const ASSIST_RADIUS := 200.0
 
 
-func _ready() -> void:
-	super()
-	EventBus.combat_ally_hit.connect(_on_ally_hit)
-
-
 func _perform_attack(player: Node2D) -> void:
 	var bonus := 1.0 + PACK_BONUS_PER * mini(PACK_BONUS_MAX, _pack_count())
 	if player.has_method("take_damage"):
@@ -51,11 +46,5 @@ func _pack_count() -> int:
 	return count
 
 
-func _on_ally_hit(species_name: String, hit_position: Vector2) -> void:
-	if species_name != inst.species.species_name or state == S_CORPSE:
-		return
-	if global_position.distance_to(hit_position) > ASSIST_RADIUS:
-		return
-	if state == S_PATROL or state == S_MIGRATING:
-		state = S_CHASE
-	_aggro_lock = 3.0
+func ally_assist_radius() -> float:
+	return ASSIST_RADIUS
