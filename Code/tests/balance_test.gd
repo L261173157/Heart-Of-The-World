@@ -12,7 +12,7 @@ const REGION_THREAT := {"west": 1.0, "center": 1.3, "snow": 1.7, "swamp": 1.7, "
 const REGION_SPECIES := {
 	"west": ["哥布林"],
 	"center": ["哥布林", "史莱姆"],
-	"snow": ["野猪", "雪蝎"],
+	"snow": ["野猪", "雪蝎", "冰晶史莱姆"],
 	"swamp": ["史莱姆", "雪蝎"],
 	"east": ["兵蚁", "野猪"],
 	"lava": ["兵蚁", "岩甲龟"],

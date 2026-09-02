@@ -334,7 +334,7 @@ func _toggle_codex() -> void:
 
 func _refresh_codex() -> void:
 	var lines: Array[String] = []
-	for species_name in ["哥布林", "史莱姆", "野猪", "雪蝎", "兵蚁", "岩甲龟", "蚁后", "龟王"]:
+	for species_name in ["哥布林", "史莱姆", "野猪", "雪蝎", "兵蚁", "岩甲龟", "蚁后", "龟王", "冰晶史莱姆"]:
 		var kills: int = int(GameState.codex.get(species_name, 0))
 		if kills > 0:
 			lines.append("✓ %s  累计猎杀 %d" % [species_name, kills])

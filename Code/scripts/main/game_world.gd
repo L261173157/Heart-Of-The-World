@@ -14,13 +14,15 @@ const MONSTER_SCENES := {
 	"岩甲龟": preload("res://scenes/monsters/guardian.tscn"),
 	"蚁后": preload("res://scenes/monsters/ant.tscn"),
 	"龟王": preload("res://scenes/monsters/guardian.tscn"),
+	# 第一个纯 .tres 数据新增种族：复用史莱姆表现/行为（splitter 原型），验证数据驱动管线
+	"冰晶史莱姆": preload("res://scenes/monsters/slime.tscn"),
 }
 
 ## M0 初始种群（六区域相连，物种按栖息地分布；数值后续放 .tres 数据文件）
 const INITIAL_POPULATION := {
 	"west": {"哥布林": 6},
 	"center": {"哥布林": 3, "史莱姆": 4},
-	"snow": {"野猪": 3, "雪蝎": 3},
+	"snow": {"野猪": 3, "雪蝎": 3, "冰晶史莱姆": 3},
 	"swamp": {"史莱姆": 4, "雪蝎": 2},
 	"east": {"兵蚁": 5, "野猪": 2, "蚁后": 1},
 	"lava": {"兵蚁": 3, "岩甲龟": 2, "龟王": 1},

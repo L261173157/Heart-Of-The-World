@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="SpeciesData" format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_q4dwy"]
+
+[resource]
+script = ExtResource("1_q4dwy")
+species_name = "史莱姆"
+tint = Color(0.62, 0.4, 0.85, 1)
+ai_archetype = "splitter"
+habitats = Array[String](["forest", "swamp"])
+base_strength = 4.0
+base_agility = 2.0
+strength_growth = 0.02
+lifespan_min = 300
+lifespan_max = 600
+maturity_age = 60
+breeding_rate = 0.003
+expansion_threshold = 8
+corpse_duration = 20
+xp_base = 9
+xp_per_age = 0.06
+detect_radius = 110.0
+attack_range = 26.0
+attack_cooldown = 1.0
+flee_hp_ratio = 0.0
+defense_reduction = 0.15
+knockback_resist = 0.2
+poise = 0.1
+splits_on_death = true

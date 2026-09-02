@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="SpeciesData" format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_rca8i"]
+
+[resource]
+script = ExtResource("1_rca8i")
+species_name = "龟王"
+tint = Color(0.75, 0.55, 0.25, 1)
+ai_archetype = "guardian"
+habitats = Array[String](["lava"])
+base_strength = 12.0
+base_agility = 1.0
+lifespan_min = 2400
+lifespan_max = 3600
+maturity_age = 200
+breeding_rate = 0.0
+expansion_threshold = 99
+migrate_count = 0
+corpse_duration = 120
+xp_base = 380
+xp_per_age = 0.0
+detect_radius = 320.0
+attack_range = 70.0
+attack_cooldown = 2.6
+flee_hp_ratio = 0.0
+defense_reduction = 0.5
+knockback_resist = 0.95
+poise = 1.0
+prey = Array[String](["兵蚁", "岩甲龟"])
+is_boss = true
+boss_respawn_ticks = 480
+element = "fire"

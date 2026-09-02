@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="SpeciesData" format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_hvab1"]
+
+[resource]
+script = ExtResource("1_hvab1")
+habitats = Array[String](["plains", "forest"])
+expansion_threshold = 8
+poise = 0.05

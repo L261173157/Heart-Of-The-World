@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="SpeciesData" format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_mrrl7"]
+
+[resource]
+script = ExtResource("1_mrrl7")
+species_name = "野猪"
+tint = Color(0.72, 0.45, 0.2, 1)
+ai_archetype = "charger"
+habitats = Array[String](["snow", "hill"])
+base_strength = 6.0
+base_agility = 6.0
+strength_growth = 0.08
+lifespan_min = 400
+lifespan_max = 700
+maturity_age = 60
+breeding_rate = 0.008
+expansion_threshold = 6
+migrate_count = 1
+xp_base = 16
+xp_per_age = 0.15
+detect_radius = 220.0
+attack_range = 40.0
+attack_cooldown = 2.0
+flee_hp_ratio = 0.0
+knockback_resist = 0.5
+poise = 0.5
+prey = Array[String](["史莱姆"])
+element = "ice"

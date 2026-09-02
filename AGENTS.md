@@ -45,6 +45,7 @@ scripts/
   monsters/    MonsterBase 状态机基类 + 六物种子类(goblin/slime/boar/spider/ant/guardian) + projectile + 血条
   ui/          HUD、虚拟摇杆、小地图
   main/        game_world：世界装配 + 模拟桥接 + 区域检测 + 飘血；tutorial：引导/生态事件播报
+data/species/  种族配置 .tres（数据驱动，唯一数据源；新增种族改这里不改代码）
 scenes/      main / player / monsters / ui（.tscn）
 tests/       sim_test.gd（生态单测）、combat_test.tscn（战斗自动化）、save_test.tscn（存档）
 assets/      creatures/（CC0 像素精灵）、terrain/（程序合成群系地表）、sfx/（Kenney CC0 音效），许可证随附
@@ -53,7 +54,7 @@ assets/      creatures/（CC0 像素精灵）、terrain/（程序合成群系地
 ## 世界与物种速查
 
 - 六张相连地图由 `scenes/main/main.tscn` 的 Marker2D 数据驱动：terrain（地形，决定物种栖息地）/ threat（威胁系数，强度与奖励倍率）/ capacity（区域总承载，种间竞争）/ neighbors（扩张邻接）
-- 六物种战斗×生态差异见 `scripts/ecology/species_catalog.gd` 头部注释；新增种族 = SpeciesCatalog 加配置 + MONSTER_SCENES 登记场景
+- 种族战斗×生态差异见 `data/species/*.tres`；新增种族 = 复制任一 .tres 改参数 + MONSTER_SCENES 登记表现场景 + INITIAL_POPULATION 撒初始种群（三步清单见 species_catalog.gd 头注）
 
 ## 架构铁律（违反=返工）
 

@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="SpeciesData" format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_u0al7"]
+
+[resource]
+script = ExtResource("1_u0al7")
+species_name = "雪蝎"
+tint = Color(0.75, 0.85, 0.95, 1)
+ai_archetype = "ranged"
+habitats = Array[String](["snow", "swamp"])
+base_strength = 3.0
+base_agility = 5.0
+base_intellect = 3.0
+intellect_growth = 0.03
+lifespan_min = 260
+lifespan_max = 520
+maturity_age = 45
+breeding_rate = 0.012
+expansion_threshold = 7
+xp_base = 12
+detect_radius = 260.0
+attack_range = 230.0
+attack_cooldown = 2.2
+flee_hp_ratio = 0.4
+poise = 0.1
+prey = Array[String](["史莱姆"])
+element = "ice"
