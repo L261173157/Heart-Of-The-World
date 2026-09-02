@@ -43,6 +43,14 @@ const BOLT_MULT := 1.6
 const HEAL_COST := 25.0
 const HEAL_COOLDOWN := 8.0
 const HEAL_MULT := 3.0
+## 武装强化：普攻增益状态（近战持续流构筑——贴身连击回血，
+## 与重击的瞬间爆发、法弹的远程风筝形成三种输出节奏的分野）
+const EMPOWER_COST := 30.0
+const EMPOWER_COOLDOWN := 15.0
+const EMPOWER_DURATION := 6.0
+const EMPOWER_MULT := 1.6
+## 每次普攻命中回复最大生命的比例（连击节奏越快收益越高）
+const EMPOWER_HEAL_FRAC := 0.03
 
 @onready var attack_hitbox: Area2D = $AttackHitbox
 @onready var attack_shape: CollisionShape2D = $AttackHitbox/CollisionShape2D
@@ -69,6 +77,9 @@ var _afterimage_accum := 0.0
 var _heavy_cd := 0.0
 var _bolt_cd := 0.0
 var _heal_cd := 0.0
+var _empower_cd := 0.0
+## 武装强化剩余持续时间（>0 = 强化状态中）
+var _empower_timer := 0.0
 var _dust_accum := 0.0
 var _combo := 0
 var _combo_timer := 0.0
@@ -101,6 +112,11 @@ func _physics_process(delta: float) -> void:
 	_heavy_cd = maxf(0.0, _heavy_cd - delta)
 	_bolt_cd = maxf(0.0, _bolt_cd - delta)
 	_heal_cd = maxf(0.0, _heal_cd - delta)
+	_empower_cd = maxf(0.0, _empower_cd - delta)
+	if _empower_timer > 0.0:
+		_empower_timer = maxf(0.0, _empower_timer - delta)
+		if _empower_timer <= 0.0:
+			visual.modulate = Color.WHITE  # 强化结束，收回金色光泽
 	_dash_buff_timer = maxf(0.0, _dash_buff_timer - delta)
 	_combo_timer = maxf(0.0, _combo_timer - delta)
 	_protect_timer = maxf(0.0, _protect_timer - delta)
@@ -170,6 +186,10 @@ func _physics_process(delta: float) -> void:
 	var pad_heal := TouchInput.consume_heal()
 	if key_heal or pad_heal:
 		_try_heal()
+	var key_empower := Input.is_action_just_pressed("empower")
+	var pad_empower := TouchInput.consume_empower()
+	if key_empower or pad_empower:
+		_try_empower()
 
 
 ## 冲刺：消耗 MP，朝当前朝向高速位移，期间无敌（躲冲锋/重击/弹幕）；
@@ -285,6 +305,21 @@ func _try_heal() -> void:
 	_play_ring(44.0, Color(0.5, 1.0, 0.55, 0.9))
 
 
+## 武装强化：消耗 MP 进入 6s 普攻增益（伤害 ×1.6 + 命中吸血）；
+## 持续期间金色光泽标识，与冷却共同约束不可连开
+func _try_empower() -> void:
+	if _empower_cd > 0.0 or _empower_timer > 0.0 \
+			or current_mp < EMPOWER_COST or _is_dead:
+		return
+	_empower_cd = EMPOWER_COOLDOWN * stats.cooldown_mult()
+	_empower_timer = EMPOWER_DURATION
+	current_mp -= EMPOWER_COST
+	EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
+	SfxManager.play("levelup")
+	visual.modulate = Color(1.0, 0.88, 0.55)
+	_play_ring(40.0, Color(1.0, 0.82, 0.35, 0.9))
+
+
 ## 通用冲击环：以自身为圆心扩散淡出（重击金环 / 治疗绿涟漪共用）
 func _play_ring(radius: float, color: Color) -> void:
 	var ring := Line2D.new()
@@ -321,7 +356,7 @@ func _process(delta: float) -> void:
 		EventBus.player_hp_changed.emit(current_hp, stats.max_hp())
 		EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
 		EventBus.player_skills_changed.emit(
-			_dash_cd, _heavy_cd, _bolt_cd, _heal_cd, current_mp, stats.max_mp())
+			_dash_cd, _heavy_cd, _bolt_cd, _heal_cd, _empower_cd, current_mp, stats.max_mp())
 
 
 func _try_attack() -> void:
@@ -369,11 +404,12 @@ func _aim_assist() -> Variant:
 	return (best.global_position - global_position).normalized()
 
 
-## 挥砍特效：朝攻击方向闪一道弧光，快速淡出（第三段更宽更亮）
+## 挥砍特效：朝攻击方向闪一道弧光，快速淡出（第三段更宽更亮；强化期间金色）
 func _play_slash(combo_step := 0) -> void:
 	slash.position = facing * 22.0
 	slash.rotation = facing.angle()
 	slash.visible = true
+	slash.modulate = Color(1.0, 0.82, 0.4) if _empower_timer > 0.0 else Color.WHITE
 	slash.modulate.a = 1.0 if combo_step == 2 else 0.9
 	if combo_step == 2:
 		slash.scale = Vector2(1.4, 1.4)
@@ -413,6 +449,9 @@ func _die() -> void:
 	_respawn_timer = RESPAWN_DELAY
 	visible = false
 	attack_shape.disabled = true
+	# 倒下即失去强化状态（金色光泽一并收回）
+	_empower_timer = 0.0
+	visual.modulate = Color.WHITE
 	# 死亡期间触屏按键的排队不应在复活后一次性兑现
 	TouchInput.clear_queues()
 	# 死亡代价：掉落两成金币（风险感 + 经济回收；赏金与商店让金币有真实价值）
@@ -451,12 +490,15 @@ func _on_attack_body_entered(body: Node) -> void:
 	if body in _hit_this_swing:
 		return
 	_hit_this_swing.append(body)
-	# 连击第三段重击（×1.5）+ 冲刺后增伤（×1.3）+ 装备元素克制（火克冰/冰克火 ×1.5）
+	# 连击第三段重击（×1.5）+ 冲刺后增伤（×1.3）+ 武装强化（×1.6）
+	# + 装备元素克制（火克冰/冰克火 ×1.5）
 	var mult := 1.0
 	if _combo == 2:
 		mult *= 1.5
 	if _dash_buff_timer > 0.0:
 		mult *= DASH_BUFF_MULT
+	if _empower_timer > 0.0:
+		mult *= EMPOWER_MULT
 	var monster := body as MonsterBase
 	var effective := false
 	if monster != null and monster.inst != null:
@@ -466,8 +508,10 @@ func _on_attack_body_entered(body: Node) -> void:
 		effective = em > 1.0
 	body.take_damage(CombatMath.physical_damage(stats.physical_attack() * mult),
 			global_position, _combo == 2, stats.knockback_mult(), effective)
-	# 噬血被动：命中吸血
+	# 噬血被动：命中吸血；武装强化期间额外回复最大生命 3%（连击越快续航越强）
 	var lifesteal := stats.lifesteal_per_hit()
+	if _empower_timer > 0.0:
+		lifesteal += stats.max_hp() * EMPOWER_HEAL_FRAC
 	if lifesteal > 0.0:
 		current_hp = minf(stats.max_hp(), current_hp + lifesteal)
 		EventBus.player_hp_changed.emit(current_hp, stats.max_hp())
@@ -483,4 +527,5 @@ func _push_hud() -> void:
 		GameState.stats.xp_to_next(), GameState.stats.pending_points
 	)
 	EventBus.gold_changed.emit(GameState.gold)
-	EventBus.player_skills_changed.emit(_dash_cd, _heavy_cd, _bolt_cd, _heal_cd, current_mp, stats.max_mp())
+	EventBus.player_skills_changed.emit(
+		_dash_cd, _heavy_cd, _bolt_cd, _heal_cd, _empower_cd, current_mp, stats.max_mp())

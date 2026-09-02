@@ -13,7 +13,7 @@ signal player_died
 signal player_respawned
 signal player_dashed
 ## 技能冷却状态（冲刺/重击/法弹/治疗 的剩余冷却 + 当前蓝量），HUD 技能条订阅
-signal player_skills_changed(dash_cd: float, heavy_cd: float, bolt_cd: float, heal_cd: float, mp: float, max_mp: float)
+signal player_skills_changed(dash_cd: float, heavy_cd: float, bolt_cd: float, heal_cd: float, empower_cd: float, mp: float, max_mp: float)
 ## 玩家跨区域（game_world 轮询所在区域后发出）
 signal player_entered_region(region_id: String, display_name: String)
 ## 高危区域预警（threat ≥ 2.2 时随进入区域发出，HUD 做红光脉冲）

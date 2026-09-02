@@ -13,6 +13,7 @@ var _dash_queued: bool = false
 var _heavy_queued: bool = false
 var _bolt_queued: bool = false
 var _heal_queued: bool = false
+var _empower_queued: bool = false
 
 
 ## 攻击按钮按下时调用
@@ -68,6 +69,18 @@ func queue_heal() -> void:
 func consume_heal() -> bool:
 	var pressed := _heal_queued
 	_heal_queued = false
+	_empower_queued = false
+	return pressed
+
+
+## 武装强化按钮（与攻击/冲刺同模式）
+func queue_empower() -> void:
+	_empower_queued = true
+
+
+func consume_empower() -> bool:
+	var pressed := _empower_queued
+	_empower_queued = false
 	return pressed
 
 
@@ -78,3 +91,4 @@ func clear_queues() -> void:
 	_heavy_queued = false
 	_bolt_queued = false
 	_heal_queued = false
+	_empower_queued = false

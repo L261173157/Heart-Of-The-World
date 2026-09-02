@@ -24,6 +24,7 @@ const COMBAT_TOAST_FADE := 0.3
 	{"panel": %SlotHeavy, "label": %SlotHeavy/VB/Cd, "mp": 22.0},
 	{"panel": %SlotBolt, "label": %SlotBolt/VB/Cd, "mp": 8.0},
 	{"panel": %SlotHeal, "label": %SlotHeal/VB/Cd, "mp": 25.0},
+	{"panel": %SlotEmpower, "label": %SlotEmpower/VB/Cd, "mp": 30.0},
 ]
 @onready var night_rect: ColorRect = %NightRect
 @onready var threat_rect: ColorRect = %ThreatRect
@@ -45,7 +46,7 @@ var _region_name := ""
 var _last_totals := {}
 var _last_species := {}
 ## 技能冷却显示：最近一次推送的剩余值 + 本地流逝（订阅后本地衰减，不轮询玩法系统）
-var _cd_values := [0.0, 0.0, 0.0, 0.0]
+var _cd_values := [0.0, 0.0, 0.0, 0.0, 0.0]
 var _cd_elapsed := 0.0
 ## 最近已知蓝量（技能槽"蓝不足"置灰用）
 var _mp_now := 0.0
@@ -73,6 +74,7 @@ func _ready() -> void:
 	%HeavyBtn.button_down.connect(TouchInput.queue_heavy)
 	%BoltBtn.button_down.connect(TouchInput.queue_bolt)
 	%HealBtn.button_down.connect(TouchInput.queue_heal)
+	%EmpowerBtn.button_down.connect(TouchInput.queue_empower)
 	%BtnEco.pressed.connect(func() -> void: ecology_panel.visible = not ecology_panel.visible)
 	%BtnShop.pressed.connect(_toggle_shop)
 	%BtnShopClose.pressed.connect(func() -> void: shop_panel.visible = false)
@@ -257,8 +259,8 @@ func _unhandled_input(event: InputEvent) -> void:
 # --- 技能冷却条 ---
 
 func _on_skills_changed(dash_cd: float, heavy_cd: float, bolt_cd: float, heal_cd: float,
-		mp: float, _max_mp: float) -> void:
-	_cd_values = [dash_cd, heavy_cd, bolt_cd, heal_cd]
+		empower_cd: float, mp: float, _max_mp: float) -> void:
+	_cd_values = [dash_cd, heavy_cd, bolt_cd, heal_cd, empower_cd]
 	_cd_elapsed = 0.0
 	_mp_now = mp
 	_refresh_skill_bar()

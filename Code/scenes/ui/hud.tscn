@@ -223,6 +223,19 @@ offset_bottom = -152.0
 theme_override_font_sizes/font_size = 18
 text = "治疗"
 
+[node name="EmpowerBtn" type="Button" parent="Root"]
+unique_name_in_owner = true
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -392.0
+offset_top = -306.0
+offset_right = -280.0
+offset_bottom = -226.0
+theme_override_font_sizes/font_size = 18
+text = "强化"
+
 [node name="BtnShop" type="Button" parent="Root"]
 unique_name_in_owner = true
 anchor_left = 1.0
@@ -306,10 +319,10 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -392.0
-offset_top = -326.0
+offset_left = -476.0
+offset_top = -356.0
 offset_right = -24.0
-offset_bottom = -286.0
+offset_bottom = -316.0
 theme_override_constants/separation = 8
 mouse_filter = 2
 
@@ -381,6 +394,24 @@ text = "治疗 H"
 horizontal_alignment = 1
 
 [node name="Cd" type="Label" parent="Root/SkillBar/SlotHeal/VB"]
+theme_override_font_sizes/font_size = 14
+text = "就绪"
+horizontal_alignment = 1
+
+[node name="SlotEmpower" type="PanelContainer" parent="Root/SkillBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(84, 40)
+mouse_filter = 2
+
+[node name="VB" type="VBoxContainer" parent="Root/SkillBar/SlotEmpower"]
+alignment = 1
+
+[node name="Key" type="Label" parent="Root/SkillBar/SlotEmpower/VB"]
+theme_override_font_sizes/font_size = 12
+text = "强化 U"
+horizontal_alignment = 1
+
+[node name="Cd" type="Label" parent="Root/SkillBar/SlotEmpower/VB"]
 theme_override_font_sizes/font_size = 14
 text = "就绪"
 horizontal_alignment = 1

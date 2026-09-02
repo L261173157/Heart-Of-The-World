@@ -23,7 +23,7 @@ GODOT="$HOME/Library/Application Support/Steam/steamapps/common/Godot Engine/God
 "$GODOT" --headless --path Code --quit     # 单帧加载主场景的冒烟测试
 "$GODOT" --headless --path Code -s tests/sim_test.gd          # 生态不变量单测（纯逻辑，20 项）
 "$GODOT" --headless --path Code -s tests/balance_test.gd      # 数值平衡校验（12 区域×物种手感区间）
-"$GODOT" --headless --path Code res://tests/combat_test.tscn --quit-after 100000   # 战斗闭环+冲刺/重击/法弹/赏金验证（约 10s 自行退出）
+"$GODOT" --headless --path Code res://tests/combat_test.tscn --quit-after 100000   # 战斗闭环+五技能/连击/赏金验证（约 10s 自行退出）
 "$GODOT" --headless --path Code res://tests/save_test.tscn --quit-after 5000       # 存档读写/坏档防御/商店购买
 "$GODOT" --headless --path Code res://tests/pacing_test.tscn --quit-after 100000   # 节奏浸泡：拟人机器人 10 游戏分钟（首升/Lv3/金币/压力/生态六项区间，约 2.5 分钟真实时间）
 "$GODOT" --headless --path Code -s tools/generate_terrain.gd                      # 重新生成 6 张群系地表 PNG（确定性 seed，约 30s）

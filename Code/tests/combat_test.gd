@@ -38,6 +38,17 @@ var _heal_fails := 0
 var _combo_verified := false
 var _combo_fails := 0
 var _saw_bounty := false
+## 武装强化验证：三段异步（未强化一刀 → 激活 → 强化一刀，对比伤害 + 吸血）
+var _empower_verified := false
+var _empower_fails := 0
+var _empower_phase := 0
+var _empower_target: MonsterBase
+var _empower_hp_before := 0.0
+var _empower_base_dmg := 0.0
+var _empower_check_timer := -1.0
+## 吸血校验期间冻结测试自身的回血（否则每帧回满会掩盖 3% 吸血）
+var _empower_hold_hp := false
+var _strength_backup := 50
 
 
 ## 冲刺技能验证：MP 消耗 + 位移窗口 + 无敌帧 + 冷却拦截
@@ -186,6 +197,121 @@ func _verify_combo() -> void:
 		print("  PASS  三段连击循环与朝向吸附")
 
 
+## 武装强化验证（异步三段）：先打一刀未强化基准，再激活后对同一目标打一刀，
+## 断言伤害提升（×1.6 对 ±10% 浮动取 1.2 倍余量）且命中吸血。
+## 力量临时降到 5 防止一刀秒杀靶怪，验证完恢复。
+func _verify_empower() -> void:
+	_strength_backup = GameState.stats.strength
+	GameState.stats.strength = 5
+	# 选最肉的活体当靶（力量 5 下脆皮两刀就死，会让对刀比较失效）
+	var target: MonsterBase = null
+	for body in get_tree().get_nodes_in_group("monsters"):
+		var m := body as MonsterBase
+		if m == null or m.inst == null or m.state == MonsterBase.S_CORPSE:
+			continue
+		if target == null or m.current_hp > target.current_hp:
+			target = m
+	if target == null:
+		_empower_fails += 1
+		print("  FAIL  场上无活体可验证武装强化")
+		_empower_verified = true
+		return
+	_empower_target = target
+	_player._combo = 0
+	_player._attack_cooldown = 0.0
+	var dir := (target.global_position - _player.global_position).normalized()
+	if dir == Vector2.ZERO:
+		dir = Vector2.RIGHT
+	_player.global_position = target.global_position - dir * 20.0
+	_player.facing = dir
+	_empower_hp_before = target.current_hp
+	_player._try_attack()
+	_empower_phase = 1
+	_empower_check_timer = 0.0
+	# 异步结果走 _empower_check；这里立即置位防止 _step 重复发起
+	_empower_verified = true
+
+
+## 武装强化异步推进：0.35s 后检查未强化伤害 → 激活技能再打一刀 → 再查增伤与吸血
+func _empower_check(delta: float) -> void:
+	_empower_check_timer += delta
+	if _empower_check_timer < 0.35:
+		return
+	_empower_check_timer = 0.0
+	var target := _empower_target
+	if target == null or not is_instance_valid(target) or target.state == MonsterBase.S_CORPSE:
+		_empower_fails += 1
+		print("  FAIL  武装强化靶怪中途失效")
+		_empower_reset()
+		return
+	match _empower_phase:
+		1:
+			_empower_base_dmg = _empower_hp_before - target.current_hp
+			if _empower_base_dmg <= 0.0:
+				_empower_fails += 1
+				print("  FAIL  武装强化基准刀未命中（伤害为 0）")
+				_empower_reset()
+				return
+			# 激活技能：MP 消耗 + 持续窗口 + 冷却 + 持续期间拦截重复激活
+			_player.current_mp = _player.stats.max_mp()
+			var mp_before: float = _player.current_mp
+			_player._try_empower()
+			if not (_player.current_mp < mp_before):
+				_empower_fails += 1
+				print("  FAIL  武装强化未消耗 MP")
+			if not (_player._empower_timer > 0.0):
+				_empower_fails += 1
+				print("  FAIL  武装强化未进入持续状态")
+			if not (_player._empower_cd > 0.0):
+				_empower_fails += 1
+				print("  FAIL  武装强化未进入冷却")
+			var mp_second: float = _player.current_mp
+			_player._try_empower()
+			if _player.current_mp < mp_second:
+				_empower_fails += 1
+				print("  FAIL  持续期间未拦截重复激活")
+			# 强化刀：压低血线冻结测试回血，验证 3% 吸血
+			_empower_hold_hp = true
+			_player.current_hp = _player.stats.max_hp() * 0.5
+			_player._combo = 0
+			_player._attack_cooldown = 0.0
+			var dir := (target.global_position - _player.global_position).normalized()
+			if dir == Vector2.ZERO:
+				dir = Vector2.RIGHT
+			_player.global_position = target.global_position - dir * 20.0
+			_player.facing = dir
+			_empower_hp_before = target.current_hp
+			_player._try_attack()
+			_empower_phase = 2
+		2:
+			var boosted: float = _empower_hp_before - target.current_hp
+			if boosted > _empower_base_dmg * 1.2:
+				print("  PASS  武装强化增伤生效（%.1f → %.1f）" % [_empower_base_dmg, boosted])
+			else:
+				_empower_fails += 1
+				print("  FAIL  武装强化增伤不足（%.1f → %.1f）" % [_empower_base_dmg, boosted])
+			# 0.515 阈值：3% 吸血应抬到 ~53%，而 0.35s 自然回血最多 ~0.5%
+			if _player.current_hp >= _player.stats.max_hp() * 0.515:
+				print("  PASS  武装强化命中吸血生效（血量 %.1f%%）" % (
+					_player.current_hp / _player.stats.max_hp() * 100.0))
+			else:
+				_empower_fails += 1
+				print("  FAIL  武装强化命中未吸血（血量 %.1f%%）" % (
+					_player.current_hp / _player.stats.max_hp() * 100.0))
+			_empower_reset()
+
+
+func _empower_reset() -> void:
+	GameState.stats.strength = _strength_backup
+	_empower_hold_hp = false
+	_empower_target = null
+	_empower_phase = 0
+	_empower_check_timer = -1.0
+	_empower_verified = true
+	if _empower_fails == 0:
+		print("  PASS  武装强化技能（MP/冷却/持续拦截/增伤/吸血）")
+
+
 func _find_alive_any() -> MonsterBase:
 	for body in get_tree().get_nodes_in_group("monsters"):
 		var monster := body as MonsterBase
@@ -224,6 +350,9 @@ func _process(delta: float) -> void:
 			hud._pick_passive(0)
 		return
 	_elapsed += delta
+	# 武装强化三段异步校验（与法弹命中校验同模式）
+	if _empower_check_timer >= 0.0:
+		_empower_check(delta)
 	# 法弹命中异步校验：贴脸发射几乎瞬间命中，0.35s 余量足够
 	if _bolt_check_timer >= 0.0:
 		_bolt_check_timer += delta
@@ -238,8 +367,10 @@ func _process(delta: float) -> void:
 			_bolt_check_timer = -1.0
 			_bolt_target = null
 	# 记录承伤后立刻回满：验证战斗闭环但不让死亡干扰流程
+	# （武装强化吸血校验期间冻结回满，否则会掩盖 3% 吸血）
 	_min_hp_ratio = minf(_min_hp_ratio, _player.current_hp / _player.stats.max_hp())
-	_player.current_hp = _player.stats.max_hp()
+	if not _empower_hold_hp:
+		_player.current_hp = _player.stats.max_hp()
 	_scan_special_states()
 	_timer -= delta
 	if _timer <= 0.0:
@@ -267,6 +398,9 @@ func _step() -> void:
 	if not _combo_verified:
 		_verify_combo()
 		_combo_verified = true
+		return
+	if not _empower_verified:
+		_verify_empower()
 		return
 	var species_name: String = TARGET_ORDER[_queue_index]
 	var target := _find_alive(species_name)
@@ -373,6 +507,7 @@ func _finish() -> void:
 	_check(_heavy_fails == 0, "重击技能行为正确")
 	_check(_bolt_fails == 0, "法弹技能行为正确")
 	_check(_heal_fails == 0, "治疗技能行为正确")
+	_check(_empower_fails == 0, "武装强化技能行为正确")
 	_check(_combo_fails == 0, "三段连击与朝向吸附行为正确")
 	_check(_saw_bounty, "赏金任务已生成")
 	_check(_saw_projectile, "雪蝎弹幕出现过")
