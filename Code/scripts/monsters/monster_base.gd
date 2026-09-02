@@ -380,11 +380,15 @@ func _die_by_player() -> void:
 	elif randf() < 0.08:
 		drop_rarity = 1
 	if drop_rarity >= 0:
-		var item := GameState.roll_equipment(drop_rarity)
+		# 槽位随机（武器/头盔/衣服/鞋子），各槽独立比较评分
+		var slots: Array = GameState.EQUIP_SLOTS
+		var slot: String = slots[randi() % slots.size()]
+		var item := GameState.roll_equipment(drop_rarity, slot)
 		if GameState.try_equip(item):
-			EventBus.hint_requested.emit("✨ 装备 %s" % GameState.equip_description(item))
+			EventBus.hint_requested.emit("✨ 装备 %s（%s）" % [
+				GameState.equip_description(item), GameState.SLOT_NAMES[slot]])
 		else:
-			EventBus.hint_requested.emit("获得 %s（不如当前，折算 30 金币）" % GameState.equip_description(item))
+			EventBus.hint_requested.emit("获得 %s（不如当前，折算金币）" % GameState.equip_description(item))
 	# 打击感：击杀轻震，精英击杀重震 + 短顿帧（大怪倒下的"重量"）；Boss 战绩播报
 	if inst.species.is_boss:
 		EventBus.camera_shake_requested.emit(9.0)

@@ -92,50 +92,75 @@ func add_gold(amount: int) -> void:
 	_queue_save()
 
 
-# --- 游商营地（金币 → 永久强化的消费出口） ---
+# --- 游商营地（金币 → 永久强化的消费出口） + 装备掉落 ---
 
 ## 装备：稀有度名（0~3）
 const RARITY_NAMES := ["普通", "精良", "稀有", "史诗"]
+## 四槽位（策划纲要：头盔/衣服/鞋子 + 武器），各自独立单件替换
+const EQUIP_SLOTS := ["weapon", "helmet", "armor", "boots"]
+const SLOT_NAMES := {"weapon": "武器", "helmet": "头盔", "armor": "衣服", "boots": "鞋子"}
 const EQUIP_PREFIX := ["猎手", "龙鳞", "霜刃", "灰烬", "蚁噬", "龟甲", "夜枭", "荒野"]
-const EQUIP_SUFFIX := ["之刃", "之核", "鳞甲", "獠牙", "护符"]
-## 词条池：id -> [最小值, 最大值]（比例）；稀有度线性放大
+const EQUIP_SUFFIX := {"weapon": ["之刃", "之核", "獠牙"], "helmet": ["战冠", "面甲", "兜帽"],
+	"armor": ["鳞甲", "护胸", "皮衣"], "boots": ["之履", "胫甲", "便鞋"]}
+## 按部位的词条池：id -> [最小值, 最大值]（比例）；稀有度线性放大。
+## 武器偏输出 / 头盔偏效用 / 衣服偏生存 / 鞋子保底移速（策划：鞋子=移速+1条随机）
 const EQUIP_AFFIXES := {
-	"atk": [0.05, 0.18], "hp": [0.05, 0.20], "cdr": [0.03, 0.10],
-	"lifesteal": [0.02, 0.06], "move": [0.04, 0.12],
-	"gold": [0.05, 0.15], "xp": [0.04, 0.12],
+	"weapon": {"atk": [0.05, 0.18], "cdr": [0.03, 0.10], "lifesteal": [0.02, 0.06],
+		"xp": [0.04, 0.12], "gold": [0.05, 0.15]},
+	"helmet": {"hp": [0.05, 0.20], "xp": [0.04, 0.12], "gold": [0.05, 0.15],
+		"cdr": [0.03, 0.10]},
+	"armor": {"hp": [0.05, 0.20], "lifesteal": [0.02, 0.06], "atk": [0.03, 0.10]},
+	"boots": {"move": [0.04, 0.12], "hp": [0.03, 0.10], "gold": [0.04, 0.10]},
 }
 
 
-## 随机生成一件装备（rarity 0~3）：2 条不重复词条 + 稀有度以上 35% 带元素
-func roll_equipment(rarity: int) -> Dictionary:
+## 随机生成一件指定槽位的装备（rarity 0~3）：2 条不重复词条（鞋子 = 移速 + 1 条随机）；
+## 元素附魔只在武器槽且稀有度以上 35% 出
+func roll_equipment(rarity: int, slot := "weapon") -> Dictionary:
 	rarity = clampi(rarity, 0, 3)
+	slot = slot if slot in EQUIP_SLOTS else "weapon"
 	var affixes := {}
-	var pool: Array = EQUIP_AFFIXES.keys()
+	var pool: Array = EQUIP_AFFIXES[slot].keys()
 	pool.shuffle()
-	for i in mini(2, pool.size()):
+	if slot == "boots":
+		affixes["move"] = _roll_affix(slot, "move", rarity)
+		pool.erase("move")
+	# 词条数：常规 2 条；鞋子为 移速 + 1 条随机（合计 2）
+	var count := mini(1 if slot == "boots" else 2, pool.size())
+	for i in count:
 		var id: String = pool[i]
-		var rangev: Array = EQUIP_AFFIXES[id]
-		var t := (0.5 + 0.5 * rarity / 3.0)  # 稀有度抬升词条区间
-		affixes[id] = lerpf(float(rangev[0]), float(rangev[1]), t * randf())
+		affixes[id] = _roll_affix(slot, id, rarity)
+	var suffixes: Array = EQUIP_SUFFIX[slot]
 	var item := {
+		"slot": slot,
 		"name": "%s%s" % [EQUIP_PREFIX[randi() % EQUIP_PREFIX.size()],
-			EQUIP_SUFFIX[randi() % EQUIP_SUFFIX.size()]],
+			suffixes[randi() % suffixes.size()]],
 		"rarity": rarity,
 		"affixes": affixes,
 	}
-	if rarity >= 2 and randf() < 0.35:
+	if slot == "weapon" and rarity >= 2 and randf() < 0.35:
 		item["element"] = "fire" if randf() < 0.5 else "ice"
 	return item
 
 
-## 掉落结算：评分更高则替换当前装备返回 true；否则折 30 金返回 false
+func _roll_affix(slot: String, id: String, rarity: int) -> float:
+	var rangev: Array = EQUIP_AFFIXES[slot][id]
+	var t := (0.5 + 0.5 * rarity / 3.0)  # 稀有度抬升词条区间
+	return lerpf(float(rangev[0]), float(rangev[1]), t * randf())
+
+
+## 掉落结算：按物品槽位比较评分，更高则替换该槽返回 true；否则按稀有度折金返回 false
 func try_equip(item: Dictionary) -> bool:
-	if stats.equip_score(item) > stats.equip_score(stats.equip):
-		stats.equip = item
+	var slot := str(item.get("slot", "weapon"))
+	if not slot in EQUIP_SLOTS:
+		slot = "weapon"
+	var current: Dictionary = stats.equips.get(slot, {})
+	if stats.equip_score(item) > stats.equip_score(current):
+		stats.equips[slot] = item
 		stats.changed.emit()
 		_queue_save()
 		return true
-	add_gold(30)
+	add_gold(20 + int(item.get("rarity", 0)) * 10)
 	return false
 
 
@@ -243,7 +268,7 @@ func _save_now() -> void:
 			"vigor": stats.upgrade_vigor,
 		},
 		"passives": stats.passives,
-		"equip": stats.equip,
+		"equips": stats.equips,
 		"codex": codex,
 		"achievements": achievements,
 		"settings": settings,
@@ -290,9 +315,18 @@ func _load() -> void:
 	var saved_passives: Variant = data.get("passives", {})
 	if typeof(saved_passives) == TYPE_DICTIONARY:
 		stats.passives = saved_passives
-	var saved_equip: Variant = data.get("equip", {})
-	if typeof(saved_equip) == TYPE_DICTIONARY:
-		stats.equip = saved_equip
+	var saved_equips: Variant = data.get("equips", {})
+	if typeof(saved_equips) == TYPE_DICTIONARY:
+		# 只收合法槽位，旧档遗留字段不带入
+		for slot in EQUIP_SLOTS:
+			var item: Variant = saved_equips.get(slot, null)
+			if typeof(item) == TYPE_DICTIONARY:
+				stats.equips[slot] = item
+	# 旧档迁移：单件装备时代（"equip" 键）整体视作武器槽
+	var legacy_equip: Variant = data.get("equip", null)
+	if typeof(legacy_equip) == TYPE_DICTIONARY and not legacy_equip.is_empty() \
+			and not stats.equips.has("weapon"):
+		stats.equips["weapon"] = legacy_equip
 	var saved_achv: Variant = data.get("achievements", {})
 	if typeof(saved_achv) == TYPE_DICTIONARY:
 		achievements = saved_achv

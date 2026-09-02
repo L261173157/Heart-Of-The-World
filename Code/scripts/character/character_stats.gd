@@ -60,17 +60,22 @@ func passive_mult(id: String, per_level: float) -> float:
 	return pow(per_level, passive_level(id))
 
 
-## --- 装备（单件替换制：掉落评分高才替换，否则折算金币） ---
-## {"name", "rarity"(0~3), "element"("" / "fire" / "ice"), "affixes": {词条id: 比例值}}
-var equip: Dictionary = {}
+## --- 装备（四槽位：武器/头盔/衣服/鞋子，各自单件替换制） ---
+## equips: {槽位id: {"name", "rarity"(0~3), "element"(仅武器), "affixes": {词条id: 比例值}}}
+var equips: Dictionary = {}
 
 
+## 词条值 = 全槽位求和（掉落比较与衍生属性都从这取）
 func equip_affix(id: String) -> float:
-	return float(equip.get("affixes", {}).get(id, 0.0))
+	var total := 0.0
+	for slot in equips:
+		total += float(equips[slot].get("affixes", {}).get(id, 0.0))
+	return total
 
 
+## 元素附魔只有武器槽会出（战斗侧消费单一来源）
 func equip_element() -> String:
-	return str(equip.get("element", ""))
+	return str(equips.get("weapon", {}).get("element", ""))
 
 
 ## 装备评分：各词条值直接求和（同量纲近似，用于掉落比较）

@@ -340,10 +340,15 @@ func _refresh_codex() -> void:
 			lines.append("✓ %s  累计猎杀 %d" % [species_name, kills])
 		else:
 			lines.append("？ 未曾猎杀")
-	if GameState.stats.equip.is_empty():
+	if GameState.stats.equips.is_empty():
 		lines.append("— 未装备（猎杀精英/Boss 有几率掉落）")
 	else:
-		lines.append("— 当前装备：%s" % GameState.equip_description(GameState.stats.equip))
+		for slot in GameState.EQUIP_SLOTS:
+			var item: Dictionary = GameState.stats.equips.get(slot, {})
+			if item.is_empty():
+				lines.append("— %s：空" % GameState.SLOT_NAMES[slot])
+			else:
+				lines.append("— %s：%s" % [GameState.SLOT_NAMES[slot], GameState.equip_description(item)])
 	codex_content.text = "\n".join(lines)
 	var ach_lines: Array[String] = []
 	for id in AchievementManager.ACHIEVEMENTS:

@@ -99,24 +99,48 @@ func _test_progress_meta() -> void:
 	var hp_before: float = GameState.stats.max_hp()
 	GameState.stats.add_passive("hp")
 	_check(GameState.stats.max_hp() > hp_before, "被动等级即时影响衍生属性")
-	# 装备：生成/评分替换/词条生效/存档往返
-	GameState.stats.equip = {}
-	var weak := {"name": "旧刀", "rarity": 0, "affixes": {"atk": 0.05}}
-	var strong := {"name": "新刃", "rarity": 3, "affixes": {"atk": 0.20, "hp": 0.10}, "element": "fire"}
+	# 装备：四槽位生成/评分替换/词条求和/鞋子保底移速/存档往返/旧档迁移
+	GameState.stats.equips = {}
+	var weak := {"slot": "weapon", "name": "旧刀", "rarity": 0, "affixes": {"atk": 0.05}}
+	var strong := {"slot": "weapon", "name": "新刃", "rarity": 3,
+		"affixes": {"atk": 0.20, "hp": 0.10}, "element": "fire"}
+	var boots := {"slot": "boots", "name": "快靴", "rarity": 1, "affixes": {"move": 0.10}}
 	_check(GameState.try_equip(weak), "空位装备任何掉落")
-	_check(GameState.stats.equip["name"] == "旧刀", "装备写入")
-	_check(GameState.try_equip(strong), "更高评分装备替换")
-	_check(GameState.stats.equip_element() == "fire", "装备元素读取")
+	_check(GameState.stats.equips["weapon"]["name"] == "旧刀", "装备写入武器槽")
+	_check(GameState.try_equip(strong), "同槽更高评分替换")
+	_check(GameState.stats.equip_element() == "fire", "武器元素读取")
+	_check(GameState.try_equip(boots), "异槽掉落不与武器槽比较（鞋子独立入槽）")
+	_check(GameState.stats.equip_affix("atk") > 0.19 and GameState.stats.equip_affix("move") > 0.09,
+		"多槽词条求和生效（atk=%.2f move=%.2f）" % [GameState.stats.equip_affix("atk"), GameState.stats.equip_affix("move")])
 	var atk_before: float = GameState.stats.physical_attack()
-	GameState.stats.equip = {"name": "测试", "rarity": 1, "affixes": {"atk": 0.30}}
+	GameState.stats.equips["weapon"] = {"slot": "weapon", "name": "测试", "rarity": 1, "affixes": {"atk": 0.30}}
 	_check(GameState.stats.physical_attack() > atk_before, "装备攻击词条生效")
 	GameState._save_now()
-	GameState.stats.equip = {}
+	GameState.stats.equips = {}
 	GameState._load()
-	_check(GameState.stats.equip.get("name", "") == "测试", "读档恢复装备")
-	var rolled := GameState.roll_equipment(2)
-	_check(rolled.has("name") and rolled["affixes"].size() == 2
-			and int(rolled["rarity"]) == 2, "装备生成（稀有度/2 词条）：%s" % str(rolled))
+	_check(GameState.stats.equips.get("weapon", {}).get("name", "") == "测试"
+			and GameState.stats.equips.get("boots", {}).get("name", "") == "快靴", "读档恢复四槽装备")
+	for slot in ["weapon", "helmet", "armor", "boots"]:
+		var rolled: Dictionary = GameState.roll_equipment(2, slot)
+		var has_move: bool = rolled["affixes"].has("move")
+		var ok: bool = rolled.has("name") and rolled["affixes"].size() == 2 and int(rolled["rarity"]) == 2
+		if slot == "boots":
+			ok = ok and has_move  # 鞋子保底移速词条
+		if slot != "weapon":
+			ok = ok and not rolled.has("element")  # 元素附魔只在武器槽
+		_check(ok, "按部位生成装备（%s）：%s" % [slot, str(rolled)])
+	# 旧档迁移：单件时代的 "equip" 键应落到武器槽
+	GameState.stats.equips = {}
+	var legacy := FileAccess.open(GameState.SAVE_PATH, FileAccess.READ)
+	var data: Dictionary = JSON.parse_string(legacy.get_as_text())
+	legacy.close()
+	data.erase("equips")
+	data["equip"] = {"name": "古剑", "rarity": 2, "affixes": {"atk": 0.15}}
+	var rewrite := FileAccess.open(GameState.SAVE_PATH, FileAccess.WRITE)
+	rewrite.store_string(JSON.stringify(data))
+	rewrite.close()
+	GameState._load()
+	_check(GameState.stats.equips.get("weapon", {}).get("name", "") == "古剑", "旧档单件装备迁移到武器槽")
 
 
 func _test_corrupted_file() -> void:
