@@ -3,8 +3,9 @@
 ## 运行："$GODOT" --headless --path Code res://tests/pacing_test.tscn --quit-after 100000
 ## 加速：Engine.time_scale = 4（时间均匀缩放，战斗结果与真实速度等价，按游戏秒计）。
 ## 好玩节奏闸门（不达标 = fail，用于数值调优的回归闸门）：
-##   首升 ≤120s；Lv3 ≤420s；10 分钟金币可支撑 ≥2 次商店强化；击杀 ≥25；最低血线 <50%；生态存活 >10。
-##   （死亡数为观察项不入闸：机器人从不闪避/撤退，10 分钟死 9~19 次，人类玩家用冲刺无敌帧会低得多）
+##   首升 ≤120s；Lv3 ≤420s；10 分钟金币可支撑 ≥2 次商店强化；击杀 ≥25；最低血线 <50%；
+##   生态未崩盘（近 60 tick 存活均值 >10，2026-09-03 加固抗瞬时波动）。
+##   （死亡数为观察项不入闸：机器人从不闪避/撤退，10 分钟死 6~19 次，人类玩家用冲刺无敌帧会低得多）
 ## 升级三选一会暂停世界，机器人每帧代选第一张赐福后继续。
 extends Node2D
 
@@ -35,6 +36,9 @@ var _threshold_index := 0
 var _last_level := 1
 var _dead_until := -1.0         # 死亡挫败停顿（拟人化：真人死后会缓一缓）
 var _min_hp_ratio := 1.0        # 承压度量（贴脸机器人不会死，血线才是真实压力）
+## 生态存活滚动窗（最近 60 tick ≈ 1 游戏分钟）：瞬时值在高猎杀局会被
+## 捕食/围剿打到个位数又快速回补，均值才反映"是否真崩盘"（2026-09-03 数值统一设计加固）
+var _alive_window: Array[int] = []
 ## 无目标时巡游的区域锚点（拟人探索：真人清完一片自然会走出去）
 var _patrol_points: Array[Vector2] = []
 var _patrol_index := 0
@@ -68,6 +72,10 @@ func _ready() -> void:
 	GameState.stats.leveled_up.connect(_on_level_up)
 	EventBus.monster_killed_by_player.connect(_on_kill)
 	EventBus.player_died.connect(func() -> void: _deaths += 1)
+	EventBus.sim_tick_completed.connect(func(summary: Dictionary) -> void:
+		_alive_window.append(int(summary.get("total_alive", 0)))
+		if _alive_window.size() > 60:
+			_alive_window.remove_at(0))
 
 
 func _process(delta: float) -> void:
@@ -194,8 +202,16 @@ func _finish() -> void:
 		"Lv3 ≤420s（%s）" % str(_level_marks.get(3, "未达到")))
 	_check(purchases >= 2, "金币支撑 ≥2 次商店强化（%d 次）" % purchases)
 	_check(_min_hp_ratio < 0.5, "战斗有压力（最低血线 %.0f%% < 50%%）" % (_min_hp_ratio * 100.0))
-	_check(WorldSim.sim != null and WorldSim.sim._build_summary()["total_alive"] > 10,
-		"生态未崩盘（存活 >10）")
+	# 生态闸门：最近 60 tick 存活均值 >10（瞬时值在 240+ 击杀局会被打到个位数
+	# 又随即回补——总量出生上限 94/分 vs 猎杀 24/分，均值才能区分"波动"与"崩盘"）
+	var alive_avg := 0.0
+	for v in _alive_window:
+		alive_avg += v
+	if not _alive_window.is_empty():
+		alive_avg /= _alive_window.size()
+	var alive_final: int = WorldSim.sim._build_summary()["total_alive"] if WorldSim.sim != null else 0
+	_check(alive_avg > 10.0,
+		"生态未崩盘（近 60 tick 存活均值 %.1f >10，终点 %d）" % [alive_avg, alive_final])
 
 	if _fails == 0:
 		print("=== 节奏验证全部通过 ===")

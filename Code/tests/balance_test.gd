@@ -2,7 +2,8 @@
 ## 运行："$GODOT" --headless --path Code -s tests/balance_test.gd
 ## 校验：每个区域按"预期玩家等级"推算强度带——
 ##   击杀该区怪物需要 1~8 刀；被单体打死至少要挨 4 刀，群体(3只)至少 2 刀。
-## 数值改动只动 SpeciesData/SpeciesCatalog，本测试守住手感区间。
+## 数值改动只动 SpeciesData(.tres)/CharacterStats/MonsterInstance——玩家与怪物
+## 公式都取真源计算，改公式自动进闸。
 extends SceneTree
 
 ## 各区域预期玩家等级（威胁系数的玩家侧映射）
@@ -42,12 +43,16 @@ func _init() -> void:
 
 
 func _player_stats(level: int) -> Dictionary:
-	# 简化假设：全部点数投力量（输出向）；等级 L 力量 = 5 + (L-1)
-	var strength := 5 + (level - 1)
+	# 玩家侧数值直接取 CharacterStats 真源（2026-09-03 数值统一设计：
+	# 消灭手抄公式，角色公式改动自动进闸）。假设：全点力量、裸装、无被动；
+	# 面板攻击取无浮动基值（对刀不含 ±10% 随机）
+	var s := CharacterStats.new()
+	s.level = level
+	s.strength = 5 + (level - 1)
 	return {
-		"attack": 10.0 + strength * 2.5,
-		"max_hp": 100.0 + strength * 12.0,
-		"interval": clampf(0.9 - 5 * 0.01, 0.35, 0.9),
+		"attack": s.physical_attack(),
+		"max_hp": s.max_hp(),
+		"interval": s.attack_interval(),
 	}
 
 

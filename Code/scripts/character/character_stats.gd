@@ -145,7 +145,9 @@ func max_mp() -> float:
 
 
 func mp_regen_per_sec() -> float:
-	return (1.0 + intellect * 0.1) * passive_mult("mp_regen", 1.25)
+	# 0.14/点（2026-09-03 数值统一设计）：智力可支撑 ~0.4 发/s 法弹持续输出，
+	# 同时全构筑技能手感 +27%（MP 是冲刺/重击/法弹/治疗/强化的共享资源）
+	return (1.2 + intellect * 0.14) * passive_mult("mp_regen", 1.25)
 
 
 func physical_attack() -> float:

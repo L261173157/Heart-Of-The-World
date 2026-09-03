@@ -35,10 +35,12 @@ const HEAVY_COST := 22.0
 const HEAVY_COOLDOWN := 4.0
 const HEAVY_RADIUS := 80.0
 const HEAVY_MULT := 2.4
-## 法弹：智力系远程（与雪蝎对射 / 风筝走位的构筑选择）
+## 法弹：智力系远程（与雪蝎对射 / 风筝走位的构筑选择）。
+## 倍率 2.0（2026-09-03 数值统一设计）：智力构筑 = 大 MP 池短窗爆发（~19s 倾泻）
+## + 射程安全 + 强治疗，持续期回落到近战五成——定位爆发法术而非站桩替代
 const BOLT_COST := 8.0
 const BOLT_COOLDOWN := 0.8
-const BOLT_MULT := 1.6
+const BOLT_MULT := 2.0
 ## 治疗：MP→HP 的资源博弈（MP 同时供冲刺/重击/法弹/治疗，取舍即深度）
 const HEAL_COST := 25.0
 const HEAL_COOLDOWN := 8.0

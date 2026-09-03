@@ -27,6 +27,7 @@ GODOT="$HOME/Library/Application Support/Steam/steamapps/common/Godot Engine/God
 "$GODOT" --headless --path Code res://tests/save_test.tscn --quit-after 5000       # 存档读写/坏档防御/商店购买
 "$GODOT" --headless --path Code res://tests/pacing_test.tscn --quit-after 100000   # 节奏浸泡：拟人机器人 10 游戏分钟（首升/Lv3/金币/压力/生态六项区间，约 2.5 分钟真实时间）
 "$GODOT" --headless --path Code -s tools/generate_terrain.gd                      # 重新生成 6 张群系地表 PNG（确定性 seed，约 30s）
+"$GODOT" --headless --path Code -s tools/numbers_audit.gd                        # 数值全盘量化审计（构筑/对刀/经济/生态/寿命基线表）
 "$GODOT" --path Code --resolution 1280x720 res://tests/screenshot.tscn            # 视觉截图（图形模式 3s 截屏到 /tmp/hotw_shot.png）
 ```
 主场景已切换为 scenes/ui/main_menu.tscn（开始/设置/重置世界）；测试直接加载 main.tscn/combat_test.tscn 不受影响。
