@@ -1195,6 +1195,8 @@ func _verify_v5_interactions() -> void:
 			return  # NPC 节点未及生成（标记 pass 下一帧补），下轮重试
 		var gold_before := GameState.gold
 		npc.interact()
+		# 美术 v5 对话化：interact 只开气泡（offer），再按一次确认才接单
+		EventBus.dialogue_action.emit("confirm")
 		if GameState.quests["active"].is_empty():
 			_check(false, "任务接取（NPC 反馈见 hint 通道）")
 			_v5_phase = 6

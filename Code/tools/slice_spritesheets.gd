@@ -34,6 +34,24 @@ const CREATURES := {
 		"sheet": "na_ninja_white.png", "col": 3, "flop": false,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3], "attack": [4], "die": [6]},
 	},
+	# --- 地标 NPC（美术 v5 M-B）：NA characters 表，与英雄同布局（64×112，col3=朝右） ---
+	"npc_hunter": {
+		"sheet": "res://assets/na/characters/8.png", "col": 3, "flop": false,
+		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
+	},
+	"npc_scholar": {
+		"sheet": "res://assets/na/characters/4.png", "col": 3, "flop": false,
+		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
+	},
+	"npc_keeper": {
+		"sheet": "res://assets/na/characters/7.png", "col": 3, "flop": false,
+		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
+	},
+	## 营地行商（出生营地商店 NPC）
+	"npc_merchant": {
+		"sheet": "res://assets/na/characters/6.png", "col": 3, "flop": false,
+		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
+	},
 	## 打击特效（Ninja Adventure fx 表：16px 单行条带）
 	"fx_slash": {
 		"sheet": "res://assets/na/fx/2.png", "strip": true,

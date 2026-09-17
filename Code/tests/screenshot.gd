@@ -96,7 +96,20 @@ func _ready() -> void:
 		WorldSim.resume_clock(0.68, WorldSim.game_day)
 	if player != null:
 		var pos_arg := OS.get_environment("HOTW_SHOT_POS")
-		if pos_arg.contains(","):
+		var dungeon_arg := OS.get_environment("HOTW_SHOT_DUNGEON")
+		if dungeon_arg != "":
+			# Boss 城塞取证：运行时按当前世界种子自取城塞中心（固定坐标会过期，
+			# 本模式永远指向真城塞；索引 0=hill 1=lava）
+			var dgs := ObstacleField.dungeons()
+			if not dgs.is_empty():
+				var idx := clampi(dungeon_arg.to_int(), 0, dgs.size() - 1)
+				# "in" 后缀 = 落进场内中心（拍 Boss/宝箱同屏）；默认南门外上方拍全景
+				if dungeon_arg.ends_with("in"):
+					idx = clampi(dungeon_arg.trim_suffix("in").to_int(), 0, dgs.size() - 1)
+					player.global_position = dgs[idx]["center"] + Vector2(0, 40)
+				else:
+					player.global_position = dgs[idx]["center"] + Vector2(0, 260)
+		elif pos_arg.contains(","):
 			var xy := pos_arg.split(",")
 			player.global_position = Vector2(float(xy[0]), float(xy[1]))
 		elif not monsters.is_empty():
@@ -221,6 +234,20 @@ func _process(delta: float) -> void:
 	var shot_delay := DELAY + (1.0 if _probe else 0.0)
 	if not _shot_a and _elapsed >= shot_delay and (_probe_done or not _probe):
 		_capture(OUT_PATH)
+		# 城塞取证模式：打印结构实证（墙/门/宝箱/Boss 节点在场的运行时证据）
+		if OS.get_environment("HOTW_SHOT_DUNGEON") != "":
+			var dgs := ObstacleField.dungeons()
+			for i in dgs.size():
+				var dg: Dictionary = dgs[i]
+				var boss: String = WorldConfig.TERRAIN_BOSSES.get(dg["terrain"], "?")
+				var alive := 0
+				for m in get_tree().get_nodes_in_group("monsters"):
+					var mi = m.get("inst")
+					if mi != null and mi.species.species_name == boss and mi.is_alive:
+						alive += 1
+				var chests := get_tree().get_nodes_in_group("chests").size()
+				print("城塞[%d] %s@%d,%d boss=%s 活体=%d 宝箱节点=%d" % [i, dg["terrain"],
+					int(dg["center"].x), int(dg["center"].y), boss, alive, chests])
 		# 菜单模式次帧取证冒险档案面板（数据行 + 立即保存）
 		if _menu_mode and _menu != null:
 			_menu.get_node("MenuBox/ArchiveBtn").pressed.emit()

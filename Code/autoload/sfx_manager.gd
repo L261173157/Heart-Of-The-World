@@ -44,6 +44,8 @@ const TERRAIN_THEMES := {
 	"hill": preload("res://assets/na/audio/musics/theme-5.ogg"),
 	"lava": preload("res://assets/na/audio/musics/theme-13.ogg"),
 	"menu": preload("res://assets/na/audio/musics/theme-10.ogg"),
+	## 城塞内腔（美术 v5 M-B）：进出城塞切曲，出腔回当前群系曲
+	"dungeon": preload("res://assets/na/audio/musics/theme-7.ogg"),
 }
 
 var _channels: Array[AudioStreamPlayer] = []

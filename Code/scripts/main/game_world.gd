@@ -188,6 +188,7 @@ func _ready() -> void:
 	_setup_world_shell()
 	_spawn_region_labels()
 	_setup_landmarks()
+	_setup_camp()
 	# 首个区域即时提交（点查询，不等总览任务/Area 建立）：读档静默接回区域曲
 	# 与新开图播报的旧时序保持——Area 建立后同区域的 enter 事件被
 	# "region_id == _current_region_id" 分支吸收，不会重复播报
@@ -206,7 +207,7 @@ func _ready() -> void:
 	# 任务系统 v1（地标 NPC 委托：狩猎/捣巢/探索；数据真源 GameState.quests）
 	var quest_manager := QuestManager.new()
 	add_child(quest_manager)
-	_npc_interact_fn = quest_manager.try_accept
+	_npc_interact_fn = quest_manager.offer
 	# 世界事件监视（灭绝/入侵潮/饱和 → world_event 播报）
 	add_child(WorldEventWatcher.new())
 	# 成就判定（纯订阅 + GameState 持久化）
@@ -296,6 +297,7 @@ func _process(delta: float) -> void:
 	if _stream_accum >= STREAM_INTERVAL:
 		_stream_accum = 0.0
 		_stream_pass()
+		_update_dungeons()
 	_update_landmark_markers()
 	_fog_accum += delta
 	if _fog_accum >= FOG_REVEAL_INTERVAL:
@@ -309,6 +311,179 @@ func _process(delta: float) -> void:
 			var rid := _region_candidate_id
 			_region_candidate_id = ""
 			_commit_region(rid)
+	_process_camp(delta)
+
+
+# --- 出生营地（美术 v5 M-B）：NA 建筑群 + 行商 + 安全区缓回血 ---
+## 营地落点 = 出生斑块中心（障碍抑制区内恒空地，建筑纯装饰 + 底座碰撞体）
+const CAMP_HEAL_RADIUS := 420.0
+## 安全区缓回血：每秒 3% 最大生命（脱战自然恢复档，不走无敌帧不触发受击演出）
+const CAMP_HEAL_FRAC_PER_SEC := 0.03
+var _camp_heal_accum := 0.0
+
+
+func _setup_camp() -> void:
+	var spawn: Vector2 = WorldConfig.spawn_pos()
+	# 建筑三件（视觉盘点验收过的 na_tileset 房屋/鸟居烘焙件）：
+	# 底部 StaticBody2D 矩形挡身位（独立于 ObstacleField 瓦片物理，营地恒不被流式回收）
+	_add_structure("house_red", spawn + Vector2(-310, -60), Vector2(140, 44))
+	_add_structure("house_brown", spawn + Vector2(215, -185), Vector2(140, 44))
+	_add_structure("torii", spawn + Vector2(-4, -235), Vector2(120, 36), true)
+	# 行商：对话气泡确认后开商店（HUD 侧 kind=="shop" 分支）
+	var merchant := LandmarkNPC.new()
+	merchant.position = spawn + Vector2(96, 24)
+	merchant.kind = "merchant"
+	merchant.giver = "行商"
+	merchant.landmark_id = "camp_merchant"
+	merchant.quest_kind = "shop"
+	merchant.color = Color(0.95, 0.8, 0.45)
+	merchant.interact_fn = func(_id: String, _kind: String, _giver: String) -> Dictionary:
+		return {"kind": "shop", "text": "风尘仆仆的猎人——看看营地补给吗？"}
+	_landmark_root.add_child(merchant)
+
+
+func _add_structure(stamp: String, pos: Vector2, body_size: Vector2, thin := false) -> void:
+	var node := Node2D.new()
+	node.position = pos
+	var sp := Sprite2D.new()
+	sp.texture = load("res://assets/na/structures/%s.png" % stamp)
+	# 锚点落底边中心（y-sort 按脚点排序，建筑可被走到"后面"）
+	sp.offset = Vector2(0, -sp.texture.get_height() / 2.0)
+	node.add_child(sp)
+	if not thin:
+		var body := StaticBody2D.new()
+		var shape := CollisionShape2D.new()
+		var rect := RectangleShape2D.new()
+		rect.size = body_size
+		shape.shape = rect
+		shape.position = Vector2(0, -body_size.y / 2.0)
+		body.add_child(shape)
+		body.collision_layer = 1  # 世界障碍层（与 ObstacleField 瓦片物理同层，玩家/怪都挡）
+		node.add_child(body)
+	add_child(node)  # game_world 根 y-sort 直接子节点
+
+
+func _process_camp(delta: float) -> void:
+	var player := get_tree().get_first_node_in_group("player")
+	if player == null or not ("current_hp" in player):
+		return
+	var in_camp: bool = (player.global_position as Vector2).distance_to(
+		WorldConfig.spawn_pos()) <= CAMP_HEAL_RADIUS
+	if in_camp:
+		_camp_heal_accum += delta
+		if _camp_heal_accum >= 1.0:
+			_camp_heal_accum = 0.0
+			var max_hp: float = player.stats.max_hp()
+			if player.current_hp < max_hp:
+				player.current_hp = minf(max_hp, player.current_hp + max_hp * CAMP_HEAL_FRAC_PER_SEC)
+				EventBus.player_hp_changed.emit(player.current_hp, max_hp)
+	_process_dungeon_zone(player)
+
+
+# --- Boss 城塞 / 地牢（美术 v5 M-B）---
+## 城塞内腔半宽高（px；与 ObstacleField.DUNGEON_HALF×CELL 同口径）
+const DUNGEON_ZONE_HALF := Vector2(6.0 * 32.0 + 16.0, 4.0 * 32.0 + 16.0)
+## 宝箱刷新半径（走进城塞才生成实体）
+const CHEST_STREAM_RADIUS := 1400.0
+var _chests := {}  # patch_id → DungeonChest
+var _in_dungeon := false
+var _dungeon_announced := {}
+
+
+## 城塞维护（流式节拍里跑）：宝箱进出 + 可开状态 + 进出城塞的 BGM/播报
+func _update_dungeons() -> void:
+	var player := get_tree().get_first_node_in_group("player") as Node2D
+	if player == null:
+		return
+	for dg: Dictionary in ObstacleField.dungeons():
+		var patch_id: String = dg["patch_id"]
+		var center: Vector2 = dg["center"]
+		var near: bool = player.global_position.distance_to(center) <= CHEST_STREAM_RADIUS
+		var boss_name: String = WorldConfig.TERRAIN_BOSSES.get(dg["terrain"], "")
+		if near and not _chests.has(patch_id):
+			var chest := DungeonChest.new()
+			chest.position = center + Vector2(0, -110)
+			chest.boss_name = boss_name
+			_landmark_root.add_child(chest)
+			_chests[patch_id] = chest
+		elif not near and _chests.has(patch_id):
+			_chests[patch_id].queue_free()
+			_chests.erase(patch_id)
+		if _chests.has(patch_id):
+			var boss_dead: bool = _sim != null \
+					and _sim.boss_respawn_timers.get(boss_name, 0) > 0
+			var chest_node: DungeonChest = _chests[patch_id]
+			chest_node.locked = not boss_dead
+			if not boss_dead:
+				chest_node.taken = false  # Boss 复活 → 宝箱重置（下一轮可再开）
+
+
+## 进出城塞（内腔矩形）：地牢 BGM 与首发现播报
+func _process_dungeon_zone(player: Node) -> void:
+	var pos: Vector2 = player.global_position
+	var inside := false
+	for dg: Dictionary in ObstacleField.dungeons():
+		var center: Vector2 = dg["center"]
+		if absf(pos.x - center.x) <= DUNGEON_ZONE_HALF.x \
+				and absf(pos.y - center.y) <= DUNGEON_ZONE_HALF.y:
+			inside = true
+			var pid: String = dg["patch_id"]
+			if not _dungeon_announced.has(pid):
+				_dungeon_announced[pid] = true
+				var boss_name: String = WorldConfig.TERRAIN_BOSSES.get(dg["terrain"], "")
+				EventBus.world_event.emit("🏯 发现城塞——%s盘踞之地" % boss_name)
+			break
+	if inside == _in_dungeon:
+		return
+	_in_dungeon = inside
+	if inside:
+		SfxManager.play_music("dungeon")
+	elif _current_region_id != "":
+		var region: SimRegion = _sim.get_region(_current_region_id)
+		SfxManager.play_music(region.terrain if region != null else "plains")
+
+
+## 城塞宝箱：Boss 被讨伐期间（重生倒计时进行中）可开——金币奖励走
+## EconomyMath 与赏金同源；加入 npcs 组复用玩家的最近交互路由（攻击键开箱）
+class DungeonChest extends Node2D:
+	const CHEST_TEX := preload("res://assets/na/structures/chest.png")
+	const FX_BURST := preload("res://assets/creatures/frames/fx_burst/fx_burst_frames.tres")
+	var boss_name := ""
+	var locked := true
+	var taken := false
+	var _sprite: Sprite2D
+
+	func _ready() -> void:
+		add_to_group("npcs")
+		add_to_group("chests")
+		_sprite = Sprite2D.new()
+		_sprite.texture = CHEST_TEX
+		_sprite.scale = Vector2(1.2, 1.2)
+		add_child(_sprite)
+
+	func _process(_delta: float) -> void:
+		visible = not taken
+		# 锁定时微暗提示"开不了"
+		_sprite.modulate = Color(1, 1, 1, 0.75) if locked else Color(1, 1, 1, 1)
+
+	func interact() -> void:
+		if taken:
+			return
+		if locked:
+			EventBus.hint_requested.emit("🔒 宝箱被城主的力量封印着——讨伐%s再说" % boss_name)
+			return
+		taken = true
+		var gold: int = EconomyMath.bounty_gold(8, GameState.stats.level)
+		GameState.add_gold(gold)
+		SfxManager.play("gold")
+		EventBus.hint_requested.emit("📦 城塞宝箱 +%d 金币" % gold)
+		var fx := AnimatedSprite2D.new()
+		fx.sprite_frames = FX_BURST
+		fx.scale = Vector2(1.5, 1.5)
+		fx.position = position
+		get_parent().add_child(fx)
+		fx.play(&"play")
+		fx.animation_finished.connect(fx.queue_free)
 
 
 # --- 世界总览后台任务（区域多边形 + 小地图底图，世界 v5） ---
@@ -423,6 +598,7 @@ func _update_landmark_markers() -> void:
 			npc.landmark_id = id
 			npc.giver = npc_def["name"]
 			npc.quest_kind = npc_def["quest"]
+			npc.kind = lm["kind"]
 			npc.color = LandmarkRegistry.kind_color(lm["kind"])
 			npc.interact_fn = _npc_interact_fn
 			_landmark_root.add_child(npc)
@@ -476,20 +652,41 @@ class LandmarkMarker extends Node2D:
 		draw_circle(Vector2.ZERO, 7.0, Color(color.r, color.g, color.b, 0.9))
 
 
-## 地标 NPC：小个子人形（身体+头两个圆）+ 头顶名牌，轻微呼吸浮动。
-## 交互 = 玩家贴近按攻击键（player 侧查询 npcs 组）
+## 地标 NPC（美术 v5）：NA 角色精灵 + 头顶名牌 + 轻微踱步。
+## 交互 = 玩家贴近按攻击键（player 侧查询 npcs 组）→ 结构化委托经
+## EventBus.npc_dialogue 由 HUD 对话气泡呈现（是/否接取）
 class LandmarkNPC extends Node2D:
+	## 地标类型 → NA 角色帧（characters 表 8=猎人 4=老者 7=巫女 6=行商，视觉盘点定）
+	const FRAMES := {
+		"石环": preload("res://assets/creatures/frames/npc_hunter/npc_hunter_frames.tres"),
+		"荒废遗迹": preload("res://assets/creatures/frames/npc_scholar/npc_scholar_frames.tres"),
+		"精灵泉": preload("res://assets/creatures/frames/npc_keeper/npc_keeper_frames.tres"),
+		"merchant": preload("res://assets/creatures/frames/npc_merchant/npc_merchant_frames.tres"),
+	}
+	## 立绘编号（faceset 同源表号；0 = 无立绘兜底）
+	const FACESETS := {"石环": 8, "荒废遗迹": 4, "精灵泉": 7, "merchant": 6}
 	var landmark_id := ""
 	var giver := ""
 	var quest_kind := ""
+	var kind := ""
 	var color := Color.WHITE
 	var interact_fn: Callable
-	var _visual: Node2D
+	var _visual: AnimatedSprite2D
 	var _t := 0.0
+	var _home := Vector2.ZERO
+	var _walk_dir := 0.0
+	var _pause := 2.0
 
 	func _ready() -> void:
 		add_to_group("npcs")
-		_visual = Node2D.new()
+		_home = position
+		_visual = AnimatedSprite2D.new()
+		var frames: SpriteFrames = FRAMES.get(kind)
+		if frames != null:
+			_visual.sprite_frames = frames
+		_visual.scale = Vector2(4.8, 4.8)
+		_visual.position.y = -4.0
+		_visual.play(&"idle")
 		add_child(_visual)
 		var label := Label.new()
 		var style := LabelSettings.new()
@@ -499,24 +696,39 @@ class LandmarkNPC extends Node2D:
 		style.outline_color = Color(0, 0, 0, 0.7)
 		label.label_settings = style
 		label.text = giver
-		label.position = Vector2(-26, -46)
+		label.position = Vector2(-26, -52)
 		label.size = Vector2(52, 14)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		add_child(label)
 
 	func _process(delta: float) -> void:
 		_t += delta
-		_visual.position.y = sin(_t * 2.2) * 2.0
+		# 待机踱步：走一小段→停一会儿→折返（贴地标小范围活动，不参与碰撞）
+		if _pause > 0.0:
+			_pause -= delta
+			if _pause <= 0.0:
+				_walk_dir = 1.0 if _t * 0.37 - floor(_t * 0.37) < 0.5 else -1.0
+		elif _walk_dir != 0.0:
+			position.x += _walk_dir * 18.0 * delta
+			_visual.flip_h = _walk_dir < 0.0
+			if _visual.animation != &"walk":
+				_visual.play(&"walk")
+			if absf(position.x - _home.x) > 14.0:
+				_walk_dir = 0.0
+				_pause = 2.0 + fmod(_t, 3.0)
+				_visual.play(&"idle")
+		queue_redraw()
 
 	func _draw() -> void:
-		# 身体（椭圆近似：两层圆）+ 头
-		draw_circle(Vector2(0, -10), 7.0, Color(color.r * 0.7, color.g * 0.7, color.b * 0.7))
-		draw_circle(Vector2(0, -22), 5.5, color)
-		draw_circle(Vector2(0, -22), 3.0, Color(0.95, 0.85, 0.7))
+		# 脚下光环保留地标微光色，与地标圆环同色系（精灵本体在上）
+		draw_circle(Vector2.ZERO, 10.0, Color(color.r, color.g, color.b, 0.25))
 
 	func interact() -> void:
 		if interact_fn.is_valid():
-			EventBus.hint_requested.emit(interact_fn.call(landmark_id, quest_kind, giver))
+			var offered: Dictionary = interact_fn.call(landmark_id, quest_kind, giver)
+			offered["giver"] = giver
+			offered["faceset"] = FACESETS.get(kind, 0)
+			EventBus.npc_dialogue.emit(offered)
 
 
 ## 区域 Area2D：100 个静态监测体（mask=玩家层，仅玩家触发）。共享栅格派生的

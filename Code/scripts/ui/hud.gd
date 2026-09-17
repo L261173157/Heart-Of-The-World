@@ -175,6 +175,7 @@ func _ready() -> void:
 	_setup_combat_toast()
 	_setup_hp_ghost_bar()
 	_setup_boss_bar()
+	_setup_dialogue_bubble()
 	_apply_theme()
 	_setup_icon_buttons()
 	_setup_stats_row()
@@ -211,6 +212,157 @@ func _place_below_modal_layers(node: Control) -> void:
 	var root := get_node("Root") as Control
 	var modal_idx: int = root.get_node("PauseLayer").get_index()
 	root.move_child(node, modal_idx)
+
+
+# ==================== NPC 对话气泡（美术 v5，NA UI 件） ====================
+## NA dialogue-bubble.png 作九宫格底 + faceset-box 立绘框 + yes/no 按钮。
+## 攻击键=确认 / 冲刺键=关闭（player 侧经 dialogue_action 路由，触屏同通道）；
+## 确认接单经 dialogue_confirmed 信号回到 QuestManager 结算
+var _dialogue_panel: Control
+var _dialogue_text: Label
+var _dialogue_name: Label
+var _dialogue_faceset: TextureRect
+var _dialogue_yes: TextureButton
+var _dialogue_no: TextureButton
+var _dialogue_quest: Dictionary = {}
+var _dialogue_kind := ""
+var _dialogue_timer := 0.0
+const DIALOGUE_INFO_SECONDS := 3.5
+const DIALOGUE_OFFER_SECONDS := 12.0
+
+
+func _setup_dialogue_bubble() -> void:
+	EventBus.npc_dialogue.connect(_open_dialogue)
+	EventBus.dialogue_action.connect(_on_dialogue_action)
+	var root := get_node("Root") as Control
+	_dialogue_panel = Control.new()
+	_dialogue_panel.name = "DialogueBubble"
+	_dialogue_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_dialogue_panel.position = Vector2(-330, -190)
+	_dialogue_panel.size = Vector2(660, 150)
+	_dialogue_panel.visible = false
+	_dialogue_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_dialogue_panel)
+	_place_below_modal_layers(_dialogue_panel)
+
+	var bubble := NinePatchRect.new()
+	bubble.texture = preload("res://assets/na/hud/dialogue-bubble.png")
+	bubble.patch_margin_left = 14
+	bubble.patch_margin_top = 14
+	bubble.patch_margin_right = 14
+	bubble.patch_margin_bottom = 14
+	bubble.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dialogue_panel.add_child(bubble)
+
+	var box := TextureRect.new()
+	box.texture = preload("res://assets/na/hud/faceset-box.png")
+	box.position = Vector2(18, 33)
+	box.size = Vector2(84, 84)
+	box.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	box.stretch_mode = TextureRect.STRETCH_SCALE
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dialogue_panel.add_child(box)
+	_dialogue_faceset = TextureRect.new()
+	_dialogue_faceset.position = Vector2(27, 42)
+	_dialogue_faceset.size = Vector2(66, 66)
+	_dialogue_faceset.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_dialogue_faceset.stretch_mode = TextureRect.STRETCH_SCALE
+	_dialogue_faceset.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dialogue_panel.add_child(_dialogue_faceset)
+
+	_dialogue_name = Label.new()
+	_dialogue_name.position = Vector2(118, 16)
+	_dialogue_name.size = Vector2(300, 20)
+	_dialogue_name.add_theme_font_size_override("font_size", 17)
+	_dialogue_name.add_theme_color_override("font_color", Color(1, 0.92, 0.6))
+	_dialogue_panel.add_child(_dialogue_name)
+
+	_dialogue_text = Label.new()
+	_dialogue_text.position = Vector2(118, 42)
+	_dialogue_text.size = Vector2(404, 66)
+	_dialogue_text.add_theme_font_size_override("font_size", 15)
+	_dialogue_text.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
+	_dialogue_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_dialogue_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_dialogue_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dialogue_panel.add_child(_dialogue_text)
+
+	_dialogue_yes = TextureButton.new()
+	_dialogue_yes.texture_normal = preload("res://assets/na/hud/yes-button.png")
+	_dialogue_yes.scale = Vector2(2.2, 2.2)
+	_dialogue_yes.position = Vector2(452, 104)
+	_dialogue_yes.pressed.connect(_on_dialogue_action.bind("confirm"))
+	_dialogue_panel.add_child(_dialogue_yes)
+	_dialogue_no = TextureButton.new()
+	_dialogue_no.texture_normal = preload("res://assets/na/hud/no-button.png")
+	_dialogue_no.scale = Vector2(2.2, 2.2)
+	_dialogue_no.position = Vector2(536, 104)
+	_dialogue_no.pressed.connect(_on_dialogue_action.bind("decline"))
+	_dialogue_panel.add_child(_dialogue_no)
+	var yes_label := Label.new()
+	yes_label.text = "是[攻击]"
+	yes_label.position = Vector2(448, 148)
+	yes_label.size = Vector2(70, 16)
+	yes_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	yes_label.add_theme_font_size_override("font_size", 12)
+	yes_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dialogue_panel.add_child(yes_label)
+	var no_label := Label.new()
+	no_label.text = "否[冲刺]"
+	no_label.position = Vector2(532, 148)
+	no_label.size = Vector2(70, 16)
+	no_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	no_label.add_theme_font_size_override("font_size", 12)
+	no_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dialogue_panel.add_child(no_label)
+
+
+func _open_dialogue(payload: Dictionary) -> void:
+	GameState.dialogue_open = true
+	_dialogue_kind = str(payload.get("kind", ""))
+	_dialogue_quest = payload.get("quest", {}) if _dialogue_kind == "quest" else {}
+	_dialogue_name.text = str(payload.get("giver", ""))
+	_dialogue_text.text = str(payload.get("text", ""))
+	var face_id := int(payload.get("faceset", 0))
+	var face_path := "res://assets/na/characters/faceset/%d.png" % face_id
+	_dialogue_faceset.texture = load(face_path) if face_id > 0 and ResourceLoader.exists(face_path) else null
+	var has_offer: bool = not _dialogue_quest.is_empty() or _dialogue_kind == "shop"
+	_dialogue_yes.visible = has_offer
+	_dialogue_no.visible = has_offer
+	_dialogue_timer = DIALOGUE_OFFER_SECONDS if has_offer else DIALOGUE_INFO_SECONDS
+	_dialogue_panel.visible = true
+
+
+func _on_dialogue_action(action: String) -> void:
+	if not _dialogue_panel.visible:
+		return
+	if action == "confirm":
+		if not _dialogue_quest.is_empty():
+			EventBus.dialogue_confirmed.emit(_dialogue_quest)
+		elif _dialogue_kind == "shop":
+			shop_panel.visible = true
+	_close_dialogue()
+
+
+func _close_dialogue() -> void:
+	_dialogue_panel.visible = false
+	_dialogue_quest = {}
+	_dialogue_kind = ""
+	GameState.dialogue_open = false
+
+
+func _exit_tree() -> void:
+	# 回菜单/退场景兜底：对话开关残留 true 会永久吞掉攻击键路由
+	GameState.dialogue_open = false
+
+
+func _process_dialogue(delta: float) -> void:
+	if not _dialogue_panel.visible:
+		return
+	_dialogue_timer -= delta
+	if _dialogue_timer <= 0.0:
+		_close_dialogue()
 
 
 func _toast_combat(message: String) -> void:
@@ -446,6 +598,7 @@ func _process(delta: float) -> void:
 		# 否则暂停数秒后技能槽显示"就绪"而实际 CD 未到，恢复后手感错乱
 		_cd_elapsed += delta
 		_refresh_skill_bar()
+	_process_dialogue(delta)
 	_update_smooth_bars(delta)
 
 

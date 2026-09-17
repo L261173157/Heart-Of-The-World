@@ -18,24 +18,50 @@ func _ready() -> void:
 	EventBus.monster_killed_by_player.connect(_on_kill)
 	EventBus.nest_ransacked.connect(_on_ransack)
 	EventBus.landmark_discovered.connect(_on_discover)
+	# 对话气泡按"是"接单（HUD 发出，气泡自己关闭）
+	EventBus.dialogue_confirmed.connect(func(quest: Dictionary) -> void:
+		var text: String = accept(quest)
+		EventBus.hint_requested.emit("📋 " + quest.get("giver", "") + "：" + text))
 	_push_hud()
+
+
+## NPC 交互入口（美术 v5 对话化）：返回「结构化委托单」由 HUD 对话气泡展示，
+## 玩家按 是/否 决定接取；非委托状态（进行中/栏满/无单）返回纯文本直接播报。
+## 返回 {"kind":"quest","quest":{...},"text":...} 或 {"kind":"info","text":...}
+func offer(landmark_id: String, quest_kind: String, giver: String) -> Dictionary:
+	var data: Dictionary = GameState.quests
+	for q: Dictionary in data["active"]:
+		if q["landmark_id"] == landmark_id:
+			return {"kind": "info",
+				"text": "任务进行中——%s（%d/%d）" % [q["title"], q["progress"], q["need"]]}
+	if data["active"].size() >= MAX_ACTIVE:
+		return {"kind": "info", "text": "任务栏已满（最多 %d 个），先完成几单吧" % MAX_ACTIVE}
+	var quest := _gen_quest(landmark_id, quest_kind, giver)
+	if quest.is_empty():
+		return {"kind": "info", "text": "眼下没有合适的委托…"}
+	return {"kind": "quest", "quest": quest,
+		"text": "有一单委托——%s（+%d 金币 +%d 经验），接下吗？" % [
+			quest["title"], quest["gold"], quest["xp"]]}
+
+
+## 确认接取（对话按"是"后调用）：offer 与 accept 分离保证生成确定性不漂移
+func accept(quest: Dictionary) -> String:
+	var data: Dictionary = GameState.quests
+	for q: Dictionary in data["active"]:
+		if q["id"] == quest.get("id", ""):
+			return "%s：任务进行中——%s" % [quest.get("giver", ""), q["title"]]
+	data["active"].append(quest)
+	GameState._queue_save()
+	_push_hud()
+	return "接取委托——%s" % quest["title"]
 
 
 ## NPC 交互入口：接取/查询该 NPC 的任务。返回给玩家的反馈文本
 func try_accept(landmark_id: String, quest_kind: String, giver: String) -> String:
-	var data: Dictionary = GameState.quests
-	for q: Dictionary in data["active"]:
-		if q["landmark_id"] == landmark_id:
-			return "%s：任务进行中——%s（%d/%d）" % [giver, q["title"], q["progress"], q["need"]]
-	if data["active"].size() >= MAX_ACTIVE:
-		return "任务栏已满（最多 %d 个），先完成几单吧" % MAX_ACTIVE
-	var quest := _gen_quest(landmark_id, quest_kind, giver)
-	if quest.is_empty():
-		return "%s：眼下没有合适的委托…" % giver
-	data["active"].append(quest)
-	GameState._queue_save()
-	_push_hud()
-	return "%s：接取委托——%s" % [giver, quest["title"]]
+	var offered: Dictionary = offer(landmark_id, quest_kind, giver)
+	if offered["kind"] == "info":
+		return "%s：%s" % [giver, offered["text"]]
+	return accept(offered["quest"])
 
 
 ## 确定性生成该 NPC 的下一单（landmark × 已完成数）；狩猎目标取当前世界

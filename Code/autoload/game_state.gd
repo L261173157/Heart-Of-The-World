@@ -56,6 +56,9 @@ var settings: Dictionary = {"volume": 0.8, "music_volume": 1.0, "sfx_volume": 1.
 	"screen_shake": true, "damage_numbers": true, "hero_skin": "blue"}
 ## 本局击杀数（死亡信息/统计用）
 var session_kills: int = 0
+## NPC 对话气泡开合标记（运行态，不存档）：player 侧据此把攻击键路由为
+## 对话确认、冲刺键路由为关闭，避免对话期间挥刀/位移
+var dialogue_open := false
 ## 最近一次成功落盘的时刻（Unix 秒）：冒险档案面板显示"最后保存 HH:MM"。
 ## 0 = 尚未保存过（首启无档 / 测试关闭写盘）
 var last_save_unix: float = 0.0

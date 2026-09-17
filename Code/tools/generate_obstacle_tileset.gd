@@ -16,12 +16,13 @@ const NAV_TRES := "res://data/nav_tileset.tres"
 
 const CELL := 32
 ## kind 顺序 = 图集格序（col=i%3, row=i/3）；water 为透明深水阻挡瓦（第 4 行，
-## 地面已画水只补碰撞，不留遮挡不留贴图）
+## 地面已画水只补碰撞，不留遮挡不留贴图）；castle 为城塞墙（美术 v5 Boss 地牢）
 const KINDS := ["tree", "big_tree", "pine", "deadtree", "rock", "boulder",
-	"ice", "crystal", "bones", "water"]
-## 派生规则：src = na_tileset 已验证源矩形；zoom>1 时裁底居中；HSV 调色
+	"ice", "crystal", "bones", "water", "castle"]
+## 派生规则：src = na_tileset 已验证矩形；zoom>1 时裁底居中；HSV 调色
 ## （deadtree=松树灰化、ice/crystal/bones=岩石染色——与 world_deco 的
 ## 枯树灰化/多边形冰晶手法同源，素材无对口验证矩形故派生）
+## castle：城堡石砖区（行 5-8 左区，对照板视觉验收的灰石砖+垛口带）
 const DERIVE := {
 	"tree": {"src": Rect2(0, 160, 32, 32)},
 	"big_tree": {"src": Rect2(0, 160, 32, 32), "zoom": 1.35},
@@ -33,6 +34,7 @@ const DERIVE := {
 	"crystal": {"src": Rect2(160, 160, 32, 32), "hue": 0.83, "sat": 0.55, "val": 1.1},
 	"bones": {"src": Rect2(160, 160, 32, 32), "sat": 0.25, "val": 1.2},
 	"water": {"transparent": true},
+	"castle": {"src": Rect2(32, 88, 32, 32)},
 }
 ## 高大障碍的排序基线（y_sort_origin，格底部附近）——走到树后会被树冠遮挡
 const TALL_SORT_ORIGIN := 14

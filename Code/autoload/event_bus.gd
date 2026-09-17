@@ -74,3 +74,10 @@ signal obstacle_destroyed(cell: Vector2i, pos: Vector2, kind: String)
 signal quest_updated(text: String)
 ## 任务完成结算播报
 signal quest_completed(text: String)
+## NPC 对话（美术 v5）：NPC 交互键触发，HUD 对话气泡呈现。payload 含
+## giver（名字）/ faceset（立绘编号）/ kind（quest|info）/ text / quest（可接单）
+signal npc_dialogue(payload: Dictionary)
+## 对话按键路由（player 侧转发）：action = "confirm" | "decline"，HUD 消费
+signal dialogue_action(action: String)
+## 对话确认接单（HUD 是按钮/确认键发出）→ QuestManager.accept 结算
+signal dialogue_confirmed(quest: Dictionary)

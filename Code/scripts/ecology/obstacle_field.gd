@@ -37,6 +37,9 @@ const KIND_INFO := {
 	"bones": {"r": 8.0, "tall": false},
 	## 深水阻挡（世界 v5 液体场）：贴图透明——地面本来就画着水，只补碰撞
 	"water": {"r": 14.0, "tall": false},
+	## 城塞墙（美术 v5 M-B Boss 地牢）：整格实心墙（r15 填满 32px 格），
+	## 不可破坏——永久地形骨架，与树/巨岩同等待遇
+	"castle": {"r": 15.0, "tall": false},
 }
 
 ## kind → 障碍图集格坐标（tools/generate_obstacle_tileset.gd 的图集布局同源，
@@ -46,7 +49,21 @@ const KIND_ATLAS := {
 	"deadtree": Vector2i(0, 1), "rock": Vector2i(1, 1), "boulder": Vector2i(2, 1),
 	"ice": Vector2i(0, 2), "crystal": Vector2i(1, 2), "bones": Vector2i(2, 2),
 	"water": Vector2i(0, 3),
+	"castle": Vector2i(1, 3),
 }
+
+# --- Boss 城塞 / 地牢（美术 v5 M-B）---
+## 高威胁地貌距出生角最远斑块中心 = 城堡围合竞技场（Boss 盘踞处）：
+## 外墙 castle 格一圈 + 南侧 2 格门洞，内腔恒空（落在斑块 600px 抑制区内，
+## 墙格在抑制判定之前返回）。结构与种子确定性同源
+const DUNGEON_TERRAINS := ["hill", "lava"]
+const DUNGEON_KIND := "castle"
+## 半宽/半高（障碍格）：外墙 13×9 格 ≈ 416×288px 竞技场
+const DUNGEON_HALF := Vector2i(6, 4)
+## 南墙（+y）门洞半宽：门洞 2 格宽，玩家与怪物均可通行
+const DUNGEON_DOOR_HALF := 1
+## 城塞注册表（种子派生缓存）：patch_id → {center, terrain, boss}
+static var _dungeons := {}
 
 ## 液体规则（世界 v5，真源在此——terrain_painter 的水材质层消费同一函数，
 ## 可见水与可行区不再两张皮）：snow/hill 深水阻挡、lava 熔岩池灼烧（可通行，
@@ -125,10 +142,49 @@ static func _ensure() -> void:
 	_center_by_id = {}
 	for def: Dictionary in BiomeMap.patches():
 		_center_by_id[def["id"]] = def["center"]
+	_dungeons = {}
+	for terrain: String in DUNGEON_TERRAINS:
+		var far: Dictionary = BiomeMap.farthest_patch(terrain)
+		if far.is_empty():
+			continue
+		_dungeons[far["id"]] = {"center": far["center"], "terrain": terrain}
 	_cells_chunk_cache = {}
 	_nav_chunk_cache = {}
 	_destroyed = {}
 	_obstacle_hp = {}
+
+
+## 全部城塞（表现层宝箱/播报消费；boss 名由表现层经 WorldConfig.TERRAIN_BOSSES
+## 就地配对——ecology 不反向依赖 main）：[{center, terrain, patch_id}]
+static func dungeons() -> Array:
+	_ensure()
+	var out: Array = []
+	for patch_id: String in _dungeons:
+		var d: Dictionary = _dungeons[patch_id].duplicate()
+		d["patch_id"] = patch_id
+		out.append(d)
+	return out
+
+
+## 城塞内采样（wall / inner / ""）：cell 为障碍格坐标
+static func dungeon_sample(cell: Vector2i) -> String:
+	if _dungeons.is_empty():
+		_ensure()
+	for patch_id: String in _dungeons:
+		var center: Vector2 = _dungeons[patch_id]["center"]
+		var cc := Vector2i(floori(center.x / CELL), floori(center.y / CELL))
+		var dx: int = absi(cell.x - cc.x)
+		var dy: int = absi(cell.y - cc.y)
+		if dx > DUNGEON_HALF.x or dy > DUNGEON_HALF.y:
+			continue
+		var on_wall: bool = dx == DUNGEON_HALF.x or dy == DUNGEON_HALF.y
+		if not on_wall:
+			return "inner"
+		# 南墙门洞（+y 侧）：2 格宽居中
+		if cell.y - cc.y == DUNGEON_HALF.y and dx <= DUNGEON_DOOR_HALF:
+			return ""
+		return "wall"
+	return ""
 
 
 ## 障碍格采样：{kind, r, tall} 或空字典（可通行）。坐标为障碍格坐标
@@ -137,6 +193,13 @@ static func sample_cell(cell: Vector2i) -> Dictionary:
 	_ensure()
 	if _destroyed.has(cell):
 		return {}  # 玩家已摧毁（真相覆盖层优先于一切配方）
+	# Boss 城塞（先于抑制区——墙落在斑块 600px 净空内但必须存在；内腔恒空）
+	match dungeon_sample(cell):
+		"wall":
+			var wall: Dictionary = KIND_INFO[DUNGEON_KIND]
+			return {"kind": DUNGEON_KIND, "r": wall["r"], "tall": wall["tall"]}
+		"inner":
+			return {}
 	var center := (Vector2(cell) + Vector2(0.5, 0.5)) * CELL
 	# 抑制区：出生点 / 斑块中心净空（先于一切配方——保底优先）
 	if center.distance_squared_to(BiomeMap.spawn_pos()) < SPAWN_CLEAR * SPAWN_CLEAR:

@@ -400,6 +400,10 @@ func _squash(amount: Vector2, dur := 0.16) -> void:
 ## 冲刺：消耗 MP，朝当前朝向高速位移，期间无敌（躲冲锋/重击/弹幕）；
 ## 同时取消攻击后摇并给下一击增伤——走位输出循环的技巧上限
 func _try_dash() -> void:
+	# 对话气泡开着时冲刺键 = 关闭对话（不消耗蓝不位移）
+	if GameState.dialogue_open:
+		EventBus.dialogue_action.emit("decline")
+		return
 	if _dash_timer > 0.0 or _dash_cd > 0.0:
 		return
 	if current_mp < Skill.DASH_COST:
@@ -602,6 +606,10 @@ func _process(delta: float) -> void:
 
 
 func _try_attack() -> void:
+	# 对话气泡开着时攻击键 = 确认（接单/继续），不挥刀不消耗冷却
+	if GameState.dialogue_open:
+		EventBus.dialogue_action.emit("confirm")
+		return
 	# 世界 v5：贴着地标 NPC 时攻击键 = 对话/接任务（不消耗冷却不挥刀）
 	var npc := _nearest_npc()
 	if npc != null:
