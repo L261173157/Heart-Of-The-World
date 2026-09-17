@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_frg"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/frog/frog_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_frg")
+species_name = "绿蛙"
+frames_override = ExtResource("2_frames")
+ai_archetype = "melee_swarm"
+habitats = Array[String](["forest"])
+base_strength = 2.5
+base_agility = 6.0
+strength_growth = 0.05
+lifespan_min = 240
+lifespan_max = 480
+maturity_age = 40
+breeding_rate = 0.02
+expansion_threshold = 7
+migrate_count = 2
+xp_base = 9
+detect_radius = 170.0
+attack_range = 32.0
+attack_cooldown = 1.1
+flee_hp_ratio = 0.25
+prey = Array[String](["萌芽怪"])
+assist_radius = 260.0

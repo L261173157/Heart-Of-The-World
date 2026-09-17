@@ -10,7 +10,9 @@ class_name CharacterStats
 extends Resource
 
 ## changed 信号直接用 Resource 原生的（数据变更通知）
-signal leveled_up(new_level: int)
+## levels_gained：本次经验跨了几级——升级赐福按次数发放，大额经验（首杀 Boss）
+## 一次连升 N 级时漏发 N-1 次将无法事后补领（被动是叠乘成长）
+signal leveled_up(new_level: int, levels_gained: int)
 
 var level: int = 1
 var xp: int = 0
@@ -24,6 +26,47 @@ var intellect: int = 5
 var upgrade_weapon: int = 0
 var upgrade_staff: int = 0
 var upgrade_vigor: int = 0
+
+## --- 技能常量（v2 真源）：五技能 + 冲刺/连击的 费用/冷却/倍率/持续 ---
+## player.gd（`Skill` 别名）、HUD 技能栏、combat_test / numbers_audit 全部从此引用；
+## 改技能数值只动这里，测试与文档自动跟进（公式进闸）。
+
+## 三段连击：窗口内连续普攻，第三段重击（高伤重击退）；超时重置
+const COMBO_HEAVY_MULT := 1.5
+
+## 连击维持窗口：随攻速自适应——窗口若贴着攻击间隔上限（曾为 0.9 == 0.9），
+## 慢攻速构筑的续段余量只剩 0.05s，三段重击形同虚设；快攻构筑维持 0.9 不变
+func combo_window() -> float:
+	return maxf(0.9, attack_interval() + 0.35)
+## 冲刺增伤窗口：冲刺取消攻击后摇后，下次普攻加成（高级技巧空间）
+const DASH_BUFF_TIME := 1.0
+const DASH_BUFF_MULT := 1.3
+const DASH_COST := 12.0
+const DASH_COOLDOWN := 1.2
+## 重击：以自身为圆心的 AOE 挥砸（清妖鬼/骷髅兵人海的保命大招）
+const HEAVY_COST := 22.0
+const HEAVY_COOLDOWN := 4.0
+const HEAVY_RADIUS := 80.0
+const HEAVY_MULT := 2.4
+## 法弹：智力系远程（与沼泽蟹对射 / 风筝走位的构筑选择）。
+## 倍率 2.0（2026-09-03 数值统一设计）：智力构筑 = 大 MP 池短窗爆发（~19s 倾泻）
+## + 射程安全 + 强治疗，持续期回落到近战五成——定位爆发法术而非站桩替代
+const BOLT_COST := 8.0
+const BOLT_COOLDOWN := 0.8
+const BOLT_MULT := 2.0
+## 治疗：MP→HP 的资源博弈（MP 同时供冲刺/重击/法弹/治疗，取舍即深度）
+const HEAL_COST := 25.0
+const HEAL_COOLDOWN := 8.0
+const HEAL_MULT := 3.0
+## 武装强化：普攻增益状态（近战持续流构筑——贴身连击回血，
+## 与重击的瞬间爆发、法弹的远程风筝形成三种输出节奏的分野）
+const EMPOWER_COST := 30.0
+const EMPOWER_COOLDOWN := 15.0
+const EMPOWER_DURATION := 6.0
+const EMPOWER_MULT := 1.6
+## 每次普攻命中回复最大生命的比例（连击节奏越快收益越高）
+const EMPOWER_HEAL_FRAC := 0.03
+
 
 ## 每级强化幅度（+15%）
 const UPGRADE_BONUS := 0.15
@@ -99,6 +142,25 @@ var age_days: float = 0.0
 var lifespan_days: float = BASE_LIFESPAN_DAYS
 
 
+## 就地重置全部养成字段（reset_all 用）：保持对象身份不变，
+## 订阅者（Player/HUD/SfxManager/AchievementManager）持有的引用全部继续有效
+func reset() -> void:
+	level = 1
+	xp = 0
+	pending_points = 0
+	strength = 5
+	agility = 5
+	intellect = 5
+	upgrade_weapon = 0
+	upgrade_staff = 0
+	upgrade_vigor = 0
+	passives = {}
+	equips = {}
+	age_days = 0.0
+	lifespan_days = BASE_LIFESPAN_DAYS
+	changed.emit()
+
+
 func lifespan_remaining() -> float:
 	return LifespanMath.remaining(age_days, lifespan_days)
 
@@ -116,16 +178,16 @@ func xp_to_next() -> int:
 
 func add_xp(amount: int) -> void:
 	xp += int(amount * passive_mult("xp", 1.1) * (1.0 + equip_affix("xp")))
-	var leveled := false
+	var levels_gained := 0
 	while xp >= xp_to_next():
 		xp -= xp_to_next()
 		level += 1
 		pending_points += 1
 		# 升级延长寿命（策划：能力提升延长寿命）
 		lifespan_days += LEVELED_LIFESPAN_GAIN
-		leveled = true
-	if leveled:
-		leveled_up.emit(level)
+		levels_gained += 1
+	if levels_gained > 0:
+		leveled_up.emit(level, levels_gained)
 	changed.emit()
 
 
@@ -164,8 +226,11 @@ func heal_power() -> float:
 	return intellect * 2.0 * passive_mult("heal_power", 1.3)
 
 
+## 移速基准 2026-09-08 下调（230→175）：角色仅 ~38px 高，230px/s ≈ 每秒 6 身位，
+## iOS 真机手感呈"滑冰"；175 仍高于追击最快的蚂蚁(124)、慢于野猪冲锋(~291)，
+## 追逐/被追逐结构不变。手机屏小、视角缩放后感知更明显，以真机反馈为准。
 func move_speed() -> float:
-	return (200.0 + agility * 6.0) * passive_mult("move", 1.1) * (1.0 + equip_affix("move"))
+	return (150.0 + agility * 5.0) * passive_mult("move", 1.1) * (1.0 + equip_affix("move"))
 
 
 ## 攻击间隔（秒）：敏捷提高攻速，下限防止无脑堆敏捷；迅捷被动 -10%/级

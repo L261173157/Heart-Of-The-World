@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_bat"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/bat/bat_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_bat")
+species_name = "蝙蝠"
+frames_override = ExtResource("2_frames")
+ai_archetype = "melee_swarm"
+habitats = Array[String](["swamp"])
+base_strength = 2.5
+base_agility = 8.0
+strength_growth = 0.05
+lifespan_min = 220
+lifespan_max = 440
+maturity_age = 35
+breeding_rate = 0.025
+expansion_threshold = 7
+migrate_count = 2
+xp_base = 8
+detect_radius = 180.0
+attack_range = 30.0
+attack_cooldown = 1.0
+flee_hp_ratio = 0.25
+prey = Array[String](["冰史莱姆"])
+assist_radius = 260.0

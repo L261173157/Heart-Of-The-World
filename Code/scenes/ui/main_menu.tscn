@@ -48,30 +48,35 @@ anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
 offset_left = -140.0
-offset_top = -330.0
+offset_top = -420.0
 offset_right = 140.0
-offset_bottom = -130.0
+offset_bottom = -110.0
 theme_override_constants/separation = 14
 
 [node name="StartBtn" type="Button" parent="MenuBox"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(280, 52)
+custom_minimum_size = Vector2(280, 60)
 theme_override_font_sizes/font_size = 20
 text = "开始冒险"
 
+[node name="NewBtn" type="Button" parent="MenuBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(280, 56)
+text = "新的冒险"
+
+[node name="ArchiveBtn" type="Button" parent="MenuBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(280, 56)
+text = "冒险档案"
+
 [node name="SettingsBtn" type="Button" parent="MenuBox"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(280, 48)
+custom_minimum_size = Vector2(280, 56)
 text = "设置"
-
-[node name="ResetBtn" type="Button" parent="MenuBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(280, 48)
-text = "重置世界"
 
 [node name="QuitBtn" type="Button" parent="MenuBox"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(280, 48)
+custom_minimum_size = Vector2(280, 56)
 text = "退出"
 
 [node name="Version" type="Label" parent="."]
@@ -101,55 +106,203 @@ theme_override_colors/font_color = Color(1, 0.9, 0.6, 1)
 modulate = Color(1, 1, 1, 0)
 horizontal_alignment = 1
 
-[node name="ResetConfirm" type="PanelContainer" parent="."]
+[node name="NewGameConfirm" type="Control" parent="."]
 unique_name_in_owner = true
 visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 0
+
+[node name="Dim" type="ColorRect" parent="NewGameConfirm"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.55)
+
+[node name="NewPanel" type="PanelContainer" parent="NewGameConfirm"]
+custom_minimum_size = Vector2(440, 200)
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -220.0
-offset_top = -90.0
-offset_right = 220.0
-offset_bottom = 90.0
+grow_horizontal = 2
+grow_vertical = 2
 
-[node name="Margin" type="MarginContainer" parent="ResetConfirm"]
+[node name="Margin" type="MarginContainer" parent="NewGameConfirm/NewPanel"]
 theme_override_constants/margin_left = 18
 theme_override_constants/margin_top = 14
 theme_override_constants/margin_right = 18
 theme_override_constants/margin_bottom = 14
 
-[node name="VB" type="VBoxContainer" parent="ResetConfirm/Margin"]
+[node name="VB" type="VBoxContainer" parent="NewGameConfirm/NewPanel/Margin"]
 theme_override_constants/separation = 10
 
-[node name="Label" type="Label" parent="ResetConfirm/Margin/VB"]
-text = "重置将清空等级/金币/强化/图鉴/成就，此操作不可撤销。确定吗？"
+[node name="Label" type="Label" parent="NewGameConfirm/NewPanel/Margin/VB"]
+text = "开始新的冒险将清空当前进度
+（等级、金币、装备、强化、图鉴与世界演化）。
+设置会保留，此操作不可撤销。"
 horizontal_alignment = 1
 
-[node name="HB" type="HBoxContainer" parent="ResetConfirm/Margin/VB"]
+[node name="HB" type="HBoxContainer" parent="NewGameConfirm/NewPanel/Margin/VB"]
 alignment = 1
 theme_override_constants/separation = 16
 
-[node name="ResetCancel" type="Button" parent="ResetConfirm/Margin/VB/HB"]
+[node name="NewCancel" type="Button" parent="NewGameConfirm/NewPanel/Margin/VB/HB"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(96, 40)
 text = "取消"
 
-[node name="ResetConfirmBtn" type="Button" parent="ResetConfirm/Margin/VB/HB"]
+[node name="NewConfirmBtn" type="Button" parent="NewGameConfirm/NewPanel/Margin/VB/HB"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(96, 40)
-text = "确定重置"
+custom_minimum_size = Vector2(120, 40)
+text = "开始新冒险"
 
-[node name="SettingsLayer" type="CenterContainer" parent="."]
+[node name="ArchiveLayer" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 0
+
+[node name="Dim" type="ColorRect" parent="ArchiveLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.55)
+
+[node name="ArchivePanel" type="PanelContainer" parent="ArchiveLayer"]
+custom_minimum_size = Vector2(420, 0)
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="ArchiveLayer/ArchivePanel"]
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 14
+
+[node name="VB" type="VBoxContainer" parent="ArchiveLayer/ArchivePanel/Margin"]
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB"]
+theme_override_colors/font_color = Color(1, 0.9, 0.6, 1)
+theme_override_font_sizes/font_size = 18
+text = "冒险档案"
+horizontal_alignment = 1
+
+[node name="EmptyHint" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB"]
+unique_name_in_owner = true
+theme_override_colors/font_color = Color(0.8, 0.82, 0.8, 0.8)
+text = "还没有冒险记录。
+开始冒险后，这里会记录你的旅程。"
+horizontal_alignment = 1
+
+[node name="InfoGrid" type="GridContainer" parent="ArchiveLayer/ArchivePanel/Margin/VB"]
+unique_name_in_owner = true
+columns = 2
+theme_override_constants/h_separation = 24
+theme_override_constants/v_separation = 8
+
+[node name="LvLabel" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB/InfoGrid"]
+text = "等级"
+
+[node name="LvValue" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB/InfoGrid"]
+unique_name_in_owner = true
+text = "Lv.1"
+
+[node name="GoldLabel" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB/InfoGrid"]
+text = "金币"
+
+[node name="GoldValue" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB/InfoGrid"]
+unique_name_in_owner = true
+text = "0"
+
+[node name="DayLabel" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB/InfoGrid"]
+text = "游戏天数"
+
+[node name="DayValue" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB/InfoGrid"]
+unique_name_in_owner = true
+text = "第 1 天"
+
+[node name="AgeLabel" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB/InfoGrid"]
+text = "年龄（寿命）"
+
+[node name="AgeValue" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB/InfoGrid"]
+unique_name_in_owner = true
+text = "0 / 60 天"
+
+[node name="CodexLabel" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB/InfoGrid"]
+text = "图鉴"
+
+[node name="CodexValue" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB/InfoGrid"]
+unique_name_in_owner = true
+text = "0 / 22"
+
+[node name="AchvLabel" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB/InfoGrid"]
+text = "成就"
+
+[node name="AchvValue" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB/InfoGrid"]
+unique_name_in_owner = true
+text = "0 / 13"
+
+[node name="SaveTimeLabel" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB/InfoGrid"]
+text = "最后保存"
+
+[node name="SaveTimeValue" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB/InfoGrid"]
+unique_name_in_owner = true
+text = "尚未保存"
+
+[node name="AutoHint" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB"]
+unique_name_in_owner = true
+theme_override_colors/font_color = Color(1, 1, 1, 0.35)
+theme_override_font_sizes/font_size = 12
+text = "冒险进度自动保存，也可手动立即保存"
+horizontal_alignment = 1
+
+[node name="HB" type="HBoxContainer" parent="ArchiveLayer/ArchivePanel/Margin/VB"]
+alignment = 1
+theme_override_constants/separation = 16
+
+[node name="ArchiveSave" type="Button" parent="ArchiveLayer/ArchivePanel/Margin/VB/HB"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 40)
+text = "立即保存"
+
+[node name="ArchiveClose" type="Button" parent="ArchiveLayer/ArchivePanel/Margin/VB/HB"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 40)
+text = "关闭"
+
+[node name="SettingsLayer" type="Control" parent="."]
 unique_name_in_owner = true
 visible = false
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 
+[node name="Dim" type="ColorRect" parent="SettingsLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.55)
+
 [node name="SettingsBox" type="VBoxContainer" parent="SettingsLayer"]
 theme_override_constants/separation = 12
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="Settings" parent="SettingsLayer/SettingsBox" instance=ExtResource("2_settings")]
 

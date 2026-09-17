@@ -1,10 +1,9 @@
-## 哥布林：群体围攻——任意一只受击，侦测圈外的邻近同伴也会闻声赶来（仇恨连锁），
+## 妖鬼：群体围攻——任意一只受击，侦测圈外的邻近同伴也会闻声赶来（仇恨连锁），
 ## 数量是它们的武器；单独引怪是对付群体的基本打法。
+## 支援半径读 SpeciesData（妖鬼/绿蛙/幽灵/蝙蝠/小魔鬼共用本原型，可按物种调参）
 class_name Goblin
 extends MonsterBase
 
-const ASSIST_RADIUS := 260.0
-
 
 func ally_assist_radius() -> float:
-	return ASSIST_RADIUS
+	return inst.species.assist_radius

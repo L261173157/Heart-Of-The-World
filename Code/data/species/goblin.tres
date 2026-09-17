@@ -1,9 +1,14 @@
-[gd_resource type="Resource" script_class="SpeciesData" format=3]
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_hvab1"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/oni/oni_frames.tres" id="2_frames"]
 
 [resource]
 script = ExtResource("1_hvab1")
+species_name = "妖鬼"
+frames_override = ExtResource("2_frames")
 habitats = Array[String](["plains", "forest"])
 expansion_threshold = 8
 poise = 0.05
+assist_radius = 260.0
+migrate_count = 2

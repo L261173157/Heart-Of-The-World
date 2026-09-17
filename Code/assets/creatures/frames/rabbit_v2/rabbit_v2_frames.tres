@@ -1,0 +1,175 @@
+[gd_resource type="SpriteFrames" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f0.png" id="1_a31px"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f1.png" id="2_3tjd2"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f2.png" id="3_vbu6k"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f3.png" id="4_orste"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f4.png" id="5_ox8rb"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f5.png" id="6_xs73r"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f6.png" id="7_ntlkf"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f7.png" id="8_3fqcb"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f8.png" id="9_k2117"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f9.png" id="10_eesie"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f10.png" id="11_082q0"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f11.png" id="12_l2hph"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f12.png" id="13_ykqv5"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f13.png" id="14_3q6f3"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f14.png" id="15_dy1he"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/idle_f15.png" id="16_hm1oj"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f0.png" id="17_ush3y"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f1.png" id="18_vhaph"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f2.png" id="19_8me35"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f3.png" id="20_fh61h"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f4.png" id="21_p5d64"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f5.png" id="22_w8f52"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f6.png" id="23_xu2m2"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f7.png" id="24_3tyxr"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f8.png" id="25_vpbug"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f9.png" id="26_x0ewj"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f10.png" id="27_0bhmq"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f11.png" id="28_7vwpc"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f12.png" id="29_4v4rb"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f13.png" id="30_y8u6x"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f14.png" id="31_enhsm"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f15.png" id="32_ryb2f"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f16.png" id="33_exw8m"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f17.png" id="34_ny4t8"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f18.png" id="35_u6tji"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f19.png" id="36_vju4m"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f20.png" id="37_jnhpi"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f21.png" id="38_8qg3r"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f22.png" id="39_q6vmf"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/rabbit_v2/tex/walk_f23.png" id="40_lu6a3"]
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_a31px")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_3tjd2")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_vbu6k")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_orste")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_ox8rb")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_xs73r")
+}, {
+"duration": 1.0,
+"texture": ExtResource("7_ntlkf")
+}, {
+"duration": 1.0,
+"texture": ExtResource("8_3fqcb")
+}, {
+"duration": 1.0,
+"texture": ExtResource("9_k2117")
+}, {
+"duration": 1.0,
+"texture": ExtResource("10_eesie")
+}, {
+"duration": 1.0,
+"texture": ExtResource("11_082q0")
+}, {
+"duration": 1.0,
+"texture": ExtResource("12_l2hph")
+}, {
+"duration": 1.0,
+"texture": ExtResource("13_ykqv5")
+}, {
+"duration": 1.0,
+"texture": ExtResource("14_3q6f3")
+}, {
+"duration": 1.0,
+"texture": ExtResource("15_dy1he")
+}, {
+"duration": 1.0,
+"texture": ExtResource("16_hm1oj")
+}],
+"loop": 1,
+"name": &"idle",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("17_ush3y")
+}, {
+"duration": 1.0,
+"texture": ExtResource("18_vhaph")
+}, {
+"duration": 1.0,
+"texture": ExtResource("19_8me35")
+}, {
+"duration": 1.0,
+"texture": ExtResource("20_fh61h")
+}, {
+"duration": 1.0,
+"texture": ExtResource("21_p5d64")
+}, {
+"duration": 1.0,
+"texture": ExtResource("22_w8f52")
+}, {
+"duration": 1.0,
+"texture": ExtResource("23_xu2m2")
+}, {
+"duration": 1.0,
+"texture": ExtResource("24_3tyxr")
+}, {
+"duration": 1.0,
+"texture": ExtResource("25_vpbug")
+}, {
+"duration": 1.0,
+"texture": ExtResource("26_x0ewj")
+}, {
+"duration": 1.0,
+"texture": ExtResource("27_0bhmq")
+}, {
+"duration": 1.0,
+"texture": ExtResource("28_7vwpc")
+}, {
+"duration": 1.0,
+"texture": ExtResource("29_4v4rb")
+}, {
+"duration": 1.0,
+"texture": ExtResource("30_y8u6x")
+}, {
+"duration": 1.0,
+"texture": ExtResource("31_enhsm")
+}, {
+"duration": 1.0,
+"texture": ExtResource("32_ryb2f")
+}, {
+"duration": 1.0,
+"texture": ExtResource("33_exw8m")
+}, {
+"duration": 1.0,
+"texture": ExtResource("34_ny4t8")
+}, {
+"duration": 1.0,
+"texture": ExtResource("35_u6tji")
+}, {
+"duration": 1.0,
+"texture": ExtResource("36_vju4m")
+}, {
+"duration": 1.0,
+"texture": ExtResource("37_jnhpi")
+}, {
+"duration": 1.0,
+"texture": ExtResource("38_8qg3r")
+}, {
+"duration": 1.0,
+"texture": ExtResource("39_q6vmf")
+}, {
+"duration": 1.0,
+"texture": ExtResource("40_lu6a3")
+}],
+"loop": 1,
+"name": &"walk",
+"speed": 10.0
+}]

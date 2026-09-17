@@ -1,0 +1,44 @@
+[gd_resource type="SpriteFrames" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/pebble_v2/tex/die_f0.png" id="1_24iiu"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/pebble_v2/tex/die_f1.png" id="2_xtpou"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/pebble_v2/tex/idle_f0.png" id="3_rmge4"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/pebble_v2/tex/idle_f1.png" id="4_58sve"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/pebble_v2/tex/walk_f0.png" id="5_he3ne"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/pebble_v2/tex/walk_f1.png" id="6_5xs7l"]
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_24iiu")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_xtpou")
+}],
+"loop": 0,
+"name": &"die",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("3_rmge4")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_58sve")
+}],
+"loop": 1,
+"name": &"idle",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("5_he3ne")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_5xs7l")
+}],
+"loop": 1,
+"name": &"walk",
+"speed": 10.0
+}]

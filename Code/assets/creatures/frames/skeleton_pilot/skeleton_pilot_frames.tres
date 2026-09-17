@@ -1,0 +1,109 @@
+[gd_resource type="SpriteFrames" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/attack_f0.png" id="1_igoxy"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/attack_f1.png" id="2_uqo1g"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/attack_f2.png" id="3_bvouy"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/attack_f3.png" id="4_bgifm"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/attack_f4.png" id="5_45ccl"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/attack_f5.png" id="6_oyg3d"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/die_f0.png" id="7_10aph"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/die_f1.png" id="8_4bdul"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/die_f2.png" id="9_cchqu"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/idle_f0.png" id="10_emvlu"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/idle_f1.png" id="11_g41ys"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/idle_f2.png" id="12_7s3qc"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/idle_f3.png" id="13_ccakp"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/idle_f4.png" id="14_jjkwi"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/idle_f5.png" id="15_gm8t4"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/walk_f0.png" id="16_fcv6v"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/walk_f1.png" id="17_ui7ys"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/walk_f2.png" id="18_ib4wf"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/walk_f3.png" id="19_s78sj"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/walk_f4.png" id="20_bsxjm"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/skeleton_pilot/tex/walk_f5.png" id="21_av04x"]
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_igoxy")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_uqo1g")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_bvouy")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_bgifm")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_45ccl")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_oyg3d")
+}],
+"loop": 1,
+"name": &"attack",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("7_10aph")
+}, {
+"duration": 1.0,
+"texture": ExtResource("8_4bdul")
+}, {
+"duration": 1.0,
+"texture": ExtResource("9_cchqu")
+}],
+"loop": 0,
+"name": &"die",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("10_emvlu")
+}, {
+"duration": 1.0,
+"texture": ExtResource("11_g41ys")
+}, {
+"duration": 1.0,
+"texture": ExtResource("12_7s3qc")
+}, {
+"duration": 1.0,
+"texture": ExtResource("13_ccakp")
+}, {
+"duration": 1.0,
+"texture": ExtResource("14_jjkwi")
+}, {
+"duration": 1.0,
+"texture": ExtResource("15_gm8t4")
+}],
+"loop": 1,
+"name": &"idle",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("16_fcv6v")
+}, {
+"duration": 1.0,
+"texture": ExtResource("17_ui7ys")
+}, {
+"duration": 1.0,
+"texture": ExtResource("18_ib4wf")
+}, {
+"duration": 1.0,
+"texture": ExtResource("19_s78sj")
+}, {
+"duration": 1.0,
+"texture": ExtResource("20_bsxjm")
+}, {
+"duration": 1.0,
+"texture": ExtResource("21_av04x")
+}],
+"loop": 1,
+"name": &"walk",
+"speed": 10.0
+}]

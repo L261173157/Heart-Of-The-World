@@ -1,0 +1,73 @@
+
+Ninja Adventure Asset Pack（旧版 superpowers 发布）
+
+Created by pixel-boy (https://pixel-boy.itch.io/)
+Source: https://github.com/sparklinlabs/superpowers-asset-packs（ninja-adventure 目录）
+Godot 演示仓库（旧版 pig 素材来源）: https://github.com/pixel-boy/NinjaAdventure
+
+			------------------------------
+
+License: (Creative Commons Zero, CC0)
+http://creativecommons.org/publicdomain/zero/1.0/
+
+完整 CC0 法律文本见仓库根 LICENSE.txt。
+
+本项目取用清单（assets/creatures/sheets/，均为 16px 网格精灵表，4 方向 × 4 帧行走；
+角色表为 4 方向 × 7 帧：行走0-3/攻击4/跳跃5/死亡6）：
+
+  == 怪物（monsters/，2026-09-03 内容重设计 v3 全量入库） ==
+  na_slime.png       ← monsters/1.png    红史莱姆
+  na_oni.png         ← monsters/2.png    红鬼
+  na_turtle.png      ← monsters/3.png    绿龟
+  na_sprout.png      ← monsters/4.png    萌芽怪（双叶苗）
+  na_pig64.png       ← monsters/5.png    猪（64×64 四方向完整表；替代下方旧版 32×16 双帧表）
+  na_frog.png        ← monsters/6.png    绿蛙
+  na_ghost.png       ← monsters/7.png    幽灵（白青色）
+  na_beetle.png      ← monsters/8.png    甲虫（黑红/棕橙系烘焙用）
+  na_bat.png         ← monsters/9.png    蝙蝠（暗红）
+  na_crab.png        ← monsters/10.png   蟹
+  na_mushroom.png    ← monsters/11.png   蘑菇怪（洋红）
+  na_mandrake.png    ← monsters/12.png   曼德拉草（棕干+绿冠）
+  na_stag_beetle.png ← monsters/13.png   锹形虫（棕橙白螯）
+  na_penguin.png     ← monsters/14.png   企鹅（冰蓝）
+  na_octopus.png     ← monsters/15.png   红章鱼
+  na_sea_turtle.png  ← monsters/16.png   海龟（青绿壳红鳍）
+  na_cactus.png      ← monsters/17.png   仙人掌怪
+  na_slime_teal.png  ← monsters/18.png   青史莱姆
+  na_phoenix.png     ← monsters/19.png   火鸟
+  na_gargoyle.png    ← monsters/20.png   石像鬼（灰岩+苔绿）
+  na_squirrel.png    ← monsters/21.png   松鼠
+  na_treant.png      ← monsters/22.png   树人（绿冠+棕干）
+
+  == 角色（characters/） ==
+  na_ninja.png       ← characters/1.png  蓝忍（玩家主角，v3 起）
+  na_ninja_dark.png  ← characters/2.png  黑忍（皮肤备选）
+  na_ninja_white.png ← characters/3.png  白忍（皮肤备选）
+  na_knight.png      ← characters/18.png 全甲板骑士（玩家 v2 素材，保留备用）
+
+  == 其它 ==
+  na_pig.png         ← NinjaAdventure 仓库 pig.png  猪（32×16 双帧，v2 野猪用；v4 迁移到 na_pig64 后移除）
+  na_tileset.png     ← background-elements/tileset.png（装饰层/地表 tile 素材源）
+
+本项目取用清单（assets/na/，2026-09-03 入库）：
+  fx/       ← fx/1..20.png        特效帧序列表（挥砍×3/光弹/聚气/火焰/爆炸×3/雪花/烟雾/闪光×2/光束）
+             （同名 .gif 为动画预览，未入库；png 即帧表）
+  weapons/  ← weapons/*.png       武器（katana/sword/axe/bow/hammer/lance/sai/fork/all）
+  hud/      ← hud/*.png           HUD 元素（heart/kunai/shuriken/arrow/对话气泡等）
+  items/    ← items/*.png         物品图标（金币/宝箱/卷轴×6/药水×4/钥匙等，装备图标候选）
+  tileset/  ← background-elements/snow.png（雪堆装饰贴图）
+
+音频取用清单（assets/na/audio/，2026-09-03 P5 入库，均 CC0）：
+  sounds/  ← sounds/  sword(sword.ogg) / kill / magic-1(法弹) / power-up(升级) /
+             game-over(死亡) / succes(治疗) / gold-1(赏金) —— 共 7 个具名对口音效；
+             hurt/dash/heavy/region 无对口，沿用 Kenney（assets/sfx/，CC0 随附）
+  musics/  ← musics/  theme-4(荒野) / theme-2(林地) / theme-9(雪原) / theme-12(沼泽) /
+             theme-5(丘陵) / theme-13(熔岩) / theme-10(主菜单) —— 六区一区一曲 + 菜单，
+             精选 7 首（全 19 首未入库，控制 iOS 包体）
+
+未入库但可再取（同源 CC0）：musics/ 其余 12 首、sounds/ 其余 39 个（编号 1-19 为
+  无名通用音效与 menu/voice/alert 等未对口项）、background-elements 的
+  flag/flower/plant/waterfall 动画 gif（需转 PNG 帧）。
+
+精灵表布局约定（与作者 Godot 演示 system/character/sprite_character.gd 一致）：
+  列(x) = 朝向 0下/1上/2左/3右；行(y) = 帧序（怪物 0-3 行走；角色另含 4攻击/5跳跃/6死亡）

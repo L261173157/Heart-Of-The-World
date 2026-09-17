@@ -1,10 +1,12 @@
-[gd_resource type="Resource" script_class="SpeciesData" format=3]
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_st3n2"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/gargoyle/gargoyle_frames.tres" id="2_frames"]
 
 [resource]
 script = ExtResource("1_st3n2")
-species_name = "岩甲龟"
+frames_override = ExtResource("2_frames")
+species_name = "石像鬼"
 tint = Color(0.5, 0.5, 0.55, 1)
 ai_archetype = "guardian"
 habitats = Array[String](["lava"])
@@ -27,5 +29,4 @@ flee_hp_ratio = 0.0
 defense_reduction = 0.4
 knockback_resist = 0.85
 poise = 1.0
-prey = Array[String](["兵蚁"])
 element = "fire"

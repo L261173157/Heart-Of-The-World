@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_trt"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/turtle/turtle_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_trt")
+species_name = "绿龟"
+tint = Color(0.55, 0.75, 0.5, 1)
+frames_override = ExtResource("2_frames")
+ai_archetype = "charger"
+habitats = Array[String](["plains"])
+base_strength = 5.0
+base_agility = 5.0
+strength_growth = 0.07
+lifespan_min = 300
+lifespan_max = 560
+maturity_age = 40
+breeding_rate = 0.015
+expansion_threshold = 6
+migrate_count = 1
+xp_base = 13
+xp_per_age = 0.12
+detect_radius = 220.0
+attack_range = 40.0
+attack_cooldown = 1.8
+flee_hp_ratio = 0.2
+offense_scale = 0.9
+prey = Array[String](["萌芽怪"])

@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_png"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/penguin/penguin_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_png")
+species_name = "企鹅"
+frames_override = ExtResource("2_frames")
+ai_archetype = "charger"
+habitats = Array[String](["snow"])
+base_strength = 5.0
+base_agility = 4.0
+strength_growth = 0.07
+lifespan_min = 360
+lifespan_max = 640
+maturity_age = 50
+breeding_rate = 0.01
+expansion_threshold = 6
+migrate_count = 1
+xp_base = 14
+xp_per_age = 0.12
+detect_radius = 200.0
+attack_range = 40.0
+attack_cooldown = 2.0
+flee_hp_ratio = 0.0
+knockback_resist = 0.3
+poise = 0.3
+prey = Array[String](["冰史莱姆"])
+element = "ice"

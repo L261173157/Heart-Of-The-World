@@ -1,0 +1,109 @@
+[gd_resource type="SpriteFrames" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/attack_f0.png" id="1_s287p"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/attack_f1.png" id="2_r13b1"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/attack_f2.png" id="3_5lfvb"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/attack_f3.png" id="4_qygm5"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/attack_f4.png" id="5_thgs3"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/attack_f5.png" id="6_ou4wt"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/die_f0.png" id="7_jvsfj"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/die_f1.png" id="8_vyvkc"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/die_f2.png" id="9_uxusm"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/idle_f0.png" id="10_h222m"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/idle_f1.png" id="11_hasqb"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/idle_f2.png" id="12_jgoqo"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/idle_f3.png" id="13_r8m8k"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/idle_f4.png" id="14_6r7dg"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/idle_f5.png" id="15_qonpp"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/walk_f0.png" id="16_46g0p"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/walk_f1.png" id="17_w333c"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/walk_f2.png" id="18_irkqw"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/walk_f3.png" id="19_w1nf6"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/walk_f4.png" id="20_swscg"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/frog_pilot/tex/walk_f5.png" id="21_npc28"]
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_s287p")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_r13b1")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_5lfvb")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_qygm5")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_thgs3")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_ou4wt")
+}],
+"loop": 1,
+"name": &"attack",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("7_jvsfj")
+}, {
+"duration": 1.0,
+"texture": ExtResource("8_vyvkc")
+}, {
+"duration": 1.0,
+"texture": ExtResource("9_uxusm")
+}],
+"loop": 0,
+"name": &"die",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("10_h222m")
+}, {
+"duration": 1.0,
+"texture": ExtResource("11_hasqb")
+}, {
+"duration": 1.0,
+"texture": ExtResource("12_jgoqo")
+}, {
+"duration": 1.0,
+"texture": ExtResource("13_r8m8k")
+}, {
+"duration": 1.0,
+"texture": ExtResource("14_6r7dg")
+}, {
+"duration": 1.0,
+"texture": ExtResource("15_qonpp")
+}],
+"loop": 1,
+"name": &"idle",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("16_46g0p")
+}, {
+"duration": 1.0,
+"texture": ExtResource("17_w333c")
+}, {
+"duration": 1.0,
+"texture": ExtResource("18_irkqw")
+}, {
+"duration": 1.0,
+"texture": ExtResource("19_w1nf6")
+}, {
+"duration": 1.0,
+"texture": ExtResource("20_swscg")
+}, {
+"duration": 1.0,
+"texture": ExtResource("21_npc28")
+}],
+"loop": 1,
+"name": &"walk",
+"speed": 10.0
+}]

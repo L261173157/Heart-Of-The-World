@@ -11,6 +11,9 @@ var species_name := ""
 var nest_key := ""
 
 var _hp := NEST_HP
+## 捣毁幂等守卫：节点在帧末才释放，同帧多来源命中（重击 AOE + 普攻判定框 +
+## 法弹可同帧到达）会重复走完破坏效果（双播报/双倍碎片/双震屏）
+var _destroyed := false
 var _visual: Polygon2D
 var _hole: Polygon2D
 
@@ -34,7 +37,9 @@ func setup(p_region_id: String, p_species_name: String, tint: Color, at_position
 
 
 func _ready() -> void:
-	collision_layer = 2
+	# 独立碰撞层 4（不是怪物层 2）：巢穴可被攻击（攻击判定 mask 含 4），
+	# 但不再阻挡怪物与玩家的身体——怪物不顶自家巢滑动绕行、法弹不被巢吸弹
+	collision_layer = 4
 	collision_mask = 0
 	add_to_group("nests")
 
@@ -52,14 +57,18 @@ func _mound(color: Color, radius: float) -> Polygon2D:
 
 func take_damage(_amount: float, _from_position := Vector2.INF, _heavy := false,
 		_knock := 1.0, _effective := false) -> void:
+	if _destroyed:
+		return
 	_hp -= 1
 	var flash := create_tween()
 	_visual.modulate = Color(1.0, 0.5, 0.5)
 	flash.tween_property(_visual, "modulate", Color.WHITE, 0.15)
 	if _hp > 0:
 		return
-	# 捣毁：模拟层单点权威 + 播报 + 碎裂
-	WorldSim.sim.destroy_nest(region_id, species_name)
+	_destroyed = true
+	# 捣毁：模拟层单点权威 + 播报 + 碎裂（WorldSim 已停时的残余攻击判空防崩）
+	if WorldSim.sim != null:
+		WorldSim.sim.destroy_nest(region_id, species_name)
 	EventBus.world_event.emit("💥 %s 的巢穴在%s被捣毁！%s群情激愤——繁衍已被遏制" % [
 		species_name, _region_display(), species_name])
 	EventBus.camera_shake_requested.emit(4.0)
@@ -73,21 +82,30 @@ func _region_display() -> String:
 
 
 func _burst() -> void:
+	# 巢穴碎片池化复用（巢体自身随即销毁，碎片经 VfxPool 跨巢共享；见 VfxPool 约定）
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(nest_key)
+	var parent := get_parent()
 	for i in 8:
-		var shard := Polygon2D.new()
+		var shard := VfxPool.take("nest_shard") as Polygon2D
+		if shard == null:
+			shard = Polygon2D.new()
+			shard.z_index = 20
+			parent.add_child(shard)
+		elif shard.get_parent() != parent:
+			shard.get_parent().remove_child(shard)
+			parent.add_child(shard)
 		shard.polygon = PackedVector2Array([
 			Vector2(-3, -3), Vector2(3, -3), Vector2(3, 3), Vector2(-3, 3),
 		])
 		shard.color = _visual.color.darkened(rng.randf_range(0.0, 0.3))
-		shard.z_index = 20
-		get_parent().add_child(shard)
+		shard.modulate.a = 1.0
 		shard.global_position = global_position
 		var dir := Vector2.RIGHT.rotated(rng.randf() * TAU)
 		var tween := shard.create_tween()
+		shard.set_meta("vfx_tween", tween)
 		tween.set_parallel(true)
 		tween.tween_property(shard, "global_position",
 			global_position + dir * rng.randf_range(20.0, 50.0), 0.4).set_ease(Tween.EASE_OUT)
 		tween.tween_property(shard, "modulate:a", 0.0, 0.4).set_delay(0.1)
-		tween.chain().tween_callback(shard.queue_free)
+		tween.chain().tween_callback(func() -> void: VfxPool.release(shard, "nest_shard"))

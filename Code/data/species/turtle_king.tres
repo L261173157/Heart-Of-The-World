@@ -1,9 +1,11 @@
-[gd_resource type="Resource" script_class="SpeciesData" format=3]
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_rca8i"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/sea_turtle/sea_turtle_frames.tres" id="2_frames"]
 
 [resource]
 script = ExtResource("1_rca8i")
+frames_override = ExtResource("2_frames")
 species_name = "龟王"
 tint = Color(0.75, 0.55, 0.25, 1)
 ai_archetype = "guardian"
@@ -26,7 +28,8 @@ flee_hp_ratio = 0.0
 defense_reduction = 0.5
 knockback_resist = 0.95
 poise = 1.0
-prey = Array[String](["兵蚁", "岩甲龟"])
+prey = Array[String](["石像鬼"])
 is_boss = true
 boss_respawn_ticks = 480
+boss_size_scale = 2.2
 element = "fire"

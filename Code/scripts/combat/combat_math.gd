@@ -4,19 +4,30 @@
 class_name CombatMath
 
 
+## 击退基础速度（px/s）：玩家命中怪物的击退基数，重击翻倍、
+## 抗性并联合成后衰减——手感目标带见 CombatBandMath
+const KNOCKBACK_BASE := 150.0
+
+
 static func roll_variance(base: float, spread := 0.1) -> float:
 	return base * randf_range(1.0 - spread, 1.0 + spread)
 
 
-## defense_reduction: 0.0~0.8 的减伤比例
-static func physical_damage(attack: float, defense_reduction := 0.0) -> float:
-	var reduction: float = clampf(defense_reduction, 0.0, 0.8)
-	return maxf(1.0, roll_variance(attack) * (1.0 - reduction))
+## 物理伤害：±10% 随机浮动，下限 1。
+## 护甲减免不在公式里——实战护甲统一在 MonsterBase.take_damage 二次应用
+## （自带 clamp+min1），此处再收 defense 参数会导致双重减免
+static func physical_damage(attack: float) -> float:
+	return maxf(1.0, roll_variance(attack))
 
 
-static func magic_damage(attack: float, defense_reduction := 0.0) -> float:
-	var reduction: float = clampf(defense_reduction, 0.0, 0.8)
-	return maxf(1.0, roll_variance(attack) * (1.0 - reduction))
+## 法术伤害：与物理同构（怪物法伤在 Projectile/MonsterBase 侧无二次护甲）
+static func magic_damage(attack: float) -> float:
+	return maxf(1.0, roll_variance(attack))
+
+
+## 元素克制表（攻方元素 → 被克制的守方元素）。
+## 显式表而非"不同即克制"：未来加入第三元素（如雷）时不会自动全互克
+const COUNTERS := {"fire": "ice", "ice": "fire"}
 
 
 ## 元素克制倍率：火克冰、冰克火（×1.5），同元素互抗（×0.8），无元素/无克制 ×1.0
@@ -25,4 +36,6 @@ static func elemental_multiplier(player_element: String, monster_element: String
 		return 1.0
 	if player_element == monster_element:
 		return 0.8
-	return 1.5
+	if COUNTERS.get(player_element, "") == monster_element:
+		return 1.5
+	return 1.0

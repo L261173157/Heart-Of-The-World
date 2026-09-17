@@ -5,10 +5,14 @@
 class_name SpeciesData
 extends Resource
 
-@export var species_name: String = "哥布林"
+@export var species_name: String = "妖鬼"
 
 ## 表现层用：占位视觉/小地图统一取色
 @export var tint: Color = Color(0.35, 0.7, 0.25)
+
+## 表现层用：帧动画覆盖（共用表现场景但形象不同的种族，如冰晶史莱姆→蓝色红史莱姆帧；
+## 空 = 用场景默认 SpriteFrames）。纯表现数据，模拟层不读
+@export var frames_override: SpriteFrames
 
 ## AI 原型（表现层据此选择行为分支，纯数据标记）：
 ## melee_swarm 群体围攻 / charger 蓄力冲锋 / splitter 接触分裂 /
@@ -58,9 +62,38 @@ extends Resource
 @export var defense_reduction: float = 0.0
 ## 击退抗性（0~1，1 = 免疫击退）
 @export var knockback_resist: float = 0.0
-## 削韧/霸体（0~1）：击退与硬直的额外抗性，与 knockback_resist 叠乘；
-## 1 = 完全霸体（岩甲龟/龟王：任何攻击都推不动）
+## 削韧/霸体（0~1）：击退的额外抗性，与 knockback_resist 并联合成
+## （kb + poise×(1-kb)，边际递减）；1 = 完全霸体（石魔像/窟魔王：任何攻击都推不动）
 @export var poise: float = 0.0
+## 进攻倍率（v2 数值框架）：力量同时驱动生命与攻击，攻防手感要分家时用它——
+## 脆皮炮台 <1（萌芽怪/孢子类），重击威胁 >1（雪怪/守卫类）；
+## 数值设计目标带反推（CombatBandMath）消费同一字段
+@export var offense_scale: float = 1.0
+
+## --- AI 原型细分参数（各原型专属行为的调参入口；默认值 = 原脚本常量，
+## .tres 未覆盖即沿用默认。此前写死在子类脚本里，Boss 型与普通型共用
+## 同一原型时无法按物种调参——铁律"战斗参数全部读 SpeciesData"的补全） ---
+
+## charger 原型：冲锋触发距离 / 前摇时长 / 速度倍率 / 最长时限 /
+## 命中判定距离 / 伤害倍率 / 撞墙硬直时长
+@export var charge_trigger_dist: float = 320.0
+@export var charge_tell_time: float = 0.5
+@export var charge_speed_mult: float = 2.6
+@export var charge_max_time: float = 0.9
+@export var charge_hit_dist: float = 38.0
+@export var charge_damage_mult: float = 2.0
+@export var tired_time: float = 1.3
+## guardian 原型：重击前摇时长 / 砸击判定半径倍率（attack_range × 此值）
+@export var guard_windup_time: float = 0.8
+@export var guard_smash_range_mult: float = 1.7
+## ranged 原型：与目标保持的距离（被贴近即后撤拉开）
+@export var keep_away_dist: float = 120.0
+## melee_swarm / soldier 原型：同伴受击的支援半径（仇恨连锁，0 = 无支援）
+@export var assist_radius: float = 0.0
+## soldier 原型（骷髅兵）：协同增伤的群体半径 / 每只同伴加成 / 加成上限
+@export var pack_radius: float = 130.0
+@export var pack_bonus_per: float = 0.1
+@export var pack_bonus_max: int = 3
 
 ## --- 捕食关系（生态链核心）---
 ## 本物种捕食的物种名列表；同区域每 tick 每个捕食者按 PREDATION_CHANCE 猎杀一只猎物。
@@ -72,8 +105,10 @@ extends Resource
 ## 全灭后按 boss_respawn_ticks 倒计时在其栖息地重生
 @export var is_boss: bool = false
 @export var boss_respawn_ticks: int = 300
+## Boss 体型放大系数（初始入场与重生共用同一数据源，避免两处魔法数漂移）
+@export var boss_size_scale: float = 2.2
 
-## --- 分裂繁殖（史莱姆型）：被玩家击杀时裂成子代，"越杀越多" ---
+## --- 分裂繁殖（红史莱姆型）：被玩家击杀时裂成子代，"越杀越多" ---
 ## 仅被击杀触发（自然老死不分裂）；子代到 max_generation 代后失去分裂能力
 @export var splits_on_death: bool = false
 @export var split_count: int = 2

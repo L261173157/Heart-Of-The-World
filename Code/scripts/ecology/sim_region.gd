@@ -1,14 +1,16 @@
 ## 模拟区域（纯数据，RefCounted）。
 ## 对应《策划纲要》地图系统：世界地图由小型地图/区域组成，区域决定承载量。
-## center/size 是世界坐标的锚点与覆盖范围（供表现层摆放个体、绘制小地图），
-## 属于模拟层的世界模型数据。
+## v4 起真实世界的区域来自 BiomeMap 噪声群系斑块（归属判定走
+## EcologySim.region_of_point → BiomeMap 采样，犬牙边界不可矩形判定）；
+## 本类的 center/size 退化为"名义锚点与名义覆盖范围"（表现层撒布个体、
+## 绘制小地图参考用）；contains_point 仅服务于测试合成的矩形区域世界。
 class_name SimRegion
 extends RefCounted
 
 var id: String = ""
 var display_name: String = ""
 var center: Vector2 = Vector2.ZERO
-## 区域覆盖的世界矩形（表现层地图/小地图用）
+## 区域名义覆盖矩形（斑块格距大小；真实斑块边界以 BiomeMap 采样为准）
 var size: Vector2 = Vector2(1100, 700)
 
 ## 地形类型（plains/forest/snow/swamp/hill/lava），

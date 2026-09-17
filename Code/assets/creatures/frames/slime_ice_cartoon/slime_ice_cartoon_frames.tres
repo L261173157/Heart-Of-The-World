@@ -1,0 +1,105 @@
+[gd_resource type="SpriteFrames" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/attack_f0.png" id="1_th2hi"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/attack_f1.png" id="2_j3mn3"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/attack_f2.png" id="3_yhd6a"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/attack_f3.png" id="4_rvc13"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/attack_f4.png" id="5_knq01"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/attack_f5.png" id="6_c1bro"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/die_f0.png" id="7_ytqoi"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/die_f1.png" id="8_i0r57"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/die_f2.png" id="9_ujhtw"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/die_f3.png" id="10_fawxn"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/idle_f0.png" id="11_m87as"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/idle_f1.png" id="12_fau5h"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/idle_f2.png" id="13_lf1gl"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/idle_f3.png" id="14_liiue"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/walk_f0.png" id="15_lwr0s"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/walk_f1.png" id="16_y6ln7"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/walk_f2.png" id="17_dfh3t"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/walk_f3.png" id="18_tti67"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/walk_f4.png" id="19_l16p5"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_ice_cartoon/tex/walk_f5.png" id="20_v6jot"]
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_th2hi")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_j3mn3")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_yhd6a")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_rvc13")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_knq01")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_c1bro")
+}],
+"loop": 1,
+"name": &"attack",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("7_ytqoi")
+}, {
+"duration": 1.0,
+"texture": ExtResource("8_i0r57")
+}, {
+"duration": 1.0,
+"texture": ExtResource("9_ujhtw")
+}, {
+"duration": 1.0,
+"texture": ExtResource("10_fawxn")
+}],
+"loop": 0,
+"name": &"die",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("11_m87as")
+}, {
+"duration": 1.0,
+"texture": ExtResource("12_fau5h")
+}, {
+"duration": 1.0,
+"texture": ExtResource("13_lf1gl")
+}, {
+"duration": 1.0,
+"texture": ExtResource("14_liiue")
+}],
+"loop": 1,
+"name": &"idle",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("15_lwr0s")
+}, {
+"duration": 1.0,
+"texture": ExtResource("16_y6ln7")
+}, {
+"duration": 1.0,
+"texture": ExtResource("17_dfh3t")
+}, {
+"duration": 1.0,
+"texture": ExtResource("18_tti67")
+}, {
+"duration": 1.0,
+"texture": ExtResource("19_l16p5")
+}, {
+"duration": 1.0,
+"texture": ExtResource("20_v6jot")
+}],
+"loop": 1,
+"name": &"walk",
+"speed": 10.0
+}]

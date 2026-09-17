@@ -1,13 +1,15 @@
-[gd_resource type="Resource" script_class="SpeciesData" format=3]
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_mrrl7"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/boar/boar_frames.tres" id="2_frames"]
 
 [resource]
 script = ExtResource("1_mrrl7")
 species_name = "野猪"
 tint = Color(0.72, 0.45, 0.2, 1)
+frames_override = ExtResource("2_frames")
 ai_archetype = "charger"
-habitats = Array[String](["snow", "hill"])
+habitats = Array[String](["plains", "snow", "hill", "forest"])
 base_strength = 6.0
 base_agility = 6.0
 strength_growth = 0.08
@@ -25,5 +27,5 @@ attack_cooldown = 2.0
 flee_hp_ratio = 0.0
 knockback_resist = 0.5
 poise = 0.5
-prey = Array[String](["史莱姆"])
+prey = Array[String](["萌芽怪", "红史莱姆"])
 element = "ice"

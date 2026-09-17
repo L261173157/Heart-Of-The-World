@@ -6,6 +6,9 @@
 class_name BountyManager
 extends Node
 
+## game_world 的表现场景登记表（幽灵物种过滤用）
+const _GameWorld := preload("res://scripts/main/game_world.gd")
+
 const NEW_BOUNTY_DELAY := 8.0
 const EXTINCT_CHECK_INTERVAL := 5.0
 
@@ -29,14 +32,27 @@ func _process(delta: float) -> void:
 	if _extinct_accum < EXTINCT_CHECK_INTERVAL:
 		return
 	_extinct_accum = 0.0
-	if WorldSim.sim == null or not _species_alive():
+	if WorldSim.sim == null:
+		EventBus.hint_requested.emit("赏金失效，正在更换…")
+		_roll_later(2.0)
+	elif not _species_alive():
 		EventBus.hint_requested.emit("%s 已灭绝，赏金更换…" % _species_name)
+		_roll_later(2.0)
+	elif _species_alive_count() < _target - _progress:
+		# 存活数已低于剩余需求（慢繁衍物种短期回不上来）：把剩下的全杀了
+		# 也凑不够数，提前换单而不是让任务板对着空目标挂死几分钟
+		EventBus.hint_requested.emit("%s 数量不足，赏金更换…" % _species_name)
 		_roll_later(2.0)
 
 
 func _roll_later(delay: float) -> void:
 	_species_name = ""
-	get_tree().create_timer(delay).timeout.connect(_roll_bounty)
+	# 换单空窗期（2s 换单 + 8s 新单延迟）常驻栏如实显示，
+	# 不再挂着已失效的旧赏金进度误导玩家
+	EventBus.bounty_updated.emit("赏金交接中…")
+	# ignore_time_scale：击杀顿帧会短时压低 time_scale，走默认计时器会把换单延迟
+	# 拉长好几倍（Boss 击杀 0.05 倍速 + 连续精英顿帧时尤其明显）
+	get_tree().create_timer(delay, true, false, true).timeout.connect(_roll_bounty)
 
 
 ## 从当前存活物种中随机挑一个作为目标（任务板始终指向活生生的世界）
@@ -44,20 +60,28 @@ func _roll_bounty() -> void:
 	if WorldSim.sim == null:
 		_roll_later(2.0)
 		return
-	# 排除唯一 Boss：全灭重生制下"猎杀 4~7 只"实际无法完成，只能干等换单
-	var candidates := {}
+	# 排除唯一 Boss：全灭重生制下"猎杀 4~7 只"实际无法完成，只能干等换单；
+	# 排除无表现场景的幽灵物种：模拟层活着但玩家看不见打不着，悬赏必然烂单；
+	# 门槛 ≥3 只：濒危物种的"猎杀 N 只"注定烂单，悬赏指向繁衍健康的种群
+	var alive_counts := {}
 	for inst: MonsterInstance in WorldSim.sim.instances.values():
-		if inst.is_alive and not inst.species.is_boss:
-			candidates[inst.species.species_name] = true
+		if inst.is_alive and not inst.species.is_boss \
+				and _GameWorld.MONSTER_SCENES.has(inst.species.species_name):
+			var n: String = inst.species.species_name
+			alive_counts[n] = int(alive_counts.get(n, 0)) + 1
+	var candidates: Array = []
+	for n: String in alive_counts:
+		if int(alive_counts[n]) >= 3:
+			candidates.append(n)
 	if candidates.is_empty():
 		_roll_later(3.0)
 		return
-	var names := candidates.keys()
-	_species_name = names[randi() % names.size()]
-	_target = randi_range(4, 7)
+	_species_name = candidates[randi() % candidates.size()]
+	# 目标数钳到现存数量：剩 3 只时"猎杀 7 只"在物种回弹前永不可完成
+	_target = mini(randi_range(4, 7), int(alive_counts[_species_name]))
 	_progress = 0
-	_gold_reward = 12 + _target * 6 + GameState.stats.level * 3
-	_xp_reward = 20 + _target * 8
+	_gold_reward = EconomyMath.bounty_gold(_target, GameState.stats.level)
+	_xp_reward = EconomyMath.bounty_xp(_target)
 	_push()
 
 
@@ -65,12 +89,9 @@ func _push() -> void:
 	EventBus.bounty_updated.emit("赏金：猎杀 %s  %d/%d" % [_species_name, _progress, _target])
 
 
-func _on_kill(_xp: int, _gold: int, monster_name: String) -> void:
+func _on_kill(_xp: int, _gold: int, _monster_name: String, species_name: String) -> void:
 	if _species_name == "":
 		return
-	var species_name := monster_name.get_slice("#", 0)
-	if species_name.begins_with("精英·"):
-		species_name = species_name.trim_prefix("精英·")
 	if species_name != _species_name:
 		return
 	_progress += 1
@@ -85,7 +106,15 @@ func _on_kill(_xp: int, _gold: int, monster_name: String) -> void:
 
 
 func _species_alive() -> bool:
+	return _species_alive_count() > 0
+
+
+## 目标物种当前存活数（换单判定：存活 < 剩余需求时提前换）
+func _species_alive_count() -> int:
+	if WorldSim.sim == null:
+		return 0
+	var count := 0
 	for inst: MonsterInstance in WorldSim.sim.instances.values():
 		if inst.is_alive and inst.species.species_name == _species_name:
-			return true
-	return false
+			count += 1
+	return count

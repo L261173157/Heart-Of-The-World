@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_msh"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/mushroom/mushroom_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_msh")
+species_name = "蘑菇怪"
+frames_override = ExtResource("2_frames")
+ai_archetype = "ranged"
+habitats = Array[String](["forest"])
+base_strength = 3.0
+base_agility = 3.0
+base_intellect = 3.0
+intellect_growth = 0.03
+lifespan_min = 260
+lifespan_max = 520
+maturity_age = 45
+breeding_rate = 0.012
+expansion_threshold = 7
+xp_base = 12
+detect_radius = 260.0
+attack_range = 230.0
+attack_cooldown = 2.2
+flee_hp_ratio = 0.4
+poise = 0.1
+prey = Array[String](["绿蛙"])
+migrate_count = 2

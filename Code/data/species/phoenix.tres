@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_pho"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/phoenix/phoenix_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_pho")
+species_name = "火鸟"
+frames_override = ExtResource("2_frames")
+ai_archetype = "ranged"
+habitats = Array[String](["lava"])
+base_strength = 5.5
+base_agility = 6.0
+base_intellect = 3.0
+intellect_growth = 0.03
+strength_growth = 0.07
+lifespan_min = 300
+lifespan_max = 600
+maturity_age = 45
+breeding_rate = 0.01
+expansion_threshold = 6
+xp_base = 16
+xp_per_age = 0.14
+detect_radius = 270.0
+attack_range = 220.0
+attack_cooldown = 2.0
+flee_hp_ratio = 0.3
+prey = Array[String](["石像鬼"])
+element = "fire"
+migrate_count = 2

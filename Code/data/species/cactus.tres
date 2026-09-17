@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_cac"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/cactus/cactus_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_cac")
+species_name = "仙人掌怪"
+frames_override = ExtResource("2_frames")
+ai_archetype = "ranged"
+habitats = Array[String](["hill"])
+base_strength = 4.0
+base_agility = 2.0
+base_intellect = 3.0
+intellect_growth = 0.03
+lifespan_min = 400
+lifespan_max = 800
+maturity_age = 50
+breeding_rate = 0.008
+expansion_threshold = 6
+xp_base = 13
+xp_per_age = 0.1
+detect_radius = 250.0
+attack_range = 190.0
+attack_cooldown = 2.4
+flee_hp_ratio = 0.0
+defense_reduction = 0.2
+poise = 0.3
+migrate_count = 2

@@ -1,0 +1,105 @@
+[gd_resource type="SpriteFrames" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/attack_f0.png" id="1_kjmo5"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/attack_f1.png" id="2_dd2jd"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/attack_f2.png" id="3_vo8iv"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/attack_f3.png" id="4_pxjie"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/attack_f4.png" id="5_abobq"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/attack_f5.png" id="6_7nvic"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/die_f0.png" id="7_kt8gi"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/die_f1.png" id="8_wuwly"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/die_f2.png" id="9_h7t37"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/die_f3.png" id="10_vuyd5"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/idle_f0.png" id="11_4eyhd"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/idle_f1.png" id="12_c7v3r"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/idle_f2.png" id="13_hd0xo"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/idle_f3.png" id="14_w7owi"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/walk_f0.png" id="15_3g7ph"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/walk_f1.png" id="16_2oghb"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/walk_f2.png" id="17_xmmgu"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/walk_f3.png" id="18_jni7m"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/walk_f4.png" id="19_7b6up"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/boar_cartoon/tex/walk_f5.png" id="20_r6hbg"]
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_kjmo5")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_dd2jd")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_vo8iv")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_pxjie")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_abobq")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_7nvic")
+}],
+"loop": 1,
+"name": &"attack",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("7_kt8gi")
+}, {
+"duration": 1.0,
+"texture": ExtResource("8_wuwly")
+}, {
+"duration": 1.0,
+"texture": ExtResource("9_h7t37")
+}, {
+"duration": 1.0,
+"texture": ExtResource("10_vuyd5")
+}],
+"loop": 0,
+"name": &"die",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("11_4eyhd")
+}, {
+"duration": 1.0,
+"texture": ExtResource("12_c7v3r")
+}, {
+"duration": 1.0,
+"texture": ExtResource("13_hd0xo")
+}, {
+"duration": 1.0,
+"texture": ExtResource("14_w7owi")
+}],
+"loop": 1,
+"name": &"idle",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("15_3g7ph")
+}, {
+"duration": 1.0,
+"texture": ExtResource("16_2oghb")
+}, {
+"duration": 1.0,
+"texture": ExtResource("17_xmmgu")
+}, {
+"duration": 1.0,
+"texture": ExtResource("18_jni7m")
+}, {
+"duration": 1.0,
+"texture": ExtResource("19_7b6up")
+}, {
+"duration": 1.0,
+"texture": ExtResource("20_r6hbg")
+}],
+"loop": 1,
+"name": &"walk",
+"speed": 10.0
+}]

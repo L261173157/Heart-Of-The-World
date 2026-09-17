@@ -1,0 +1,33 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_1p8w4"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/beetle/beetle_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_1p8w4")
+species_name = "甲虫"
+tint = Color(0.5, 0.55, 0.72, 1)
+frames_override = ExtResource("2_frames")
+ai_archetype = "soldier"
+habitats = Array[String](["hill", "forest"])
+base_strength = 3.5
+base_agility = 7.0
+strength_growth = 0.06
+lifespan_min = 200
+lifespan_max = 400
+maturity_age = 25
+breeding_rate = 0.03
+expansion_threshold = 6
+migrate_count = 3
+corpse_duration = 20
+xp_base = 11
+xp_per_age = 0.08
+detect_radius = 180.0
+attack_range = 30.0
+attack_cooldown = 0.75
+flee_hp_ratio = 0.15
+defense_reduction = 0.25
+poise = 0.15
+prey = Array[String](["妖鬼", "红史莱姆"])
+element = "fire"
+assist_radius = 200.0

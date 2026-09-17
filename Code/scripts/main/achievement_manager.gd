@@ -8,7 +8,8 @@ const ACHIEVEMENTS := {
 	"first_elite": {"title": "金色猎手", "desc": "首次击杀精英个体"},
 	"first_boss": {"title": "顶点陨落", "desc": "讨伐任一生态位 Boss"},
 	"turtle_king": {"title": "洞窟之主", "desc": "讨伐龟王"},
-	"ant_queen": {"title": "断绝蚁巢", "desc": "讨伐蚁后"},
+	"ant_queen": {"title": "断绝虫巢", "desc": "讨伐锹形虫王"},
+	"treant": {"title": "森林哀歌", "desc": "讨伐树人"},
 	"witness_extinct": {"title": "见证灭绝", "desc": "亲历一个物种从世界上消失"},
 	"witness_revive": {"title": "见证复苏", "desc": "亲历灭绝物种重返世界"},
 	"level5": {"title": "初出茅庐", "desc": "达到 5 级"},
@@ -22,10 +23,16 @@ const ACHIEVEMENTS := {
 
 func _ready() -> void:
 	EventBus.monster_killed_by_player.connect(_on_kill)
-	EventBus.world_event.connect(_on_world_event)
+	# 灭绝/复苏走结构化信号（world_event_watcher 与播报文案解耦后改文案不断链）
+	EventBus.species_extinct.connect(func(_species: String) -> void: unlock("witness_extinct"))
+	EventBus.species_recovered.connect(func(_species: String) -> void: unlock("witness_revive"))
 	EventBus.day_phase_changed.connect(_on_day_phase)
+	# 夜间读档时 resume_clock 的入夜信号早于本节点挂载；若不补记，玩家从
+	# 存档中的夜晚活到黎明也不会解锁“夜行者”，同一段生存挑战因读档被吞掉。
+	if WorldSim.is_night:
+		set_meta("night_started", true)
 	GameState.stats.leveled_up.connect(
-		func(level: int) -> void:
+		func(level: int, _levels: int) -> void:
 			if level >= 5:
 				unlock("level5")
 			if level >= 10:
@@ -45,24 +52,29 @@ func unlock(id: String) -> void:
 	print("[成就] %s" % title)
 
 
-func _on_kill(_xp: int, _gold: int, monster_name: String) -> void:
+## 物种判定走结构化 species_name（精英獾王也算讨伐蚁后——旧字符串前缀
+## 判定漏掉精英个体）；精英识别仍看展示名前缀
+func _on_kill(_xp: int, _gold: int, monster_name: String, species_name: String) -> void:
 	if monster_name.begins_with("精英·"):
 		unlock("first_elite")
-	if monster_name.begins_with("蚁后"):
+	# Boss 判定走模拟层物种真源（is_boss）而非名字硬编码清单——
+	# 新增 Boss 物种自动获得 first_boss，精英个体同样计入；
+	# 此前 first_boss 从未被解锁（死成就），古木魔像更是零击杀反馈
+	var world := get_parent()
+	if world != null and world._sim != null:
+		var species: SpeciesData = world._sim.find_species(species_name)
+		if species != null and species.is_boss:
+			unlock("first_boss")
+	if species_name == "锹形虫王":
 		unlock("ant_queen")
-	if monster_name.begins_with("龟王"):
+	if species_name == "龟王":
 		unlock("turtle_king")
-	if GameState.stats.level >= 1 and _total_kills() >= 100:
+	if species_name == "树人":
+		unlock("treant")
+	if _total_kills() >= 100:
 		unlock("kills100")
 	if _codex_complete():
 		unlock("codex_full")
-
-
-func _on_world_event(text: String) -> void:
-	if "消失" in text:
-		unlock("witness_extinct")
-	if "重新出现" in text:
-		unlock("witness_revive")
 
 
 func _on_day_phase(night: bool) -> void:

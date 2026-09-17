@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_spr"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/sprout/sprout_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_spr")
+species_name = "萌芽怪"
+frames_override = ExtResource("2_frames")
+ai_archetype = "soldier"
+habitats = Array[String](["plains", "forest"])
+base_strength = 2.0
+base_agility = 2.0
+strength_growth = 0.05
+lifespan_min = 260
+lifespan_max = 520
+maturity_age = 40
+breeding_rate = 0.02
+expansion_threshold = 8
+xp_base = 8
+detect_radius = 150.0
+attack_range = 28.0
+attack_cooldown = 1.6
+flee_hp_ratio = 0.2
+defense_reduction = 0.15
+offense_scale = 0.8
+poise = 0.1
+assist_radius = 200.0
+migrate_count = 2

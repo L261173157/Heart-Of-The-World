@@ -1,0 +1,28 @@
+[gd_resource type="TileSet" format=3]
+
+[sub_resource type="NavigationPolygon" id="NavigationPolygon_x7p2p"]
+vertices = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+polygons = Array[PackedInt32Array]([PackedInt32Array(0, 1, 2, 3)])
+
+[sub_resource type="Image" id="Image_6pfhf"]
+data = {
+"data": PackedByteArray(255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0),
+"format": "RGBA8",
+"height": 4,
+"mipmaps": false,
+"width": 4
+}
+
+[sub_resource type="ImageTexture" id="ImageTexture_ini5x"]
+image = SubResource("Image_6pfhf")
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_gumdr"]
+texture = SubResource("ImageTexture_ini5x")
+texture_region_size = Vector2i(4, 4)
+0:0/0 = 0
+0:0/0/navigation_layer_0/polygon = SubResource("NavigationPolygon_x7p2p")
+
+[resource]
+tile_size = Vector2i(32, 32)
+navigation_layer_0/layers = 1
+sources/0 = SubResource("TileSetAtlasSource_gumdr")

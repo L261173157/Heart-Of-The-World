@@ -26,6 +26,14 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 mouse_filter = 2
 
+[node name="ThreatRect" type="ColorRect" parent="Root"]
+unique_name_in_owner = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(0.9, 0.15, 0.1, 0)
+
 [node name="TopLeft" type="VBoxContainer" parent="Root"]
 offset_left = 12.0
 offset_top = 12.0
@@ -63,12 +71,18 @@ theme_override_colors/font_color = Color(1, 0.85, 0.45, 0.95)
 theme_override_font_sizes/font_size = 14
 text = "赏金准备中…"
 
+[node name="QuestLabel" type="Label" parent="Root/TopLeft"]
+unique_name_in_owner = true
+theme_override_colors/font_color = Color(0.7, 0.9, 1.0, 0.95)
+theme_override_font_sizes/font_size = 14
+text = ""
+
 [node name="BtnEco" type="Button" parent="Root"]
 unique_name_in_owner = true
 offset_left = 276.0
 offset_top = 12.0
-offset_right = 336.0
-offset_bottom = 48.0
+offset_right = 328.0
+offset_bottom = 64.0
 theme_override_font_sizes/font_size = 14
 text = "生态"
 
@@ -164,12 +178,12 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -136.0
-offset_top = -156.0
+offset_left = -160.0
+offset_top = -184.0
 offset_right = -24.0
-offset_bottom = -44.0
+offset_bottom = -48.0
 theme_override_font_sizes/font_size = 24
-text = "攻击"
+text = ""
 
 [node name="DashBtn" type="Button" parent="Root"]
 unique_name_in_owner = true
@@ -177,12 +191,12 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -268.0
-offset_top = -120.0
-offset_right = -156.0
-offset_bottom = -20.0
+offset_left = -286.0
+offset_top = -148.0
+offset_right = -186.0
+offset_bottom = -48.0
 theme_override_font_sizes/font_size = 20
-text = "冲刺"
+text = ""
 
 [node name="HeavyBtn" type="Button" parent="Root"]
 unique_name_in_owner = true
@@ -190,12 +204,12 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -392.0
-offset_top = -100.0
-offset_right = -280.0
-offset_bottom = -20.0
+offset_left = -414.0
+offset_top = -148.0
+offset_right = -314.0
+offset_bottom = -48.0
 theme_override_font_sizes/font_size = 20
-text = "重击"
+text = ""
 
 [node name="BoltBtn" type="Button" parent="Root"]
 unique_name_in_owner = true
@@ -203,12 +217,12 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -392.0
-offset_top = -212.0
-offset_right = -280.0
-offset_bottom = -132.0
+offset_left = -414.0
+offset_top = -262.0
+offset_right = -314.0
+offset_bottom = -162.0
 theme_override_font_sizes/font_size = 18
-text = "法弹"
+text = ""
 
 [node name="HealBtn" type="Button" parent="Root"]
 unique_name_in_owner = true
@@ -216,12 +230,12 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -268.0
-offset_top = -232.0
-offset_right = -156.0
-offset_bottom = -152.0
+offset_left = -286.0
+offset_top = -262.0
+offset_right = -186.0
+offset_bottom = -162.0
 theme_override_font_sizes/font_size = 18
-text = "治疗"
+text = ""
 
 [node name="EmpowerBtn" type="Button" parent="Root"]
 unique_name_in_owner = true
@@ -229,21 +243,21 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -392.0
-offset_top = -306.0
-offset_right = -280.0
-offset_bottom = -226.0
+offset_left = -542.0
+offset_top = -148.0
+offset_right = -442.0
+offset_bottom = -48.0
 theme_override_font_sizes/font_size = 18
-text = "强化"
+text = ""
 
 [node name="BtnShop" type="Button" parent="Root"]
 unique_name_in_owner = true
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -222.0
+offset_left = -124.0
 offset_top = 186.0
-offset_right = -132.0
-offset_bottom = 224.0
+offset_right = -72.0
+offset_bottom = 238.0
 theme_override_font_sizes/font_size = 15
 text = "商店"
 
@@ -297,24 +311,9 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 36)
 text = "关闭（B）"
 
-[node name="NightRect" type="ColorRect" parent="Root"]
-unique_name_in_owner = true
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-mouse_filter = 2
-color = Color(0.08, 0.1, 0.28, 0)
-
-[node name="ThreatRect" type="ColorRect" parent="Root"]
-unique_name_in_owner = true
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-mouse_filter = 2
-color = Color(0.9, 0.15, 0.1, 0)
-
 [node name="SkillBar" type="HBoxContainer" parent="Root"]
 unique_name_in_owner = true
+visible = false
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
@@ -420,20 +419,20 @@ horizontal_alignment = 1
 unique_name_in_owner = true
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -56.0
+offset_left = -64.0
 offset_top = 232.0
 offset_right = -12.0
-offset_bottom = 268.0
+offset_bottom = 284.0
 text = "‖"
 
 [node name="BtnCodex" type="Button" parent="Root"]
 unique_name_in_owner = true
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -136.0
-offset_top = 232.0
-offset_right = -64.0
-offset_bottom = 268.0
+offset_left = -124.0
+offset_top = 246.0
+offset_right = -72.0
+offset_bottom = 298.0
 theme_override_font_sizes/font_size = 14
 text = "图鉴"
 
@@ -451,7 +450,7 @@ theme_override_font_sizes/font_size = 20
 modulate = Color(1, 1, 1, 0)
 horizontal_alignment = 1
 
-[node name="PauseLayer" type="CenterContainer" parent="Root"]
+[node name="PauseLayer" type="Control" parent="Root"]
 unique_name_in_owner = true
 visible = false
 anchors_preset = 15
@@ -459,7 +458,20 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 mouse_filter = 0
 
+[node name="Dim" type="ColorRect" parent="Root/PauseLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.55)
+
 [node name="PausePanel" type="PanelContainer" parent="Root/PauseLayer"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="Margin" type="MarginContainer" parent="Root/PauseLayer/PausePanel"]
 theme_override_constants/margin_left = 24
@@ -481,6 +493,11 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(220, 44)
 text = "继续冒险"
 
+[node name="SaveBtn" type="Button" parent="Root/PauseLayer/PausePanel/Margin/VB"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(220, 44)
+text = "保存进度"
+
 [node name="PauseSettingsBtn" type="Button" parent="Root/PauseLayer/PausePanel/Margin/VB"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(220, 44)
@@ -491,15 +508,28 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(220, 44)
 text = "回主菜单"
 
-[node name="PauseSettingsLayer" type="CenterContainer" parent="Root"]
+[node name="PauseSettingsLayer" type="Control" parent="Root"]
 unique_name_in_owner = true
 visible = false
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 
+[node name="Dim" type="ColorRect" parent="Root/PauseSettingsLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.55)
+
 [node name="VB" type="VBoxContainer" parent="Root/PauseSettingsLayer"]
 theme_override_constants/separation = 12
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="Settings" parent="Root/PauseSettingsLayer/VB" instance=ExtResource("4_settings")]
 
@@ -508,15 +538,29 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(120, 40)
 text = "关闭"
 
-[node name="CodexLayer" type="CenterContainer" parent="Root"]
+[node name="CodexLayer" type="Control" parent="Root"]
 unique_name_in_owner = true
 visible = false
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 
+[node name="Dim" type="ColorRect" parent="Root/CodexLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.55)
+
 [node name="CodexPanel" type="PanelContainer" parent="Root/CodexLayer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(760, 640)
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="Margin" type="MarginContainer" parent="Root/CodexLayer/CodexPanel"]
 theme_override_constants/margin_left = 20
@@ -533,17 +577,25 @@ theme_override_font_sizes/font_size = 18
 text = "图鉴与成就"
 horizontal_alignment = 1
 
-[node name="CodexContent" type="Label" parent="Root/CodexLayer/CodexPanel/Margin/VB"]
+[node name="CodexScroll" type="ScrollContainer" parent="Root/CodexLayer/CodexPanel/Margin/VB"]
+custom_minimum_size = Vector2(720, 520)
+horizontal_scroll_mode = 0
+
+[node name="ContentVB" type="VBoxContainer" parent="Root/CodexLayer/CodexPanel/Margin/VB/CodexScroll"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="CodexContent" type="Label" parent="Root/CodexLayer/CodexPanel/Margin/VB/CodexScroll/ContentVB"]
 unique_name_in_owner = true
 theme_override_font_sizes/font_size = 14
 text = " "
 
-[node name="AchTitle" type="Label" parent="Root/CodexLayer/CodexPanel/Margin/VB"]
+[node name="AchTitle" type="Label" parent="Root/CodexLayer/CodexPanel/Margin/VB/CodexScroll/ContentVB"]
 theme_override_colors/font_color = Color(0.7, 0.9, 0.7, 0.9)
 theme_override_font_sizes/font_size = 15
 text = "— 成就 —"
 
-[node name="AchContent" type="Label" parent="Root/CodexLayer/CodexPanel/Margin/VB"]
+[node name="AchContent" type="Label" parent="Root/CodexLayer/CodexPanel/Margin/VB/CodexScroll/ContentVB"]
 unique_name_in_owner = true
 theme_override_font_sizes/font_size = 13
 text = " "
@@ -553,15 +605,28 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(120, 36)
 text = "关闭"
 
-[node name="PassiveLayer" type="CenterContainer" parent="Root"]
+[node name="PassiveLayer" type="Control" parent="Root"]
 unique_name_in_owner = true
 visible = false
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 
+[node name="Dim" type="ColorRect" parent="Root/PassiveLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.55)
+
 [node name="PassiveVB" type="VBoxContainer" parent="Root/PassiveLayer"]
 theme_override_constants/separation = 10
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="PassiveTitle" type="Label" parent="Root/PassiveLayer/PassiveVB"]
 unique_name_in_owner = true

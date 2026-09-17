@@ -1,0 +1,113 @@
+[gd_resource type="SpriteFrames" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/attack_f0.png" id="1_hkli4"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/attack_f1.png" id="2_6fk1d"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/attack_f2.png" id="3_lryfm"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/attack_f3.png" id="4_fufjq"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/attack_f4.png" id="5_aos6i"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/attack_f5.png" id="6_y347a"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/die_f0.png" id="7_5i1pe"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/die_f1.png" id="8_nq0jp"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/die_f2.png" id="9_r3lhq"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/die_f3.png" id="10_e2po1"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/idle_f0.png" id="11_y0uta"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/idle_f1.png" id="12_08os5"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/idle_f2.png" id="13_qy038"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/idle_f3.png" id="14_fy6c5"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/idle_f4.png" id="15_2iaq8"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/idle_f5.png" id="16_74b0k"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/walk_f0.png" id="17_ykrvf"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/walk_f1.png" id="18_o2fqy"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/walk_f2.png" id="19_sqq2i"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/walk_f3.png" id="20_fnino"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/walk_f4.png" id="21_8rpxb"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/bat_v2/tex/walk_f5.png" id="22_ibff8"]
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_hkli4")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_6fk1d")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_lryfm")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_fufjq")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_aos6i")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_y347a")
+}],
+"loop": 1,
+"name": &"attack",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("7_5i1pe")
+}, {
+"duration": 1.0,
+"texture": ExtResource("8_nq0jp")
+}, {
+"duration": 1.0,
+"texture": ExtResource("9_r3lhq")
+}, {
+"duration": 1.0,
+"texture": ExtResource("10_e2po1")
+}],
+"loop": 0,
+"name": &"die",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("11_y0uta")
+}, {
+"duration": 1.0,
+"texture": ExtResource("12_08os5")
+}, {
+"duration": 1.0,
+"texture": ExtResource("13_qy038")
+}, {
+"duration": 1.0,
+"texture": ExtResource("14_fy6c5")
+}, {
+"duration": 1.0,
+"texture": ExtResource("15_2iaq8")
+}, {
+"duration": 1.0,
+"texture": ExtResource("16_74b0k")
+}],
+"loop": 1,
+"name": &"idle",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("17_ykrvf")
+}, {
+"duration": 1.0,
+"texture": ExtResource("18_o2fqy")
+}, {
+"duration": 1.0,
+"texture": ExtResource("19_sqq2i")
+}, {
+"duration": 1.0,
+"texture": ExtResource("20_fnino")
+}, {
+"duration": 1.0,
+"texture": ExtResource("21_8rpxb")
+}, {
+"duration": 1.0,
+"texture": ExtResource("22_ibff8")
+}],
+"loop": 1,
+"name": &"walk",
+"speed": 10.0
+}]

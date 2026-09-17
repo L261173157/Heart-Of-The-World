@@ -7,6 +7,26 @@ extends Node
 ## 存档路径：var 而非 const，测试场景可指向沙盒路径避免覆盖真实进度
 var SAVE_PATH := "user://save.json"
 const SAVE_DEBOUNCE := 2.0
+## 存档版本：v1 角色侧；v2 增加生态世界；v3 增加角色位置/当前生命与魔法；
+## v4（世界 v5）增加 world_seed（每档全新世界）+ 探索进度（explored/discovered）；
+## v5 增加 destroyed（已摧毁障碍格）+ quests（任务进度）
+const SAVE_VERSION := 5
+
+## 世界种子（世界 v5）：「新的冒险」重掷，游戏内 BiomeMap.configure 消费；
+## v3 旧档无此键 → DEFAULT_SEED（旧世界与旧 ecology 存档严丝合缝）
+var world_seed: int = BiomeMap.DEFAULT_SEED
+## 战争迷雾位图（200×200 位，每格 4000px ≈ 据点尺度；行内按 bit 打包，
+## 25 bytes/行 × 200 行 = 5KB）。空数组 = 全图未探索（懒分配）
+const FOG_GRID := 200
+var explored := PackedByteArray()
+## 迷雾改动计数（小地图纹理增量重建的脏标记；_test 也可复位）
+var fog_version := 0
+## 已发现地标 id 列表（lm_{patch}_{k}，确定性 id 随种子稳定）
+var discovered_landmarks: Array[String] = []
+## 已摧毁障碍格（"x,y" 字符串列表；game_world 装配时灌回 ObstacleField）
+var destroyed_cells: Array[String] = []
+## 任务系统数据真源（存档 v5）：active=进行中任务数组，completed=各 NPC 已完成数
+var quests := {"active": [], "completed": {}}
 
 ## stats 对象被重建（reset_all）时通知常驻订阅者（如 SfxManager）重连信号
 signal stats_rebuilt
@@ -17,14 +37,27 @@ var gold: int = 0
 var save_enabled: bool = true
 ## 新手引导完成标志（tutorial.gd 写入，随存档持久化）
 var tutorial_flags: Dictionary = {}
+## 开场 CG 已播标记（播完或跳过即置真；「新的冒险」清档会重置，新冒险重播一次）
+var seen_intro_cg := false
 ## 图鉴：物种 → 累计击杀数（monster_killed_by_player 时自动记录）
 var codex: Dictionary = {}
 ## 已解锁成就 id → true
 var achievements: Dictionary = {}
-## 设置（主菜单/暂停菜单写入）：音量 0~1、震屏、伤害数字
-var settings: Dictionary = {"volume": 0.8, "screen_shake": true, "damage_numbers": true}
+## 生态世界快照（读档时暂存，game_world 启动时消费一次后置空）；
+## 运行中的快照在 save_now 时直接向 WorldSim.sim 取——生态跨会话连续是核心卖点
+var ecology_snapshot: Variant = null
+## 角色运行态快照（位置/当前 HP/MP）：与生态世界一起恢复，避免“继续冒险”
+## 实际把角色免费传回出生点并回满状态。死亡时快照由 Player 归一为出生点满状态。
+var player_snapshot: Variant = null
+## 设置（主菜单/暂停菜单写入）：三条音量滑条（Master 总音量 / Music 音乐 / SFX 音效，
+## 后两者默认 1.0——旧档无键走默认，响度与单总线时代完全一致）、震屏、伤害数字
+var settings: Dictionary = {"volume": 0.8, "music_volume": 1.0, "sfx_volume": 1.0,
+	"screen_shake": true, "damage_numbers": true}
 ## 本局击杀数（死亡信息/统计用）
 var session_kills: int = 0
+## 最近一次成功落盘的时刻（Unix 秒）：冒险档案面板显示"最后保存 HH:MM"。
+## 0 = 尚未保存过（首启无档 / 测试关闭写盘）
+var last_save_unix: float = 0.0
 
 var _save_timer := 0.0
 ## 寿命警告已触发过的阈值（避免重复播报；读档按剩余寿命重建）
@@ -39,6 +72,14 @@ const UPGRADE_NAMES := {
 
 
 func _ready() -> void:
+	# 暂停期间存档计时继续走：暂停菜单里改设置（音量/震屏）后 2s 内即落盘，
+	# 不依赖"恢复游戏后"才补写——玩家改完设置直接杀进程是真实路径
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	# 强制横屏重申：引擎方向掩码在场景锚定时若单例未就绪会短暂放行全方向，
+	# 挂起恢复/设备旋转后可能跟随设备竖屏——竖屏下 expand 拉伸会把可视世界
+	# 纵向撑大约 4 倍，人物缩到屏高 ~1.5%（2026-09-09 模拟器实证）。
+	# 引擎此调用会向 UIKit 请求方向几何更新，桌面端等效空操作。
+	DisplayServer.screen_set_orientation(DisplayServer.SCREEN_LANDSCAPE)
 	stats = CharacterStats.new()
 	stats.changed.connect(_on_stats_changed)
 	_load()
@@ -69,11 +110,8 @@ func _on_player_died_lifespan() -> void:
 	_queue_save()
 
 
-func _on_kill_record(_xp: int, _gold: int, monster_name: String) -> void:
+func _on_kill_record(_xp: int, _gold: int, _monster_name: String, species_name: String) -> void:
 	session_kills += 1
-	var species_name := monster_name.get_slice("#", 0)
-	if species_name.begins_with("精英·"):
-		species_name = species_name.trim_prefix("精英·")
 	codex[species_name] = codex.get(species_name, 0) + 1
 	_queue_save()
 
@@ -82,13 +120,16 @@ func _process(delta: float) -> void:
 	if _save_timer > 0.0:
 		_save_timer -= delta
 		if _save_timer <= 0.0:
-			_save_now()
+			save_now()
 
 
 ## iOS 退后台必须立即落盘（进程随时可能被系统杀死）
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_CLOSE_REQUEST:
-		_save_now()
+		save_now()
+	# 挂起恢复时重申横屏：见 _ready 内注释（iOS 方向锁竞态防御第二道）
+	if what == NOTIFICATION_APPLICATION_RESUMED:
+		DisplayServer.screen_set_orientation(DisplayServer.SCREEN_LANDSCAPE)
 
 
 func add_xp(amount: int) -> void:
@@ -107,9 +148,10 @@ func allocate(stat_name: String) -> void:
 
 
 func add_gold(amount: int) -> void:
-	# 贪婪被动只放大获取，不放大损失（负数直通）
+	# 贪婪被动只放大获取，不放大损失（负数直通）；
+	# roundi 与 EconomyMath 全线口径一致（int() 截断会长期微量少发）
 	if amount > 0:
-		amount = int(amount * stats.gold_mult())
+		amount = roundi(amount * stats.gold_mult())
 	gold += amount
 	EventBus.gold_changed.emit(gold)
 	_queue_save()
@@ -172,7 +214,9 @@ func _roll_affix(slot: String, id: String, rarity: int) -> float:
 	return lerpf(float(rangev[0]), float(rangev[1]), t * randf())
 
 
-## 掉落结算：按物品槽位比较评分，更高则替换该槽返回 true；否则按稀有度折金返回 false
+## 掉落结算：按物品槽位比较评分，更高则替换该槽返回 true；否则按稀有度折金返回 false。
+## 换下的旧装备同样按稀有度折金（EconomyMath 契约：替换与拒收同口径结算——
+## 旧件直接蒸发会让经济总量随换装次数单向流失，连续换装时无声吞掉旧史诗）
 func try_equip(item: Dictionary) -> bool:
 	var slot := str(item.get("slot", "weapon"))
 	if not slot in EQUIP_SLOTS:
@@ -181,9 +225,11 @@ func try_equip(item: Dictionary) -> bool:
 	if stats.equip_score(item) > stats.equip_score(current):
 		stats.equips[slot] = item
 		stats.changed.emit()
+		if not current.is_empty():
+			add_gold(EconomyMath.sell_price(int(current.get("rarity", 0))))
 		_queue_save()
 		return true
-	add_gold(20 + int(item.get("rarity", 0)) * 10)
+	add_gold(EconomyMath.sell_price(int(item.get("rarity", 0))))
 	return false
 
 
@@ -206,7 +252,7 @@ func upgrade_level(kind: String) -> int:
 
 
 func upgrade_cost(kind: String) -> int:
-	return 50 + upgrade_level(kind) * 40
+	return EconomyMath.upgrade_cost(upgrade_level(kind))
 
 
 ## 购买一级强化：成功扣钱返回 true；种类非法/满级/钱不够返回 false 不改状态
@@ -233,6 +279,42 @@ func set_tutorial_flag(key: String) -> void:
 	_queue_save()
 
 
+# --- 战争迷雾（世界 v5）：200×200 位图，行内 bit 打包（25 bytes/行） ---
+
+func fog_is_explored(gx: int, gy: int) -> bool:
+	gx = clampi(gx, 0, FOG_GRID - 1)
+	gy = clampi(gy, 0, FOG_GRID - 1)
+	var row := gy * 25 + (gx >> 3)
+	if row >= explored.size():
+		return false
+	return (explored[row] >> (gx & 7)) & 1 == 1
+
+
+func fog_reveal_cell(gx: int, gy: int) -> void:
+	gx = clampi(gx, 0, FOG_GRID - 1)
+	gy = clampi(gy, 0, FOG_GRID - 1)
+	if explored.is_empty():
+		explored.resize(FOG_GRID * 25)
+	var row := gy * 25 + (gx >> 3)
+	explored[row] = explored[row] | (1 << (gx & 7))
+
+
+## 世界坐标 → 迷雾格坐标
+func fog_cell_of(world_pos: Vector2) -> Vector2i:
+	var step := BiomeMap.WORLD_SIZE.x / float(FOG_GRID)
+	return Vector2i(clampi(int(world_pos.x / step), 0, FOG_GRID - 1),
+			clampi(int(world_pos.y / step), 0, FOG_GRID - 1))
+
+
+## 标记发现地标（幂等；返回 true = 本次新发现）
+func discover_landmark(id: String) -> bool:
+	if discovered_landmarks.has(id):
+		return false
+	discovered_landmarks.append(id)
+	_queue_save()
+	return true
+
+
 ## 设置应用（音量即时生效）与写入
 func set_setting(key: String, value) -> void:
 	settings[key] = value
@@ -240,24 +322,54 @@ func set_setting(key: String, value) -> void:
 	_queue_save()
 
 
-## 重置世界：清空全部进度（主菜单"重置世界"）
+## 开场 CG 播过置真并触发防抖落盘（cutscene_player 播完/跳过时调用）
+func mark_intro_cg_seen() -> void:
+	seen_intro_cg = true
+	_queue_save()
+
+
+## 重置世界：清空全部进度（主菜单"新的冒险"确认）。
+## stats 就地重置而非重建对象——Player/HUD/AchievementManager 等订阅者
+## 持有的是旧对象引用，换血会静默失联（属性不生效/升级不弹窗）
 func reset_all() -> void:
-	stats = CharacterStats.new()
-	stats.changed.connect(_on_stats_changed)
+	stats.reset()
 	gold = 0
 	tutorial_flags = {}
+	seen_intro_cg = false
 	codex = {}
 	achievements = {}
 	session_kills = 0
+	ecology_snapshot = null
+	player_snapshot = null
 	_lifespan_warned.clear()
-	_save_now()
+	# 世界 v5：新的冒险 = 全新世界——重掷种子并同步 BiomeMap（此后的菜单预览/
+	# 世界装配读到的都是新世界），探索进度归零
+	world_seed = randi()
+	BiomeMap.configure(world_seed)
+	explored = PackedByteArray()
+	discovered_landmarks = []
+	destroyed_cells = []
+	quests = {"active": [], "completed": {}}
+	save_now()
 	stats_rebuilt.emit()
 	EventBus.player_progress_changed.emit(stats.level, stats.xp, stats.xp_to_next(), stats.pending_points)
 	EventBus.gold_changed.emit(gold)
 
 
 func _apply_settings() -> void:
-	AudioServer.set_bus_volume_db(0, linear_to_db(clampf(float(settings.get("volume", 0.8)), 0.0, 1.0)))
+	# linear_to_db(0) = -inf：部分音频后端对 inf 行为未定义，钳到 -60dB（事实静音）
+	_set_bus_volume(0, settings.get("volume", 0.8), 0.8)
+	# Music/SFX 子总线（default_bus_layout.tres）：按名取索引，布局缺失时静默跳过
+	# （headless -s 纯逻辑测试不加载场景也可能无 AudioServer 总线，防御性容错）
+	_set_bus_volume(AudioServer.get_bus_index("Music"), settings.get("music_volume", 1.0), 1.0)
+	_set_bus_volume(AudioServer.get_bus_index("SFX"), settings.get("sfx_volume", 1.0), 1.0)
+
+
+func _set_bus_volume(bus_idx: int, linear_value: Variant, fallback: float) -> void:
+	if bus_idx < 0:
+		return
+	var linear := clampf(_safe_float(linear_value, fallback), 0.0, 1.0)
+	AudioServer.set_bus_volume_db(bus_idx, maxf(-60.0, linear_to_db(maxf(linear, 0.0001))))
 
 
 func _on_stats_changed() -> void:
@@ -270,15 +382,27 @@ func _on_stats_changed() -> void:
 # --- 本地存档（JSON，字段级类型校验，坏档安全忽略） ---
 
 func _queue_save() -> void:
-	_save_timer = SAVE_DEBOUNCE
+	# 首次变更后 2s 必落盘，后续变更不推迟（领先沿防抖）：旧行为每次变更都
+	# 重置计时，长时间连续战斗（金币/经验持续变动）会一直不落盘，进程若被杀
+	# 进度损失无上界；写入是 KB 级 JSON 原子替换，2s 节奏对 iOS 闪存无感
+	if _save_timer <= 0.0:
+		_save_timer = SAVE_DEBOUNCE
 
 
-func _save_now() -> void:
+## 立即落盘（公开：防抖到时/退后台/回主菜单自动调用，也是
+## 主菜单"冒险档案"与暂停菜单"保存进度"手动保存的入口）
+func save_now() -> void:
 	_save_timer = 0.0
 	if not save_enabled:
 		return
+	# 世界运行中取角色实时状态；菜单期间沿用 game_world 退出前留下的缓存。
+	var live_player := get_tree().get_first_node_in_group("player")
+	if live_player != null and live_player.has_method("save_snapshot"):
+		player_snapshot = live_player.save_snapshot()
+	last_save_unix = Time.get_unix_time_from_system()
 	var data := {
-		"version": 1,
+		"version": SAVE_VERSION,
+		"world_seed": world_seed,
 		"level": stats.level,
 		"xp": stats.xp,
 		"pending_points": stats.pending_points,
@@ -299,13 +423,123 @@ func _save_now() -> void:
 		"achievements": achievements,
 		"settings": settings,
 		"tutorial": tutorial_flags,
+		"seen_intro_cg": seen_intro_cg,
+		"last_save_unix": last_save_unix,
 	}
-	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if typeof(player_snapshot) == TYPE_DICTIONARY:
+		data["player"] = (player_snapshot as Dictionary).duplicate(true)
+	# 生态世界快照：世界运行中取实时 sim；菜单期间（sim 已被 game_world 卸载）
+	# 回退到最近一次快照缓存（读档暂存 / 退出世界时 game_world 存入）。
+	# 若在此直接丢键，菜单里改任何设置（如音量滑条触发的防抖落盘）都会把存档
+	# 原子替换为无 ecology 的版本——玩家没按"重置世界"，演化中的世界却静默丢失
+	var ecology: Variant = null
+	if WorldSim.sim != null:
+		ecology = WorldSim.sim.to_dict()
+		# 世界时钟随快照入档（昼夜相位/游戏天数）：生态连续而昼夜断裂的话，
+		# "读档回清晨"等于时间回溯（寿命按游戏天推进，可反复读档免老化）
+		(ecology as Dictionary)["day_time"] = WorldSim.day_time
+		(ecology as Dictionary)["game_day"] = WorldSim.game_day
+	elif typeof(ecology_snapshot) == TYPE_DICTIONARY:
+		ecology = ecology_snapshot
+	if ecology != null:
+		data["ecology"] = ecology
+	# 探索进度（世界 v5）：迷雾位图（base64 存 PackedByteArray）+ 已发现地标
+	if not explored.is_empty():
+		data["explored"] = Marshalls.raw_to_base64(explored)
+	if not discovered_landmarks.is_empty():
+		data["landmarks"] = discovered_landmarks.duplicate()
+	if not ObstacleField.destroyed_list().is_empty():
+		data["destroyed"] = ObstacleField.destroyed_list()
+	if not quests["active"].is_empty() or not quests["completed"].is_empty():
+		data["quests"] = {"active": (quests["active"] as Array).duplicate(true),
+			"completed": (quests["completed"] as Dictionary).duplicate(true)}
+	# 原子写：iOS 退后台瞬间进程可能在写入中途被杀留下半截档——
+	# 先写临时文件再改名（rename 是原子操作），主档任何时刻都是完整状态
+	var tmp_path := "%s.tmp" % SAVE_PATH
+	var file := FileAccess.open(tmp_path, FileAccess.WRITE)
 	if file == null:
-		push_warning("存档写入失败：%s" % SAVE_PATH)
+		push_warning("存档写入失败：%s" % tmp_path)
 		return
 	file.store_string(JSON.stringify(data))
 	file.close()
+	var err := DirAccess.rename_absolute(tmp_path, SAVE_PATH)
+	if err != OK:
+		push_warning("存档原子替换失败（错误码 %d），保留旧档" % err)
+
+
+## 反序列化的宽松数值读取：存档可能被手改/三方工具写坏，
+## 类型错误回落默认值而不是中断 _load 留下"半加载"状态
+func _safe_int(value: Variant, fallback: int) -> int:
+	match typeof(value):
+		TYPE_INT:
+			return value
+		TYPE_FLOAT:
+			return int(value)
+		_:
+			return fallback
+
+
+func _safe_float(value: Variant, fallback: float) -> float:
+	match typeof(value):
+		TYPE_FLOAT:
+			return value
+		TYPE_INT:
+			return float(value)
+		_:
+			return fallback
+
+
+## 玩家运行态字段级消毒：位置必须是两个有限数，HP/MP 也只接收有限数值。
+## 缺 hp/mp 键不注入哨兵（曾以 -1 占位 → 恢复侧 clamp 成 1 血开局）：
+## 交给 player._restore_saved_state 的满血蓝默认；键存在但坏值仍整段丢弃。
+func _sanitize_player_snapshot(value: Variant) -> Variant:
+	if typeof(value) != TYPE_DICTIONARY:
+		return null
+	var raw: Dictionary = value
+	var pos: Variant = raw.get("position", null)
+	if typeof(pos) != TYPE_ARRAY or pos.size() != 2:
+		return null
+	if not typeof(pos[0]) in [TYPE_INT, TYPE_FLOAT] or not typeof(pos[1]) in [TYPE_INT, TYPE_FLOAT]:
+		return null
+	var x := float(pos[0])
+	var y := float(pos[1])
+	if not is_finite(x) or not is_finite(y):
+		return null
+	var hp := stats.max_hp()
+	var mp := stats.max_mp()
+	if raw.has("hp"):
+		hp = _safe_float(raw.get("hp", 0.0), NAN)
+		if not is_finite(hp):
+			return null
+	if raw.has("mp"):
+		mp = _safe_float(raw.get("mp", 0.0), NAN)
+		if not is_finite(mp):
+			return null
+	return {"position": [x, y], "hp": hp, "mp": mp}
+
+
+## 装备条目字段级消毒（equips 主路径与 v1 legacy 迁移共用）：
+## 名称转字符串、稀有度钳 0~3、词条只收 String 键 + 数值钳 [0, 硬上限]、元素只认火/冰。
+## 词条硬上限 0.5 = 词条表理论最大值（0.20）的 2.5 倍余量：正常掉落永不可达，
+## 只拦手改档神装（单机自欺本无受害者，但护栏与类型消毒同口径；M2 服务器权威前先行）
+const AFFIX_HARD_CAP := 0.5
+
+func _sanitize_equip_item(slot: String, item: Dictionary) -> Dictionary:
+	var clean := {
+		"slot": slot,
+		"name": str(item.get("name", "?")),
+		"rarity": clampi(_safe_int(item.get("rarity", 0), 0), 0, 3),
+		"affixes": {},
+	}
+	var affixes: Variant = item.get("affixes", {})
+	if typeof(affixes) == TYPE_DICTIONARY:
+		for key in affixes:
+			if typeof(key) == TYPE_STRING:
+				clean["affixes"][key] = clampf(_safe_float(affixes[key], 0.0), 0.0, AFFIX_HARD_CAP)
+	var element := str(item.get("element", ""))
+	if element == "fire" or element == "ice":
+		clean["element"] = element
+	return clean
 
 
 func _load() -> void:
@@ -320,53 +554,148 @@ func _load() -> void:
 		push_warning("存档损坏，已忽略")
 		return
 	var data: Dictionary = parsed
-	stats.level = maxi(1, int(data.get("level", 1)))
-	stats.xp = maxi(0, int(data.get("xp", 0)))
-	stats.pending_points = maxi(0, int(data.get("pending_points", 0)))
-	stats.strength = maxi(1, int(data.get("strength", 5)))
-	stats.agility = maxi(1, int(data.get("agility", 5)))
-	stats.intellect = maxi(1, int(data.get("intellect", 5)))
-	gold = maxi(0, int(data.get("gold", 0)))
+	var version := _safe_int(data.get("version", 1), 1)
+	if version > SAVE_VERSION:
+		push_warning("存档版本 %d 高于当前支持的 %d（可能来自更新版本客户端），按兼容模式尝试读取" % [
+			version, SAVE_VERSION])
+	# 世界种子（v4+）：v3 旧档无键 → DEFAULT_SEED，旧世界与旧 ecology 快照严丝合缝
+	world_seed = _safe_int(data.get("world_seed", BiomeMap.DEFAULT_SEED), BiomeMap.DEFAULT_SEED)
+	stats.level = maxi(1, _safe_int(data.get("level", 1), 1))
+	stats.xp = maxi(0, _safe_int(data.get("xp", 0), 0))
+	stats.pending_points = maxi(0, _safe_int(data.get("pending_points", 0), 0))
+	stats.strength = maxi(1, _safe_int(data.get("strength", 5), 5))
+	stats.agility = maxi(1, _safe_int(data.get("agility", 5), 5))
+	stats.intellect = maxi(1, _safe_int(data.get("intellect", 5), 5))
+	gold = maxi(0, _safe_int(data.get("gold", 0), 0))
 	var saved_upgrades: Variant = data.get("upgrades", {})
 	if typeof(saved_upgrades) == TYPE_DICTIONARY:
 		for kind in UPGRADE_KINDS:
 			stats.set("upgrade_%s" % kind,
-				clampi(int(saved_upgrades.get(kind, 0)), 0, UPGRADE_MAX_LEVEL))
+				clampi(_safe_int(saved_upgrades.get(kind, 0), 0), 0, UPGRADE_MAX_LEVEL))
 	var saved_flags: Variant = data.get("tutorial", {})
 	if typeof(saved_flags) == TYPE_DICTIONARY:
-		tutorial_flags = saved_flags
+		tutorial_flags = {}
+		for key in saved_flags:
+			if typeof(key) != TYPE_STRING:
+				continue
+			# 标志值兼容 bool（常态）与数字（旧格式），其余类型视为未完成
+			var flag: Variant = saved_flags[key]
+			if flag == true or _safe_int(flag, 0) > 0:
+				tutorial_flags[key] = true
+	# 开场 CG 已播标记：旧档无键 → 未播（true 才认，其余一律视为未播）
+	seen_intro_cg = data.get("seen_intro_cg", false) == true
 	var saved_codex: Variant = data.get("codex", {})
 	if typeof(saved_codex) == TYPE_DICTIONARY:
-		codex = saved_codex
+		codex = {}
+		for key in saved_codex:
+			if typeof(key) == TYPE_STRING:
+				var kills := _safe_int(saved_codex[key], 0)
+				if kills > 0:
+					# 旧物种名迁到现行名录（美术 v5 更名；两个旧名并入同一新名时累加）
+					var migrated: String = SpeciesCatalog.migrate_name(key)
+					codex[migrated] = codex.get(migrated, 0) + kills
 	var saved_passives: Variant = data.get("passives", {})
 	if typeof(saved_passives) == TYPE_DICTIONARY:
-		stats.passives = saved_passives
+		stats.passives = {}
+		for key in saved_passives:
+			if typeof(key) == TYPE_STRING:
+				var lv := _safe_int(saved_passives[key], 0)
+				if lv > 0:
+					stats.passives[key] = lv
 	# 寿命：读档重建（非法值回落默认）；已越过的警告阈值静默补记防重复播报
-	stats.age_days = maxf(0.0, float(data.get("age_days", 0.0)))
-	stats.lifespan_days = maxf(1.0, float(data.get("lifespan_days", CharacterStats.BASE_LIFESPAN_DAYS)))
+	stats.age_days = maxf(0.0, _safe_float(data.get("age_days", 0.0), 0.0))
+	stats.lifespan_days = maxf(1.0, _safe_float(data.get("lifespan_days", CharacterStats.BASE_LIFESPAN_DAYS), CharacterStats.BASE_LIFESPAN_DAYS))
 	_lifespan_warned.clear()
 	for threshold in [10.0, 5.0, 1.0]:
 		if stats.lifespan_remaining() <= threshold:
 			_lifespan_warned.append(threshold)
 	var saved_equips: Variant = data.get("equips", {})
 	if typeof(saved_equips) == TYPE_DICTIONARY:
-		# 只收合法槽位，旧档遗留字段不带入
+		# 只收合法槽位，旧档遗留字段不带入；内层字段级消毒（存档可能被手改/工具写坏）：
+		# affixes 若被改成数组，equip_affix 遍历时会按错误类型索引崩溃
 		for slot in EQUIP_SLOTS:
 			var item: Variant = saved_equips.get(slot, null)
-			if typeof(item) == TYPE_DICTIONARY:
-				stats.equips[slot] = item
-	# 旧档迁移：单件装备时代（"equip" 键）整体视作武器槽
+			if typeof(item) != TYPE_DICTIONARY:
+				continue
+			stats.equips[slot] = _sanitize_equip_item(slot, item)
+	# 旧档迁移：单件装备时代（"equip" 键）整体视作武器槽——走与主路径相同的消毒
+	# （此前原样放入，legacy 档里 affixes 若是数组会让每次 max_hp() 求值即崩，读档坏档循环）
 	var legacy_equip: Variant = data.get("equip", null)
 	if typeof(legacy_equip) == TYPE_DICTIONARY and not legacy_equip.is_empty() \
 			and not stats.equips.has("weapon"):
-		stats.equips["weapon"] = legacy_equip
+		stats.equips["weapon"] = _sanitize_equip_item("weapon", legacy_equip)
 	var saved_achv: Variant = data.get("achievements", {})
 	if typeof(saved_achv) == TYPE_DICTIONARY:
-		achievements = saved_achv
+		achievements = {}
+		for key in saved_achv:
+			# typeof 先行：GDScript 的 "true" == true 是运行时错误而非 true
+			if typeof(key) == TYPE_STRING and typeof(saved_achv[key]) == TYPE_BOOL \
+					and saved_achv[key]:
+				achievements[key] = true
 	var saved_settings: Variant = data.get("settings", {})
 	if typeof(saved_settings) == TYPE_DICTIONARY:
 		for key in saved_settings:
-			settings[key] = saved_settings[key]
+			if typeof(key) != TYPE_STRING:
+				continue
+			# 键白名单 + 类型消毒（与 codex/achievements 同口径）：手改档把布尔
+			# 写成 "false"（truthy 字符串）直接覆写会让开关行为反直觉
+			match key:
+				"volume", "music_volume", "sfx_volume":
+					settings[key] = clampf(_safe_float(saved_settings[key],
+						settings[key]), 0.0, 1.0)
+				"screen_shake", "damage_numbers", "auto_aim":
+					if typeof(saved_settings[key]) == TYPE_BOOL:
+						settings[key] = saved_settings[key]
+	# 生态世界快照（v2+）：由 game_world 启动时消费
+	var saved_ecology: Variant = data.get("ecology", null)
+	if typeof(saved_ecology) == TYPE_DICTIONARY:
+		ecology_snapshot = saved_ecology
+	else:
+		ecology_snapshot = null
+	player_snapshot = _sanitize_player_snapshot(data.get("player", null))
+	# 探索进度（v4+）：坏值静默回退"全未探索/零发现"——迷雾只是表现，不值得坏档
+	var saved_fog: Variant = data.get("explored", "")
+	explored = PackedByteArray()
+	if typeof(saved_fog) == TYPE_STRING and saved_fog != "":
+		var decoded := Marshalls.base64_to_raw(saved_fog)
+		if decoded.size() == FOG_GRID * 25:
+			explored = decoded
+	discovered_landmarks = []
+	destroyed_cells = []
+	var saved_cells: Variant = data.get("destroyed", [])
+	if typeof(saved_cells) == TYPE_ARRAY:
+		for entry in saved_cells:
+			if typeof(entry) == TYPE_STRING and entry.contains(","):
+				destroyed_cells.append(entry)
+	# 任务进度（v5+）：字段级消毒——缺键/坏类型的条目丢弃而非中断整个任务栏
+	quests = {"active": [], "completed": {}}
+	var saved_quests: Variant = data.get("quests", {})
+	if typeof(saved_quests) == TYPE_DICTIONARY:
+		var saved_active: Variant = saved_quests.get("active", [])
+		if typeof(saved_active) == TYPE_ARRAY:
+			for q: Variant in saved_active:
+				if typeof(q) != TYPE_DICTIONARY:
+					continue
+				var qd: Dictionary = q
+				if typeof(qd.get("id", "")) != TYPE_STRING or typeof(qd.get("need", 0)) not in [TYPE_INT, TYPE_FLOAT]:
+					continue
+				# 旧档任务的目标物种随美术 v5 更名一并迁移（查无的已删物种任务
+				# 保留但永不达成——任务栏可手动放弃，不做读档时静默删任务）
+				if typeof(qd.get("species", "")) == TYPE_STRING:
+					qd["species"] = SpeciesCatalog.migrate_name(qd["species"])
+				qd["progress"] = clampi(int(qd.get("progress", 0)), 0, int(qd["need"]))
+				quests["active"].append(qd)
+		var saved_completed: Variant = saved_quests.get("completed", {})
+		if typeof(saved_completed) == TYPE_DICTIONARY:
+			for key in saved_completed:
+				if typeof(key) == TYPE_STRING and typeof(saved_completed[key]) in [TYPE_INT, TYPE_FLOAT]:
+					quests["completed"][key] = maxi(0, int(saved_completed[key]))
+	var saved_marks: Variant = data.get("landmarks", [])
+	if typeof(saved_marks) == TYPE_ARRAY:
+		for id in saved_marks:
+			if typeof(id) == TYPE_STRING and id.begins_with("lm_"):
+				discovered_landmarks.append(id)
+	last_save_unix = maxf(0.0, _safe_float(data.get("last_save_unix", 0.0), 0.0))
 	_apply_settings()
 	EventBus.player_progress_changed.emit(
 		stats.level, stats.xp, stats.xp_to_next(), stats.pending_points

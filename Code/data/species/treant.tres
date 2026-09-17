@@ -1,0 +1,33 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_trt"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/treant/treant_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_trt")
+species_name = "树人"
+frames_override = ExtResource("2_frames")
+ai_archetype = "charger"
+habitats = Array[String](["forest"])
+base_strength = 12.0
+base_agility = 2.0
+lifespan_min = 2000
+lifespan_max = 3000
+maturity_age = 200
+breeding_rate = 0.0
+expansion_threshold = 99
+migrate_count = 0
+corpse_duration = 90
+xp_base = 300
+xp_per_age = 0.0
+detect_radius = 300.0
+attack_range = 60.0
+attack_cooldown = 2.2
+flee_hp_ratio = 0.0
+defense_reduction = 0.3
+knockback_resist = 0.9
+poise = 0.9
+prey = Array[String](["萌芽怪"])
+is_boss = true
+boss_respawn_ticks = 420
+boss_size_scale = 2.2

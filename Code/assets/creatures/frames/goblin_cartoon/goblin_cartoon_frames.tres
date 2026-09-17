@@ -1,0 +1,105 @@
+[gd_resource type="SpriteFrames" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/attack_f0.png" id="1_vpj5v"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/attack_f1.png" id="2_kb1nx"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/attack_f2.png" id="3_3ovve"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/attack_f3.png" id="4_xkwod"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/attack_f4.png" id="5_bhs35"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/attack_f5.png" id="6_dewgy"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/die_f0.png" id="7_vm467"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/die_f1.png" id="8_k0knk"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/die_f2.png" id="9_kwkbb"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/die_f3.png" id="10_b2o3d"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/idle_f0.png" id="11_mybs4"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/idle_f1.png" id="12_4wjl7"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/idle_f2.png" id="13_5fc00"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/idle_f3.png" id="14_cxtyy"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/walk_f0.png" id="15_rbe5s"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/walk_f1.png" id="16_7hra1"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/walk_f2.png" id="17_n4nm6"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/walk_f3.png" id="18_kdhwt"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/walk_f4.png" id="19_2xwur"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/goblin_cartoon/tex/walk_f5.png" id="20_8ox2l"]
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_vpj5v")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_kb1nx")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_3ovve")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_xkwod")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_bhs35")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_dewgy")
+}],
+"loop": 1,
+"name": &"attack",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("7_vm467")
+}, {
+"duration": 1.0,
+"texture": ExtResource("8_k0knk")
+}, {
+"duration": 1.0,
+"texture": ExtResource("9_kwkbb")
+}, {
+"duration": 1.0,
+"texture": ExtResource("10_b2o3d")
+}],
+"loop": 0,
+"name": &"die",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("11_mybs4")
+}, {
+"duration": 1.0,
+"texture": ExtResource("12_4wjl7")
+}, {
+"duration": 1.0,
+"texture": ExtResource("13_5fc00")
+}, {
+"duration": 1.0,
+"texture": ExtResource("14_cxtyy")
+}],
+"loop": 1,
+"name": &"idle",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("15_rbe5s")
+}, {
+"duration": 1.0,
+"texture": ExtResource("16_7hra1")
+}, {
+"duration": 1.0,
+"texture": ExtResource("17_n4nm6")
+}, {
+"duration": 1.0,
+"texture": ExtResource("18_kdhwt")
+}, {
+"duration": 1.0,
+"texture": ExtResource("19_2xwur")
+}, {
+"duration": 1.0,
+"texture": ExtResource("20_8ox2l")
+}],
+"loop": 1,
+"name": &"walk",
+"speed": 10.0
+}]

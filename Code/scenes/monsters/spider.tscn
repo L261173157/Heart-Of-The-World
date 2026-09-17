@@ -1,7 +1,7 @@
 [gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/monsters/spider.gd" id="1_spider"]
-[ext_resource type="Texture2D" path="res://assets/creatures/scorpion.png" id="2_sprite"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/octopus/octopus_frames.tres" id="2_sprite"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
 size = Vector2(18, 18)
@@ -14,6 +14,7 @@ script = ExtResource("1_spider")
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 shape = SubResource("RectangleShape2D_body")
 
-[node name="Visual" type="Sprite2D" parent="."]
-scale = Vector2(2, 2)
-texture = ExtResource("2_sprite")
+[node name="Visual" type="AnimatedSprite2D" parent="."]
+scale = Vector2(5.28, 5.28)
+sprite_frames = ExtResource("2_sprite")
+autoplay = "idle"

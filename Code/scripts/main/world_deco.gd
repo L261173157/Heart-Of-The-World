@@ -1,193 +1,270 @@
-## 世界环境表现层（纯视觉，无碰撞无逻辑影响）：
-## ① 程序地物装饰——按地形在每区域撒树/岩/晶石/雪松等 Polygon2D 组合（固定 seed 可复现）
-## ② 区域氛围色调——低透明度叠色（雪偏冷/熔岩偏暖/沼泽偏绿雾），压住区域间的割裂感
-## ③ 环境粒子——雪原飘雪、熔岩升火星、沼泽浮雾（CPUParticles2D 局部量少省电）
-## 挂载于 game_world；只读模拟区域配置，不触碰模拟状态。
+## 世界环境表现层（纯视觉，无碰撞无逻辑影响）v4 分块版：
+## ① 程序地物装饰——地表块流式生成时按块撒树/岩/晶石/花田（hash(块坐标)
+##    固定种子可复现：走过再回来，装饰还在原地），每件道具按落点自身地形取样
+## ② 环境粒子——单例跟随玩家、按当前地形切换（雪原飘雪/熔岩升火星/沼泽浮雾）
+## v4 起不再做区域氛围叠色：群系交界由地表贴图 alpha 混合自然过渡，
+## 矩形叠色反而是"方形区域"的视觉残留。
+## 挂载于 game_world（ChunkStreamer 之后）；只读 BiomeMap，不触碰模拟状态。
 class_name WorldDeco
 extends Node2D
 
 ## 每地形装饰配方：类型 → 数量（密度按"簇状撒布"成团出现，避免均匀稀疏的空旷感）
+## 每地形 3-5 种道具拉开层次：骨架树/岩 + 中件灌丛 + 细节宝石/香蒲
 const RECIPES := {
-	"plains": {"tree": 18, "rock": 12, "grass": 22},
-	"forest": {"big_tree": 34, "mushroom": 12, "log": 8},
-	"snow": {"pine": 26, "ice": 12, "snowpile": 14},
-	"swamp": {"deadtree": 22, "mushroom": 10, "puddle": 10},
-	"hill": {"boulder": 26, "rock": 16},
-	"lava": {"crystal": 22, "bones": 10},
+	"plains": {"tree": 14, "rock": 10, "grass": 20, "bush": 12},
+	"forest": {"big_tree": 30, "mushroom": 12, "log": 8, "bush": 10},
+	"snow": {"pine": 24, "ice": 12, "snowpile": 14},
+	"swamp": {"deadtree": 20, "cattail": 10, "mushroom": 10, "puddle": 10, "bush": 8},
+	"hill": {"boulder": 24, "rock": 14, "bush": 10, "gems": 6},
+	"lava": {"crystal": 22, "bones": 10, "gems": 5},
 }
 
-## 区域氛围色（低透明叠色）
-const TINTS := {
-	"snow": Color(0.55, 0.7, 0.95, 0.07),
-	"lava": Color(1.0, 0.45, 0.15, 0.08),
-	"swamp": Color(0.5, 0.75, 0.4, 0.06),
-	"forest": Color(0.6, 0.85, 0.5, 0.04),
-}
+## 每块（512²）道具件数：与旧"每区域配方"密度同口径
+## （旧图 1100×700≈77 万 px²，块 26.2 万 px²，约 1/3 密度取整）
+const CHUNK_PROPS := 19
+## 撒布簇心数（70% 道具围绕簇心成团）
+const CHUNK_CLUSTERS := 3
+## 环境粒子跟随/切换的轮询间隔
+const AMBIENT_POLL := 0.5
 
 const DECO_Z := -1     # 地物在怪物之下
-const TINT_Z := 4      # 氛围色在角色之上（盖住整个区域的空气感）
 const PARTICLE_Z := 5
+
+## 装饰贴图源（Ninja Adventure tileset，CC0）：16px 网格，统一裁 32x32
+## （内容居中，透明边距无害），绘制时以底边中心对齐落点。
+## 坐标经像素统计 + 放大看板验证（2026-09-03）：树c0-1 松c4-5 灌木c2-3 岩c10-11
+## 草c12-13 蘑菇c14-15 原木c16-17（r10 行）；宝石堆r12c5-6（蓝67%+白25% 色分布确凿）、
+## 香蒲r15c9-10（绿茎31%+棕穗33%）。曾尝试的其余行道具矩形经色分布复核为误读已撤
+## （雪堆候选实为红棕、骨堆候选含 26% 蓝、墓碑候选红黑主导、花田候选无白/绿占比）
+const TILESET := preload("res://assets/creatures/sheets/cartoon_tileset_textured.png")
+const PROP_SRC := {
+	"tree": Rect2(0, 160, 32, 32),
+	"pine": Rect2(64, 160, 32, 32),
+	"rock": Rect2(160, 160, 32, 32),
+	"grass": Rect2(192, 160, 32, 32),
+	"mushroom": Rect2(224, 160, 32, 32),
+	"log": Rect2(256, 160, 32, 32),
+	"bush": Rect2(32, 160, 32, 32),
+	"gems": Rect2(80, 192, 32, 32),
+	"cattail": Rect2(144, 240, 32, 32),
+}
+## 走贴图绘制的装饰种类（big_tree/boulder = 放大复用；枯树 = 松灰化；
+## 冰锥/雪堆/水洼/水晶/骨堆等多边形烘焙，素材无对口验证矩形）
+const TEXTURE_KINDS := ["tree", "big_tree", "grass", "pine", "deadtree", "rock", "boulder",
+	"mushroom", "log", "bush", "gems", "cattail"]
+## 细软小道具：落影同步收窄（草/蘑菇/灌木/香蒲/宝石下面不该拖大黑影）
+const SMALL_SHADOW_KINDS := ["grass", "mushroom", "bush", "gems", "cattail"]
+
+## AI 装饰精灵（assets/deco/<kind>.png）：有图走精灵，缺图回退图集矩形/多边形
+var _sprite_cache := {}
+
+
+func _deco_sprite(kind: String) -> Texture2D:
+	if _sprite_cache.has(kind):
+		return _sprite_cache[kind]
+	var tex: Texture2D = null
+	var path := "res://assets/deco/%s.png" % kind
+	if ResourceLoader.exists(path):
+		tex = load(path)
+	_sprite_cache[kind] = tex
+	return tex
+
+## 块 key → {layer: DecoLayer, baked: Polygon2D}
+var _by_chunk := {}
+## 环境粒子（单例跟随玩家，按地形切换）
+var _ambient: CPUParticles2D
+var _ambient_terrain := ""
+var _ambient_accum := 0.0
+
+
+## 块贴图装饰层：一个节点 _draw 全部道具（保持"每块个位数节点"的性能模型）。
+## 每件 = 源矩形 + 落点 + 缩放 + 水平翻转 + 着色（枯树=松树灰化复用）
+class DecoLayer extends Node2D:
+	var texture: Texture2D
+	var items: Array = []
+
+	func _draw() -> void:
+		for item: Dictionary in items:
+			var s: float = item["s"]
+			draw_set_transform(item["pos"], 0.0,
+				Vector2(-s if item["flip"] else s, s))
+			var sp: Texture2D = item.get("sprite")
+			if sp != null:
+				# AI 精灵：底边贴落点，高 32px 与图集件同档（保持占地/落影一致）
+				var h := 32.0
+				var w := h * float(sp.get_width()) / float(sp.get_height())
+				draw_texture_rect(sp, Rect2(-w / 2.0, -h, w, h), false, item["mod"])
+				continue
+			# 目标矩形：32x32 内容、水平居中、底边贴落点（y ∈ [-32, 0]）
+			draw_texture_rect_region(texture, Rect2(-16.0, -32.0, 32.0, 32.0),
+				item["src"], item["mod"])
 
 
 func _ready() -> void:
-	# 等 game_world setup 完成后再构建（由 add_child 时机保证：sim 已就绪）
-	var world := get_parent()
-	for region: SimRegion in world._sim.regions.values():
-		_seed_deco(region)
-		_seed_tint(region)
-		_seed_particles(region)
+	# 订阅地表流式生成器的块信号（挂载顺序由 game_world 保证：本节点在流式器之后）
+	var streamer := get_parent().get_node_or_null("ChunkStreamer") as ChunkStreamer
+	if streamer != null:
+		streamer.chunk_ready.connect(_on_chunk_ready)
+		streamer.chunk_freed.connect(_on_chunk_freed)
+	_ambient = CPUParticles2D.new()
+	_ambient.z_index = PARTICLE_Z
+	_ambient.emitting = false
+	add_child(_ambient)
 
 
-## 地物装饰：簇状撒布——先定簇心，装饰围绕簇心聚团（70%），三成均匀散布；
-## 避开区域中心锚点 70px（怪物出生区不被遮挡）。
-## 整个区域的装饰烘焙进单个 Polygon2D（顶点池 + 子多边形索引 + 顶点色）：
-## 原先每件 2~4 个节点、全图 700+ 件 ≈ 2000+ 节点，合并后每区域 1 个节点，
-## 形状定义不变、视觉等价，消掉场景树与绘制提交的节点开销。
-func _seed_deco(region: SimRegion) -> void:
+func _process(delta: float) -> void:
+	# 粒子跟随玩家（视野尺度的局部天气，而非全区域常驻量）
+	var player := get_tree().get_first_node_in_group("player") as Node2D
+	if player != null:
+		_ambient.position = player.global_position
+	_ambient_accum += delta
+	if _ambient_accum >= AMBIENT_POLL:
+		_ambient_accum = 0.0
+		var terrain := BiomeMap.terrain_at(player.global_position) if player != null else ""
+		if terrain != _ambient_terrain:
+			_ambient_terrain = terrain
+			_configure_ambient(terrain)
+
+
+# --- 分块装饰 ---
+
+func _on_chunk_ready(origin: Vector2i) -> void:
+	if _by_chunk.has(_key(origin)):
+		return
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(region.id) & 0x7FFFFFFF
-	var recipe: Dictionary = RECIPES.get(region.terrain, {})
-	var half := region.size / 2.0
+	rng.seed = (absi(origin.x) * 73856093) ^ (absi(origin.y) * 19349663) ^ 0x5DEC0
+	var rect := Rect2(Vector2(origin), Vector2.ONE * 512.0)
 	var clusters: Array[Vector2] = []
-	for i in 6:
-		clusters.append(region.center + Vector2(
-			rng.randf_range(-half.x + 120.0, half.x - 120.0),
-			rng.randf_range(-half.y + 100.0, half.y - 100.0)))
+	for i in CHUNK_CLUSTERS:
+		clusters.append(rect.position + Vector2(
+			rng.randf_range(60.0, 452.0), rng.randf_range(60.0, 452.0)))
+	var layer := DecoLayer.new()
+	layer.texture = TILESET
+	layer.z_index = DECO_Z
 	var points := PackedVector2Array()
 	var colors := PackedColorArray()
 	var polys: Array = []
-	for kind: String in recipe:
-		for i in int(recipe[kind]):
-			var pos: Vector2
-			if rng.randf() < 0.7 and not clusters.is_empty():
-				pos = clusters[rng.randi() % clusters.size()] + Vector2(
-					rng.randf_range(-110.0, 110.0), rng.randf_range(-90.0, 90.0))
+	for i in CHUNK_PROPS:
+		var pos: Vector2
+		if rng.randf() < 0.7 and not clusters.is_empty():
+			pos = clusters[rng.randi() % clusters.size()] + Vector2(
+				rng.randf_range(-110.0, 110.0), rng.randf_range(-90.0, 90.0))
+		else:
+			pos = rect.position + Vector2(rng.randf_range(20.0, 492.0), rng.randf_range(20.0, 492.0))
+		# 落点按自身地形取样（交界块自然出现两群系道具混居）
+		var terrain := BiomeMap.terrain_at(pos)
+		var recipe: Dictionary = RECIPES.get(terrain, {})
+		if recipe.is_empty():
+			continue
+		var kind := _pick_kind(recipe, rng)
+		var s := rng.randf_range(0.8, 1.25)
+		# 统一落影：脚下半透明椭圆，让地物"站"在地上（立体感的关键一招）；细软小道具收窄
+		var sw := (6.0 if kind in SMALL_SHADOW_KINDS else 10.0) * s
+		_bake_poly([Vector2(-sw, 0), Vector2(-sw * 0.5, -3), Vector2(sw * 0.5, -3), Vector2(sw, 0),
+				Vector2(sw * 0.5, 3), Vector2(-sw * 0.5, 3)], Color(0, 0, 0, 0.28), pos, 0.0, s, points, colors, polys)
+		if kind in TEXTURE_KINDS:
+			layer.items.append(_texture_item(kind, rng, pos, s))
+		else:
+			# 多边形兜底类优先换 AI 精灵，无精灵再走多边形
+			var poly_sp := _deco_sprite(kind)
+			if poly_sp != null:
+				layer.items.append({"src": Rect2(), "pos": pos, "s": s,
+					"flip": rng.randf() < 0.5, "mod": Color.WHITE, "sprite": poly_sp})
 			else:
-				pos = region.center + Vector2(
-					rng.randf_range(-half.x + 50.0, half.x - 50.0),
-					rng.randf_range(-half.y + 50.0, half.y - 50.0))
-			# 收回越界点，避开中心锚点
-			pos.x = clampf(pos.x, region.center.x - half.x + 40.0, region.center.x + half.x - 40.0)
-			pos.y = clampf(pos.y, region.center.y - half.y + 40.0, region.center.y + half.y - 40.0)
-			if pos.distance_to(region.center) < 70.0:
-				continue
-			_bake_deco(kind, rng, pos, points, colors, polys)
-	if polys.is_empty():
+				_bake_deco(kind, rng, pos, points, colors, polys)
+	var entry := {"layer": null, "baked": null}
+	if not layer.items.is_empty():
+		add_child(layer)
+		entry["layer"] = layer
+	if not polys.is_empty():
+		var baked := Polygon2D.new()
+		baked.polygon = points
+		baked.vertex_colors = colors
+		baked.polygons = polys
+		baked.z_index = DECO_Z
+		add_child(baked)
+		entry["baked"] = baked
+	_by_chunk[_key(origin)] = entry
+
+
+func _on_chunk_freed(origin: Vector2i) -> void:
+	var entry: Dictionary = _by_chunk.get(_key(origin), {})
+	if entry.is_empty():
 		return
-	var baked := Polygon2D.new()
-	baked.polygon = points
-	baked.vertex_colors = colors
-	baked.polygons = polys
-	baked.z_index = DECO_Z
-	add_child(baked)
+	for node_name in ["layer", "baked"]:
+		var node := entry[node_name] as Node
+		if node != null:
+			node.queue_free()
+	_by_chunk.erase(_key(origin))
 
 
-func _seed_tint(region: SimRegion) -> void:
-	var tint: Color = TINTS.get(region.terrain, Color.TRANSPARENT)
-	if tint.a <= 0.0:
-		return
-	var poly := Polygon2D.new()
-	var half := region.size / 2.0
-	poly.polygon = PackedVector2Array([
-		-half, Vector2(half.x, -half.y), half, Vector2(-half.x, half.y),
-	])
-	poly.color = tint
-	poly.position = region.center
-	poly.z_index = TINT_Z
-	add_child(poly)
+## 按配方权重随机挑种类
+func _pick_kind(recipe: Dictionary, rng: RandomNumberGenerator) -> String:
+	var total := 0
+	for kind: String in recipe:
+		total += int(recipe[kind])
+	var roll := rng.randi_range(1, maxi(1, total))
+	for kind: String in recipe:
+		roll -= int(recipe[kind])
+		if roll <= 0:
+			return kind
+	return recipe.keys()[0]
 
 
-func _seed_particles(region: SimRegion) -> void:
-	# 只有三种地形有环境粒子；其余直接跳过，不为一次释放白建节点
-	if not (region.terrain in ["snow", "lava", "swamp"]):
-		return
-	var p := CPUParticles2D.new()
-	match region.terrain:
+# --- 环境粒子（单例跟随，按地形切换） ---
+
+func _configure_ambient(terrain: String) -> void:
+	match terrain:
 		"snow":
-			p.amount = 22
-			p.lifetime = 5.0
-			p.gravity = Vector2(6, 22)
-			p.initial_velocity_min = 8.0
-			p.initial_velocity_max = 20.0
-			p.scale_amount_min = 0.6
-			p.scale_amount_max = 1.6
-			p.color = Color(1, 1, 1, 0.75)
+			_ambient.amount = 22
+			_ambient.lifetime = 5.0
+			_ambient.gravity = Vector2(6, 22)
+			_ambient.initial_velocity_min = 8.0
+			_ambient.initial_velocity_max = 20.0
+			_ambient.scale_amount_min = 0.6
+			_ambient.scale_amount_max = 1.6
+			_ambient.color = Color(1, 1, 1, 0.75)
+			_ambient.emitting = true
 		"lava":
-			p.amount = 14
-			p.lifetime = 4.0
-			p.gravity = Vector2(0, -26)
-			p.initial_velocity_min = 4.0
-			p.initial_velocity_max = 14.0
-			p.scale_amount_min = 0.5
-			p.scale_amount_max = 1.4
-			p.color = Color(1.0, 0.55, 0.2, 0.8)
+			_ambient.amount = 14
+			_ambient.lifetime = 4.0
+			_ambient.gravity = Vector2(0, -26)
+			_ambient.initial_velocity_min = 4.0
+			_ambient.initial_velocity_max = 14.0
+			_ambient.scale_amount_min = 0.5
+			_ambient.scale_amount_max = 1.4
+			_ambient.color = Color(1.0, 0.55, 0.2, 0.8)
+			_ambient.emitting = true
 		"swamp":
-			p.amount = 8
-			p.lifetime = 6.0
-			p.gravity = Vector2(4, -4)
-			p.initial_velocity_min = 2.0
-			p.initial_velocity_max = 8.0
-			p.scale_amount_min = 2.0
-			p.scale_amount_max = 4.0
-			p.color = Color(0.7, 0.85, 0.65, 0.16)
+			_ambient.amount = 8
+			_ambient.lifetime = 6.0
+			_ambient.gravity = Vector2(4, -4)
+			_ambient.initial_velocity_min = 2.0
+			_ambient.initial_velocity_max = 8.0
+			_ambient.scale_amount_min = 2.0
+			_ambient.scale_amount_max = 4.0
+			_ambient.color = Color(0.7, 0.85, 0.65, 0.16)
+			_ambient.emitting = true
 		_:
-			p.queue_free()
+			_ambient.emitting = false
 			return
-	p.position = region.center
-	p.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
-	p.emission_rect_extents = region.size / 2.0
-	p.z_index = PARTICLE_Z
-	add_child(p)
+	_ambient.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+	_ambient.emission_rect_extents = Vector2(460, 300)
 
 
-# --- 装饰物烘焙（形状定义不变，占位几何；素材期可整体替换为精灵） ---
+# --- 装饰物烘焙（多边形兜底类：贴图素材未覆盖的地形特色物） ---
 
-## 单件装饰：套用落影/缩放/旋转/落点后，把各部件多边形追加进区域顶点池
+## 单件装饰：套用缩放/旋转后把各部件多边形追加进顶点池（落影在 _on_chunk_ready 统一处理）
 func _bake_deco(kind: String, rng: RandomNumberGenerator, pos: Vector2,
 		points: PackedVector2Array, colors: PackedColorArray, polys: Array) -> void:
 	var s := rng.randf_range(0.8, 1.25)
 	var rot := rng.randf_range(-0.12, 0.12)
-	# 统一落影：脚下半透明椭圆，让地物"站"在地上（立体感的关键一招）
-	var sw := 10.0 * s
-	_bake_poly([Vector2(-sw, 0), Vector2(-sw * 0.5, -3), Vector2(sw * 0.5, -3), Vector2(sw, 0),
-			Vector2(sw * 0.5, 3), Vector2(-sw * 0.5, 3)], Color(0, 0, 0, 0.28), pos, rot, s, points, colors, polys)
 	match kind:
-		"tree":
-			_bake_poly([-3, 0, 3, 0, 3, -10, -3, -10], Color("#6b4a33"), pos, rot, s, points, colors, polys)  # 干
-			_bake_poly([-12, -8, 12, -8, 0, -30], Color("#4d7038"), pos, rot, s, points, colors, polys)  # 冠
-		"big_tree":
-			_bake_poly([-4, 0, 4, 0, 4, -12, -4, -12], Color("#5d4030"), pos, rot, s, points, colors, polys)
-			_bake_poly([-16, -10, 16, -10, 0, -36], Color("#3f5e30"), pos, rot, s, points, colors, polys)
-			_bake_poly([-11, -20, 11, -20, 0, -40], Color("#4d7038"), pos, rot, s, points, colors, polys)
-		"grass":
-			for blade in 3:
-				var bx := (blade - 1) * 4.0
-				_bake_poly([Vector2(bx - 1, 0), Vector2(bx + 1, 0),
-						Vector2(bx + rng.randf_range(0.5, 1.5), -7)],
-						Color("#7fa055").darkened(rng.randf_range(0.0, 0.2)), pos, rot, s, points, colors, polys)
-		"pine":
-			_bake_poly([-3, 0, 3, 0, 3, -8, -3, -8], Color("#5a4634"), pos, rot, s, points, colors, polys)
-			_bake_poly([-11, -6, 11, -6, 0, -26], Color("#37503c"), pos, rot, s, points, colors, polys)
-			_bake_poly([-8, -16, 8, -16, 0, -32], Color("#e6ecf0"), pos, rot, s, points, colors, polys)  # 积雪
-		"deadtree":
-			_bake_poly([-3, 0, 3, 0, 2, -24, -2, -24], Color("#4a4238"), pos, rot, s, points, colors, polys)
-			_bake_poly([0, -12, 12, -20, 13, -17, 1, -9], Color("#4a4238"), pos, rot, s, points, colors, polys)  # 枝
-		"rock", "boulder":
-			var scale_mult := 1.0 if kind == "rock" else 1.8
-			var pts: Array = []
-			for pt in [Vector2(-7, 0), Vector2(-5, -5), Vector2(0, -7), Vector2(5, -5), Vector2(7, 0)]:
-				pts.append(pt * scale_mult)
-			_bake_poly(pts, Color("#7d7669").darkened(rng.randf_range(0.0, 0.15)), pos, rot, s, points, colors, polys)
 		"ice":
 			_bake_poly([-4, 0, 0, -16, 4, 0], Color("#bcd8ea", 0.9), pos, rot, s, points, colors, polys)
 			_bake_poly([0, -4, 6, -14, 8, -2], Color("#d8e8f2", 0.8), pos, rot, s, points, colors, polys)
 		"snowpile":
 			_bake_poly([-10, 0, -6, -4, 0, -6, 6, -4, 10, 0], Color("#e8eef4", 0.95), pos, rot, s, points, colors, polys)
-		"mushroom":
-			_bake_poly([-2, 0, 2, 0, 2, -4, -2, -4], Color("#d8cfc0"), pos, rot, s, points, colors, polys)
-			_bake_poly([-5, -4, 5, -4, 3, -8, -3, -8], Color("#a05a4a"), pos, rot, s, points, colors, polys)
-		"log":
-			_bake_poly([-14, -3, 14, -3, 14, 3, -14, 3], Color("#5d4a38"), pos, rot, s, points, colors, polys)
 		"puddle":
 			_bake_poly([-14, 0, -8, -4, 4, -5, 12, -1, 8, 3, -6, 4], Color("#5d7a80", 0.55), pos, rot, s, points, colors, polys)
 		"crystal":
@@ -198,6 +275,30 @@ func _bake_deco(kind: String, rng: RandomNumberGenerator, pos: Vector2,
 			_bake_poly([-8, -2, -2, -3, -2, 0, -8, 1], Color("#cfc8b8", 0.9), pos, rot, s, points, colors, polys)
 			_bake_poly([2, -1, 9, -2, 9, 1, 2, 1], Color("#cfc8b8", 0.9), pos, rot, s, points, colors, polys)
 			_bake_poly([-2, -4, 2, -4, 2, 2, -2, 2], Color("#bfb8a6", 0.9), pos, rot, s, points, colors, polys)
+
+
+## 纹理类装饰 → 贴图绘制条目：直取源矩形；
+## big_tree/boulder = 基础素材放大复用；枯树 = 松树灰化（沼泽枯槁感）
+func _texture_item(kind: String, rng: RandomNumberGenerator, pos: Vector2, s: float) -> Dictionary:
+	var src_key := kind
+	var mod := Color.WHITE
+	var scale_mult := 1.0
+	match kind:
+		"big_tree":
+			src_key = "tree"
+			scale_mult = 1.8
+		"boulder":
+			src_key = "rock"
+			scale_mult = 1.8
+		"deadtree":
+			src_key = "pine"
+			mod = Color(0.52, 0.5, 0.47)
+	# 素材尺寸偏紧凑（内容约 20px），整体再放大一档贴回原多边形的占地
+	return {
+		"src": PROP_SRC[src_key], "pos": pos, "s": s * scale_mult * 1.25,
+		"flip": rng.randf() < 0.5, "mod": mod,
+		"sprite": _deco_sprite(src_key),
+	}
 
 
 ## 部件多边形入池：局部顶点经 缩放→旋转→平移 后追加，记录子多边形索引；
@@ -217,3 +318,7 @@ func _bake_poly(part_pts: Array, color: Color, pos: Vector2, rot: float, s: floa
 			points.append(pos + (pt * s).rotated(rot))
 			colors.append(color)
 	polys.append(idx)
+
+
+func _key(origin: Vector2i) -> String:
+	return "%d,%d" % [origin.x, origin.y]

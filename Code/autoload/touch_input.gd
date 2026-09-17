@@ -69,7 +69,6 @@ func queue_heal() -> void:
 func consume_heal() -> bool:
 	var pressed := _heal_queued
 	_heal_queued = false
-	_empower_queued = false
 	return pressed
 
 
@@ -92,3 +91,18 @@ func clear_queues() -> void:
 	_bolt_queued = false
 	_heal_queued = false
 	_empower_queued = false
+
+
+## 场景切换时复位全部输入状态：按住摇杆时退出世界（节点释放收不到 release 事件），
+## 摇杆向量会永久残留——再进世界角色自顾自朝旧方向漂移，必须由新场景入口主动清
+func reset() -> void:
+	move_vector = Vector2.ZERO
+	joystick_active = false
+	clear_queues()
+
+
+## iOS 按住摇杆切后台时不保证补发 ScreenTouch released；恢复后若保留状态，
+## 角色会自行漂移，按钮队列也可能在第一帧兑现。autoload 兜底清全局输入。
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		reset()

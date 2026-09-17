@@ -1,0 +1,105 @@
+[gd_resource type="SpriteFrames" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/attack_f0.png" id="1_p5qq1"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/attack_f1.png" id="2_1uqik"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/attack_f2.png" id="3_mrsm8"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/attack_f3.png" id="4_hpgap"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/attack_f4.png" id="5_k4a3o"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/attack_f5.png" id="6_1js32"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/die_f0.png" id="7_51gfr"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/die_f1.png" id="8_1qim7"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/die_f2.png" id="9_v27hx"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/die_f3.png" id="10_iyux7"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/idle_f0.png" id="11_jtgmb"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/idle_f1.png" id="12_bw2f5"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/idle_f2.png" id="13_1gma5"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/idle_f3.png" id="14_gay46"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/walk_f0.png" id="15_rvsk5"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/walk_f1.png" id="16_tbd1f"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/walk_f2.png" id="17_vmnle"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/walk_f3.png" id="18_lq5hs"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/walk_f4.png" id="19_4rfy3"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/crab_cartoon/tex/walk_f5.png" id="20_w4dcp"]
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_p5qq1")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_1uqik")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_mrsm8")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_hpgap")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_k4a3o")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_1js32")
+}],
+"loop": 1,
+"name": &"attack",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("7_51gfr")
+}, {
+"duration": 1.0,
+"texture": ExtResource("8_1qim7")
+}, {
+"duration": 1.0,
+"texture": ExtResource("9_v27hx")
+}, {
+"duration": 1.0,
+"texture": ExtResource("10_iyux7")
+}],
+"loop": 0,
+"name": &"die",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("11_jtgmb")
+}, {
+"duration": 1.0,
+"texture": ExtResource("12_bw2f5")
+}, {
+"duration": 1.0,
+"texture": ExtResource("13_1gma5")
+}, {
+"duration": 1.0,
+"texture": ExtResource("14_gay46")
+}],
+"loop": 1,
+"name": &"idle",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("15_rvsk5")
+}, {
+"duration": 1.0,
+"texture": ExtResource("16_tbd1f")
+}, {
+"duration": 1.0,
+"texture": ExtResource("17_vmnle")
+}, {
+"duration": 1.0,
+"texture": ExtResource("18_lq5hs")
+}, {
+"duration": 1.0,
+"texture": ExtResource("19_4rfy3")
+}, {
+"duration": 1.0,
+"texture": ExtResource("20_w4dcp")
+}],
+"loop": 1,
+"name": &"walk",
+"speed": 10.0
+}]

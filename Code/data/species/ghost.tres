@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_ghs"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/ghost/ghost_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_ghs")
+species_name = "幽灵"
+frames_override = ExtResource("2_frames")
+ai_archetype = "melee_swarm"
+habitats = Array[String](["snow"])
+base_strength = 3.0
+base_agility = 5.0
+strength_growth = 0.05
+lifespan_min = 300
+lifespan_max = 600
+maturity_age = 40
+breeding_rate = 0.015
+expansion_threshold = 7
+migrate_count = 2
+xp_base = 10
+detect_radius = 190.0
+attack_range = 32.0
+attack_cooldown = 1.2
+flee_hp_ratio = 0.15
+assist_radius = 260.0

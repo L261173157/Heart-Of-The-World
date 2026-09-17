@@ -1,0 +1,113 @@
+[gd_resource type="SpriteFrames" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/attack_f0.png" id="1_xybu4"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/attack_f1.png" id="2_kheli"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/attack_f2.png" id="3_apxil"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/attack_f3.png" id="4_s61yx"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/attack_f4.png" id="5_wbd0d"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/attack_f5.png" id="6_nac4f"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/die_f0.png" id="7_yd014"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/die_f1.png" id="8_cfe77"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/die_f2.png" id="9_bof7b"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/die_f3.png" id="10_l5cjj"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/idle_f0.png" id="11_erbh3"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/idle_f1.png" id="12_5438p"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/idle_f2.png" id="13_dsufv"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/idle_f3.png" id="14_tk3th"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/idle_f4.png" id="15_ai5it"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/idle_f5.png" id="16_bhafv"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/walk_f0.png" id="17_81wfd"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/walk_f1.png" id="18_styts"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/walk_f2.png" id="19_pml56"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/walk_f3.png" id="20_i5pi0"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/walk_f4.png" id="21_bddns"]
+[ext_resource type="Texture2D" path="res://assets/creatures/frames/slime_pilot/tex/walk_f5.png" id="22_ffho0"]
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_xybu4")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_kheli")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_apxil")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_s61yx")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_wbd0d")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_nac4f")
+}],
+"loop": 1,
+"name": &"attack",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("7_yd014")
+}, {
+"duration": 1.0,
+"texture": ExtResource("8_cfe77")
+}, {
+"duration": 1.0,
+"texture": ExtResource("9_bof7b")
+}, {
+"duration": 1.0,
+"texture": ExtResource("10_l5cjj")
+}],
+"loop": 0,
+"name": &"die",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("11_erbh3")
+}, {
+"duration": 1.0,
+"texture": ExtResource("12_5438p")
+}, {
+"duration": 1.0,
+"texture": ExtResource("13_dsufv")
+}, {
+"duration": 1.0,
+"texture": ExtResource("14_tk3th")
+}, {
+"duration": 1.0,
+"texture": ExtResource("15_ai5it")
+}, {
+"duration": 1.0,
+"texture": ExtResource("16_bhafv")
+}],
+"loop": 1,
+"name": &"idle",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("17_81wfd")
+}, {
+"duration": 1.0,
+"texture": ExtResource("18_styts")
+}, {
+"duration": 1.0,
+"texture": ExtResource("19_pml56")
+}, {
+"duration": 1.0,
+"texture": ExtResource("20_i5pi0")
+}, {
+"duration": 1.0,
+"texture": ExtResource("21_bddns")
+}, {
+"duration": 1.0,
+"texture": ExtResource("22_ffho0")
+}],
+"loop": 1,
+"name": &"walk",
+"speed": 10.0
+}]

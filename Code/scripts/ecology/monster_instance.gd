@@ -14,7 +14,7 @@ var is_alive: bool = true
 ## 死亡后尸体剩余 tick，corpse_ticks < 0 表示尚未死亡
 var corpse_ticks: int = -1
 
-## 分裂世代（0 为原生代；史莱姆子代逐代缩小且逐代不育）
+## 分裂世代（0 为原生代；红史莱姆子代逐代缩小且逐代不育）
 var generation: int = 0
 ## 体型系数（分裂子代 < 1），线性缩放生命/攻击/经验与表现层视觉
 var size_scale: float = 1.0
@@ -28,6 +28,10 @@ var threat_scale: float = 1.0
 var spawn_pos: Vector2 = Vector2.INF
 ## 死亡位置（report_killed 时由表现层回填，供分裂子代继承）
 var death_pos: Vector2 = Vector2.INF
+## 当前血量镜像（表现层受击/成长时经 report_hp 回写；-1 = 从未同步，等同满血）。
+## 只为存档往返存在：读档恢复的怪带伤开局，不再"白送满血回复"；模拟逻辑不读它，
+## 运行期真实血量仍以 MonsterBase.current_hp 为准
+var hp_mirror: float = -1.0
 
 
 func strength() -> float:
@@ -47,7 +51,7 @@ func max_hp() -> float:
 
 
 func attack_power() -> float:
-	return (3.0 + strength() * 0.8) * size_scale * threat_scale
+	return (3.0 + strength() * 0.8) * size_scale * threat_scale * species.offense_scale
 
 
 func move_speed() -> float:
@@ -56,6 +60,13 @@ func move_speed() -> float:
 
 func is_adult() -> bool:
 	return age >= species.maturity_age
+
+
+## 分裂子代不育（"逐代缩小且逐代不育"的设计契约）：只有原生代参与繁衍。
+## 原生代 = 种群核心；分裂子代 = 玩家猎杀制造的临时压力种群——"越杀越多"
+## 有自然上限（子代老化死亡清零），不能经繁衍把世代与体型洗白回原生代
+func is_split_sterile() -> bool:
+	return species.splits_on_death and generation > 0
 
 
 func can_split() -> bool:
