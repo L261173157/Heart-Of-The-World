@@ -74,9 +74,7 @@ player 本地 slash 系 3 条 + 宝箱 pillar 等）。映射：普攻/强化挥
   +营地(8)；优先级调度：活Boss临场>城塞内>营地>群系（game_world._refresh_music
   4Hz，同曲不重启）。**预留池**：theme-1/3/6/6s/11/14/15/17/18（情绪未验证，
   按需补位勿硬塞）。
-- **音效**：NA 21 具名对口（hit/kill/bolt/heal/levelup/died/gold×3/menu/quest/
-  discover/passive/secret/alert/voice×4）+ Kenney 4 补位（hurt/dash/heavy/region）。
-  编号音效 1-19 与 magic.wav 未验证身份，留库。
+- **音效（2026-09-17 完整包增量后）**：Kenney 全退役——hurt/dash/heavy/region 换 NA 分类件（na_hit2/na_whoosh/na_impact/na_bonus2），levelup/died 换 Jingles（LevelUp1/GameOver）。老包编号音效 1-19 与 magic.wav 未验证身份，留库。
 
 ## 8. 已删除（git e9af73a 快照可溯）
 
