@@ -68,6 +68,22 @@ const CREATURES := {
 		"fps": 12.0, "loop": false,
 		"anim": {"play": [0, 1, 2, 3, 4]},
 	},
+	# --- fx 全量接线（美术 v5 M-C）：帧号 "auto" = 条带宽/16 全帧 ---
+	"fx_flame": {"sheet": "res://assets/na/fx/5.png", "strip": true, "fps": 14.0, "loop": false, "anim": {"play": "auto"}},
+	"fx_magic": {"sheet": "res://assets/na/fx/6.png", "strip": true, "fps": 14.0, "loop": false, "anim": {"play": "auto"}},
+	"fx_charge": {"sheet": "res://assets/na/fx/7.png", "strip": true, "fps": 12.0, "loop": false, "anim": {"play": "auto"}},
+	"fx_frost": {"sheet": "res://assets/na/fx/8.png", "strip": true, "fps": 14.0, "loop": false, "anim": {"play": "auto"}},
+	"fx_boom": {"sheet": "res://assets/na/fx/10.png", "strip": true, "fps": 12.0, "loop": false, "anim": {"play": "auto"}},
+	"fx_smoke": {"sheet": "res://assets/na/fx/11.png", "strip": true, "fps": 10.0, "loop": false, "anim": {"play": "auto"}},
+	"fx_darksmoke": {"sheet": "res://assets/na/fx/12.png", "strip": true, "fps": 10.0, "loop": false, "anim": {"play": "auto"}},
+	"fx_orb": {"sheet": "res://assets/na/fx/13.png", "strip": true, "fps": 14.0, "loop": false, "anim": {"play": "auto"}},
+	"fx_beam": {"sheet": "res://assets/na/fx/14.png", "strip": true, "fps": 14.0, "loop": false, "anim": {"play": "auto"}},
+	"fx_pillar": {"sheet": "res://assets/na/fx/15.png", "strip": true, "fps": 14.0, "loop": false, "anim": {"play": "auto"}},
+	"fx_flash": {"sheet": "res://assets/na/fx/16.png", "strip": true, "fps": 12.0, "loop": false, "anim": {"play": "auto"}},
+	"fx_flash_gold": {"sheet": "res://assets/na/fx/17.png", "strip": true, "fps": 12.0, "loop": false, "anim": {"play": "auto"}},
+	"fx_flash_blue": {"sheet": "res://assets/na/fx/18.png", "strip": true, "fps": 12.0, "loop": false, "anim": {"play": "auto"}},
+	"fx_flash_yellow": {"sheet": "res://assets/na/fx/19.png", "strip": true, "fps": 12.0, "loop": false, "anim": {"play": "auto"}},
+	"fx_beams": {"sheet": "res://assets/na/fx/20.png", "strip": true, "fps": 14.0, "loop": false, "anim": {"play": "auto"}},
 	"oni": {
 		"sheet": "na_oni.png", "col": 3, "flop": false,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
@@ -178,7 +194,15 @@ func _init() -> void:
 			frames.add_animation(anim_name)
 			frames.set_animation_speed(anim_name, anim_fps)
 			frames.set_animation_loop(anim_name, anim_loop)
-			for row: int in cfg["anim"][anim_name]:
+			# strip 模式 "auto"：按条带实际宽度枚举全部 16px 格
+			# （Array == String 在 GDScript 是运行时错误，先 typeof 再比较）
+			var rows: Variant = cfg["anim"][anim_name]
+			if typeof(rows) == TYPE_STRING and rows == "auto":
+				var auto_rows: Array = []
+				for k in int(img.get_width() / CELL):
+					auto_rows.append(k)
+				rows = auto_rows
+			for row: int in rows:
 				var frame_img: Image
 				if strip:
 					frame_img = img.get_region(Rect2i(row * CELL, 0, CELL, CELL))

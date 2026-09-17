@@ -97,6 +97,9 @@ func _extra_state_tick(delta: float, player: Node2D) -> void:
 	if _ring != null:
 		_ring.visible = false
 	_attack_cd = inst.species.attack_cooldown
+	# 砸击落点爆焰（美术 v5 fx 全量；Boss ×1.8 加重份量）
+	EventBus.fx_requested.emit("boom", global_position,
+		1.8 if inst.species.is_boss else 1.2)
 	if player != null and player.visible \
 			and global_position.distance_to(player.global_position) <= inst.species.attack_range * inst.species.guard_smash_range_mult:
 		if player.has_method("take_damage"):

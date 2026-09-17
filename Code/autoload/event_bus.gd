@@ -81,3 +81,6 @@ signal npc_dialogue(payload: Dictionary)
 signal dialogue_action(action: String)
 ## 对话确认接单（HUD 是按钮/确认键发出）→ QuestManager.accept 结算
 signal dialogue_confirmed(quest: Dictionary)
+## 全局特效请求（美术 v5 fx 全量接线）：kind 见 game_world.FxLayer.TABLE，
+## pos 世界坐标，scale 视觉倍率（1.0 ≈ 32px 实际尺寸）
+signal fx_requested(kind: String, pos: Vector2, scale: float)

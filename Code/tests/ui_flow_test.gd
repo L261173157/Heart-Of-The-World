@@ -9,7 +9,6 @@
 ##   6) 回菜单 → 快照继续：世界恢复 + 时钟恢复 + BGM 静默接回区域曲
 ##   7) 主菜单新结构：新的冒险（无进度隐藏/清档确认/弹层互斥）+ 冒险档案面板
 ##   8) 暂停菜单手动保存：「已保存」toast 反馈
-##   9) 开场 CG 支线：路由谓词 intro_pending（标记×片源）+ 过场场景自动开播/跳过置标/已播直放
 extends Node2D
 
 const MENU_SCENE := preload("res://scenes/ui/main_menu.tscn")
@@ -32,7 +31,6 @@ func _ready() -> void:
 
 func _run() -> void:
 	_test_static_data()
-	await _test_intro_cg()
 	await _test_menu_fresh()
 	await _test_world_death_respawn()
 	await _test_resume_flow()
@@ -79,30 +77,6 @@ func _test_static_data() -> void:
 	GameState.set_setting("music_volume", 1.0)
 	GameState.set_setting("sfx_volume", 1.0)
 
-
-## 开场 CG 支线：谓词与过场场景接线（CG 场景自身不真切场景——next_scene 置空的测试挂钩）
-func _test_intro_cg() -> void:
-	GameState.reset_all()
-	_check(not GameState.seen_intro_cg, "清档后开场 CG 已播标记复位")
-	# 片源已在包内（assets/cg/intro.ogv）：未播过 → 待播
-	_check(CutscenePlayer.intro_pending(), "未播过且片源在包内 → 谓词待播")
-	var cs: CutscenePlayer = (load("res://scenes/ui/cutscene_player.tscn") as PackedScene).instantiate()
-	cs.next_scene = ""
-	add_child(cs)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	_check(cs.get_node("%Video").playing, "过场场景自动开播")
-	cs._finish()
-	_check(GameState.seen_intro_cg and not CutscenePlayer.intro_pending(),
-			"收尾置已播标记且谓词转否")
-	var cs2: CutscenePlayer = (load("res://scenes/ui/cutscene_player.tscn") as PackedScene).instantiate()
-	cs2.next_scene = ""
-	add_child(cs2)
-	await get_tree().process_frame
-	_check(cs2._done, "已播后再进过场场景直接放行（不再打扰）")
-
-
-## 全新进度下主菜单：主按钮「开始冒险」+ 新的冒险隐藏 + 档案空态；
 ## 有进度后：新的冒险可见、清档确认层全屏防误触、弹层互斥、确认后回到初始态
 func _test_menu_fresh() -> void:
 	_menu = MENU_SCENE.instantiate()
@@ -308,7 +282,9 @@ func _test_resume_flow() -> void:
 	GameState.achievements.erase("night_walker")
 	EventBus.day_phase_changed.emit(false)
 	_check(GameState.achievements.has("night_walker"), "夜间读档后活到黎明解锁夜行者")
-	# 读档首个区域提交只静默切 BGM 不播报：等首个区域检测周期过后验证
+	# 读档首个区域提交只静默切 BGM 不播报：等首个区域检测周期过后验证。
+	# 恢复点在熔岩 Boss 城塞旁（最远斑块中心）——美术 v5 音乐优先级下
+	# Boss 临场曲/城塞曲/群系曲三者取其一都算正确接回
 	await get_tree().create_timer(1.2).timeout
-	_check(SfxManager._music_name == "lava",
-			"读档按恢复位置静默接回区域曲（当前 %s）" % SfxManager._music_name)
+	_check(["lava", "boss", "dungeon"].has(SfxManager._music_name),
+			"读档按恢复位置静默接回区域曲（含 Boss/城塞优先级；当前 %s）" % SfxManager._music_name)

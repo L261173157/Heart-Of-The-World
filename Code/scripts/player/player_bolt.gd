@@ -95,4 +95,10 @@ func _on_body_entered(body: Node2D) -> void:
 			dealt *= em
 			effective = em > 1.0
 		body.take_damage(dealt, global_position, false, 1.0, effective)
+		# 命中魔光（美术 v5 fx 全量）：克制时换元素色系
+		EventBus.fx_requested.emit(
+			"flame" if effective and player_element == "fire"
+			else "frost" if effective and player_element == "ice"
+			else "magic",
+			global_position, 0.9)
 		queue_free()

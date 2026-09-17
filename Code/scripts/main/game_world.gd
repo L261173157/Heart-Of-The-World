@@ -208,6 +208,10 @@ func _ready() -> void:
 	var quest_manager := QuestManager.new()
 	add_child(quest_manager)
 	_npc_interact_fn = quest_manager.offer
+	# NA fx 全量通道（美术 v5 M-C）：事件侧只发 fx_requested，本层统一播条带
+	var fx_layer := FxLayer.new()
+	fx_layer.name = "FxLayer"
+	add_child(fx_layer)
 	# 世界事件监视（灭绝/入侵潮/饱和 → world_event 播报）
 	add_child(WorldEventWatcher.new())
 	# 成就判定（纯订阅 + GameState 持久化）
@@ -296,6 +300,7 @@ func _process(delta: float) -> void:
 	_stream_accum += delta
 	if _stream_accum >= STREAM_INTERVAL:
 		_stream_accum = 0.0
+		_stream_primed = true
 		_stream_pass()
 		_update_dungeons()
 	_update_landmark_markers()
@@ -320,6 +325,7 @@ const CAMP_HEAL_RADIUS := 420.0
 ## 安全区缓回血：每秒 3% 最大生命（脱战自然恢复档，不走无敌帧不触发受击演出）
 const CAMP_HEAL_FRAC_PER_SEC := 0.03
 var _camp_heal_accum := 0.0
+var _in_camp := false
 
 
 func _setup_camp() -> void:
@@ -367,9 +373,9 @@ func _process_camp(delta: float) -> void:
 	var player := get_tree().get_first_node_in_group("player")
 	if player == null or not ("current_hp" in player):
 		return
-	var in_camp: bool = (player.global_position as Vector2).distance_to(
+	_in_camp = (player.global_position as Vector2).distance_to(
 		WorldConfig.spawn_pos()) <= CAMP_HEAL_RADIUS
-	if in_camp:
+	if _in_camp:
 		_camp_heal_accum += delta
 		if _camp_heal_accum >= 1.0:
 			_camp_heal_accum = 0.0
@@ -388,6 +394,9 @@ const CHEST_STREAM_RADIUS := 1400.0
 var _chests := {}  # patch_id → DungeonChest
 var _in_dungeon := false
 var _dungeon_announced := {}
+## 首轮流式未完成前不播 Boss 重生（世界装配期 instance_spawned 全量重放，
+## 初始 Boss 不是"重生"；0.5s 首轮 _stream_pass 后置位）
+var _stream_primed := false
 
 
 ## 城塞维护（流式节拍里跑）：宝箱进出 + 可开状态 + 进出城塞的 BGM/播报
@@ -436,18 +445,53 @@ func _process_dungeon_zone(player: Node) -> void:
 	if inside == _in_dungeon:
 		return
 	_in_dungeon = inside
-	if inside:
-		SfxManager.play_music("dungeon")
-	elif _current_region_id != "":
-		var region: SimRegion = _sim.get_region(_current_region_id)
-		SfxManager.play_music(region.terrain if region != null else "plains")
+	# 切曲走统一调度（_refresh_music，Boss 追踪 4Hz 节拍里判定优先级）
+
+
+## 全局特效层（美术 v5 M-C）：NA fx 全 20 组的统一播放通道。事件侧
+## （怪物死亡/技能施放/元素克制/任务结算…）只发 EventBus.fx_requested，
+## 本层查表播条带、播完自灭——逻辑零侵入，缺 kind 静默忽略
+class FxLayer extends Node2D:
+	## kind → 帧资源（slash 系仍由 player 本地播——已接线的旧路径不动）
+	const TABLE := {
+		"flame": preload("res://assets/creatures/frames/fx_flame/fx_flame_frames.tres"),
+		"magic": preload("res://assets/creatures/frames/fx_magic/fx_magic_frames.tres"),
+		"charge": preload("res://assets/creatures/frames/fx_charge/fx_charge_frames.tres"),
+		"frost": preload("res://assets/creatures/frames/fx_frost/fx_frost_frames.tres"),
+		"boom": preload("res://assets/creatures/frames/fx_boom/fx_boom_frames.tres"),
+		"smoke": preload("res://assets/creatures/frames/fx_smoke/fx_smoke_frames.tres"),
+		"darksmoke": preload("res://assets/creatures/frames/fx_darksmoke/fx_darksmoke_frames.tres"),
+		"orb": preload("res://assets/creatures/frames/fx_orb/fx_orb_frames.tres"),
+		"beam": preload("res://assets/creatures/frames/fx_beam/fx_beam_frames.tres"),
+		"pillar": preload("res://assets/creatures/frames/fx_pillar/fx_pillar_frames.tres"),
+		"flash": preload("res://assets/creatures/frames/fx_flash/fx_flash_frames.tres"),
+		"flash_gold": preload("res://assets/creatures/frames/fx_flash_gold/fx_flash_gold_frames.tres"),
+		"flash_blue": preload("res://assets/creatures/frames/fx_flash_blue/fx_flash_blue_frames.tres"),
+		"flash_yellow": preload("res://assets/creatures/frames/fx_flash_yellow/fx_flash_yellow_frames.tres"),
+		"beams": preload("res://assets/creatures/frames/fx_beams/fx_beams_frames.tres"),
+	}
+
+	func _ready() -> void:
+		z_index = 50  # 顶层（血条/飘字之上不遮 HUD——HUD 是 CanvasLayer）
+		EventBus.fx_requested.connect(_spawn)
+
+	func _spawn(kind: String, pos: Vector2, fx_scale: float) -> void:
+		var frames: SpriteFrames = TABLE.get(kind)
+		if frames == null:
+			return
+		var fx := AnimatedSprite2D.new()
+		fx.sprite_frames = frames
+		fx.position = pos
+		fx.scale = Vector2.ONE * clampf(fx_scale, 0.5, 3.0)
+		add_child(fx)
+		fx.play(&"play")
+		fx.animation_finished.connect(fx.queue_free)
 
 
 ## 城塞宝箱：Boss 被讨伐期间（重生倒计时进行中）可开——金币奖励走
 ## EconomyMath 与赏金同源；加入 npcs 组复用玩家的最近交互路由（攻击键开箱）
 class DungeonChest extends Node2D:
 	const CHEST_TEX := preload("res://assets/na/structures/chest.png")
-	const FX_BURST := preload("res://assets/creatures/frames/fx_burst/fx_burst_frames.tres")
 	var boss_name := ""
 	var locked := true
 	var taken := false
@@ -475,15 +519,12 @@ class DungeonChest extends Node2D:
 		taken = true
 		var gold: int = EconomyMath.bounty_gold(8, GameState.stats.level)
 		GameState.add_gold(gold)
-		SfxManager.play("gold")
+		SfxManager.play("secret")
+		SfxManager.play("gold2")
 		EventBus.hint_requested.emit("📦 城塞宝箱 +%d 金币" % gold)
-		var fx := AnimatedSprite2D.new()
-		fx.sprite_frames = FX_BURST
-		fx.scale = Vector2(1.5, 1.5)
-		fx.position = position
-		get_parent().add_child(fx)
-		fx.play(&"play")
-		fx.animation_finished.connect(fx.queue_free)
+		# 开箱光柱 + 爆散（美术 v5 fx 全量）
+		EventBus.fx_requested.emit("pillar", position, 2.0)
+		EventBus.fx_requested.emit("flash_gold", position, 1.4)
 
 
 # --- 世界总览后台任务（区域多边形 + 小地图底图，世界 v5） ---
@@ -562,6 +603,7 @@ func _on_landmark_area_entered(_body: Node2D, id: String) -> void:
 		return
 	EventBus.landmark_discovered.emit(id, lm["patch_id"], lm["kind"], lm["pos"])
 	EventBus.world_event.emit("🧭 发现地标「%s」" % lm["kind"])
+	SfxManager.play("discover")
 	var marker: LandmarkMarker = _landmark_markers.get(id)
 	if marker != null:
 		marker.discovered = true
@@ -818,11 +860,37 @@ func _update_boss_track() -> void:
 		if _boss_tracked_id != -1:
 			_boss_tracked_id = -1
 			EventBus.boss_tracked.emit(false, "")
+		_refresh_music()
 		return
 	if best.inst.id != _boss_tracked_id:
 		_boss_tracked_id = best.inst.id
 		EventBus.boss_tracked.emit(true, best.inst.species.species_name)
 	EventBus.boss_hp_changed.emit(best.current_hp, best.inst.max_hp())
+	_refresh_music()
+
+
+## 音乐优先级调度（美术 v5 M-C 全量，4Hz 随 Boss 追踪节拍）：
+## 活体 Boss 临场 > 城塞内 > 营地 > 群系曲；只在模式切换时切曲
+## （play_music 同曲不重启），回群系由换区监听负责、此处不重播
+var _music_mode := ""
+
+func _refresh_music() -> void:
+	var mode := ""
+	if _boss_tracked_id != -1:
+		mode = "boss"
+	elif _in_dungeon:
+		mode = "dungeon"
+	elif _in_camp:
+		mode = "camp"
+	if mode == _music_mode:
+		return
+	_music_mode = mode
+	if mode != "":
+		SfxManager.play_music(mode)
+	elif _current_region_id != "":
+		# 退出特殊区（营地/城塞/Boss 圈）回到群系曲；换区监听已切过曲时同曲不重启
+		var region: SimRegion = _sim.get_region(_current_region_id)
+		SfxManager.play_music(region.terrain if region != null else "plains")
 
 
 ## 从 WorldConfig（纯数据唯一源，v4 由 BiomeMap 派生）构建区域配置：
@@ -862,6 +930,13 @@ func _spawn_region_labels() -> void:
 
 
 func _on_instance_spawned(inst: MonsterInstance) -> void:
+	# Boss 重生降临：多重光束 + 播报（美术 v5 fx 全量；只在玩家附近、且世界
+	# 已装配完成后的重生才播——初始撒放的重放不是"重生"）
+	if _stream_primed and inst.species.is_boss \
+			and _instance_in_view(inst, Vector2.INF) and inst.spawn_pos != Vector2.INF:
+		EventBus.world_event.emit("⚠️ %s 在城塞深处重生了" % inst.species.species_name)
+		EventBus.fx_requested.emit("beams", inst.spawn_pos, 2.2)
+		SfxManager.play("alert")
 	# 击杀（Area2D 回调内）触发的分裂生成会处于物理刷新期，
 	# 此时 add_child 物理体报错，统一延迟到帧末创建
 	if stream_all or _instance_in_view(inst, Vector2.INF):

@@ -37,7 +37,6 @@ func _test_roundtrip() -> void:
 	GameState.stats.intellect = 4
 	GameState.gold = 321
 	GameState.player_snapshot = {"position": [2710.0, 340.0], "hp": 87.0, "mp": 23.0}
-	GameState.seen_intro_cg = true
 	GameState.save_now()
 	_check(FileAccess.file_exists(GameState.SAVE_PATH), "存档文件已写入 user://save.json")
 	var save_unix: float = GameState.last_save_unix
@@ -52,11 +51,9 @@ func _test_roundtrip() -> void:
 	GameState.stats.intellect = 5
 	GameState.gold = 0
 	GameState.player_snapshot = null
-	GameState.seen_intro_cg = false
 	GameState.last_save_unix = 0.0
 	GameState._load()
 	_check(GameState.last_save_unix > 0.0, "读档恢复最后保存时间（%.0f）" % GameState.last_save_unix)
-	_check(GameState.seen_intro_cg, "读档恢复开场 CG 已播标记")
 	_check(GameState.stats.level == 7, "读档恢复等级（%d == 7）" % GameState.stats.level)
 	_check(GameState.stats.xp == 55, "读档恢复经验（%d == 55）" % GameState.stats.xp)
 	_check(GameState.stats.pending_points == 3, "读档恢复属性点（%d == 3）" % GameState.stats.pending_points)
@@ -119,7 +116,6 @@ func _test_world_v5() -> void:
 			"v3 旧档无种子键迁移到默认种子（%d）" % GameState.world_seed)
 	_check(GameState.explored.is_empty(), "v3 旧档探索进度归零（全图未探索）")
 	_check(GameState.discovered_landmarks.is_empty(), "v3 旧档无地标发现")
-	_check(GameState.seen_intro_cg == false, "v3 旧档开场 CG 标记默认未播")
 	_check(GameState.stats.level == 5, "v3 旧档角色进度照常读取")
 
 

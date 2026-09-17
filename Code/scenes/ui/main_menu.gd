@@ -99,11 +99,6 @@ func _has_progress() -> bool:
 
 
 func _start() -> void:
-	# 开场 CG：从未看过且片源在包内 → 先过场再进世界（播过一次不再打扰；
-	# 「新的冒险」清档会重置标记，新冒险重播）。片源缺失时谓词恒假直接进世界。
-	if CutscenePlayer.intro_pending():
-		get_tree().change_scene_to_file("res://scenes/ui/cutscene_player.tscn")
-		return
 	get_tree().change_scene_to_file("res://scenes/main/main.tscn")
 
 

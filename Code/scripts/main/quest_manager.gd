@@ -149,6 +149,12 @@ func _complete(quest: Dictionary) -> void:
 			int(data["completed"].get(quest["landmark_id"], 0)) + 1
 	GameState.add_gold(quest["gold"])
 	GameState.add_xp(quest["xp"])
+	# 结算金闪（美术 v5 fx 全量）：在玩家位置炸开
+	var player := get_tree().get_first_node_in_group("player") as Node2D
+	if player != null:
+		EventBus.fx_requested.emit("flash_yellow", player.global_position, 1.3)
+	SfxManager.play("quest")
+	SfxManager.play("gold3")
 	EventBus.quest_completed.emit("✅ %s 完成（+%d 金币 +%d 经验）" % [
 		quest["title"], quest["gold"], quest["xp"]])
 

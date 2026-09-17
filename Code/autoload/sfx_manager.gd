@@ -16,7 +16,8 @@ const CROSSFADE := 0.4
 ## 不节流会抢光 4 个轮询通道糊成一片（顿帧侧早有同款 0.2s 节流，音频侧对齐）
 const HIT_SFX_THROTTLE := 0.1
 
-## 事件音（NA 具名音效对口；hurt/dash/heavy/region 无对口沿用 Kenney）
+## 事件音（美术 v5 M-C 全量：NA 具名音效优先对口；hurt/dash/heavy/region
+## NA 无对口沿用 Kenney；menu/gold2/gold3/secret/alert/voice 系为全量新增）
 const SFX := {
 	"hit": [
 		preload("res://assets/na/audio/sounds/sword.ogg"),
@@ -32,6 +33,18 @@ const SFX := {
 	"died": [preload("res://assets/na/audio/sounds/game-over.ogg")],
 	"region": [preload("res://assets/sfx/region.ogg")],
 	"gold": [preload("res://assets/na/audio/sounds/gold-1.ogg")],
+	"gold2": [preload("res://assets/na/audio/sounds/gold-2.ogg")],
+	"gold3": [preload("res://assets/na/audio/sounds/gold-3.ogg")],
+	"menu": [preload("res://assets/na/audio/sounds/menu-1.ogg")],
+	"quest": [preload("res://assets/na/audio/sounds/succes-2.ogg")],
+	"discover": [preload("res://assets/na/audio/sounds/succes-3.ogg")],
+	"passive": [preload("res://assets/na/audio/sounds/power-up-2.ogg")],
+	"secret": [preload("res://assets/na/audio/sounds/secret-1.wav")],
+	"alert": [preload("res://assets/na/audio/sounds/alert.ogg")],
+	"voice1": [preload("res://assets/na/audio/sounds/voice-1.ogg")],
+	"voice2": [preload("res://assets/na/audio/sounds/voice-2.ogg")],
+	"voice3": [preload("res://assets/na/audio/sounds/voice-3.ogg")],
+	"voice4": [preload("res://assets/na/audio/sounds/voice-4.ogg")],
 }
 
 ## 群系 BGM（NA musics，六地形一系一曲 + 菜单）——换群系即换情绪。
@@ -46,6 +59,10 @@ const TERRAIN_THEMES := {
 	"menu": preload("res://assets/na/audio/musics/theme-10.ogg"),
 	## 城塞内腔（美术 v5 M-B）：进出城塞切曲，出腔回当前群系曲
 	"dungeon": preload("res://assets/na/audio/musics/theme-7.ogg"),
+	## Boss 临场（美术 v5 M-C 全量）：活体 Boss 进入追踪圈切战斗曲
+	"boss": preload("res://assets/na/audio/musics/theme-16.ogg"),
+	## 出生营地（美术 v5 M-C）：安全区休整曲
+	"camp": preload("res://assets/na/audio/musics/theme-8.ogg"),
 }
 
 var _channels: Array[AudioStreamPlayer] = []

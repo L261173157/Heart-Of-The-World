@@ -37,8 +37,6 @@ var gold: int = 0
 var save_enabled: bool = true
 ## 新手引导完成标志（tutorial.gd 写入，随存档持久化）
 var tutorial_flags: Dictionary = {}
-## 开场 CG 已播标记（播完或跳过即置真；「新的冒险」清档会重置，新冒险重播一次）
-var seen_intro_cg := false
 ## 图鉴：物种 → 累计击杀数（monster_killed_by_player 时自动记录）
 var codex: Dictionary = {}
 ## 已解锁成就 id → true
@@ -326,12 +324,6 @@ func set_setting(key: String, value) -> void:
 	_queue_save()
 
 
-## 开场 CG 播过置真并触发防抖落盘（cutscene_player 播完/跳过时调用）
-func mark_intro_cg_seen() -> void:
-	seen_intro_cg = true
-	_queue_save()
-
-
 ## 重置世界：清空全部进度（主菜单"新的冒险"确认）。
 ## stats 就地重置而非重建对象——Player/HUD/AchievementManager 等订阅者
 ## 持有的是旧对象引用，换血会静默失联（属性不生效/升级不弹窗）
@@ -339,7 +331,6 @@ func reset_all() -> void:
 	stats.reset()
 	gold = 0
 	tutorial_flags = {}
-	seen_intro_cg = false
 	codex = {}
 	achievements = {}
 	session_kills = 0
@@ -427,7 +418,6 @@ func save_now() -> void:
 		"achievements": achievements,
 		"settings": settings,
 		"tutorial": tutorial_flags,
-		"seen_intro_cg": seen_intro_cg,
 		"last_save_unix": last_save_unix,
 	}
 	if typeof(player_snapshot) == TYPE_DICTIONARY:
@@ -586,8 +576,6 @@ func _load() -> void:
 			var flag: Variant = saved_flags[key]
 			if flag == true or _safe_int(flag, 0) > 0:
 				tutorial_flags[key] = true
-	# 开场 CG 已播标记：旧档无键 → 未播（true 才认，其余一律视为未播）
-	seen_intro_cg = data.get("seen_intro_cg", false) == true
 	var saved_codex: Variant = data.get("codex", {})
 	if typeof(saved_codex) == TYPE_DICTIONARY:
 		codex = {}

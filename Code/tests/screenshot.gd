@@ -4,12 +4,10 @@
 ## 0.35s 后再截一张 /tmp/hotw_shot_b.png（帧差对比可验证行走动画确实在播）。
 ## HOTW_SHOT_UI="codex" 可在同一视口截取图鉴弹层，验证长内容滚动与安全区。
 ## HOTW_SHOT_UI="menu" 截主菜单：首帧完整菜单，次帧打开冒险档案面板。
-## HOTW_SHOT_UI="cutscene" 截开场 CG：复位标记让过场真实开播，1.5s 拍解码上屏帧即退。
 extends Node2D
 
 const MAIN_SCENE := preload("res://scenes/main/main.tscn")
 const MENU_SCENE := preload("res://scenes/ui/main_menu.tscn")
-const CUTSCENE_SCENE := preload("res://scenes/ui/cutscene_player.tscn")
 const OUT_PATH := "/tmp/hotw_shot.png"
 const OUT_PATH_B := "/tmp/hotw_shot_b.png"
 const DELAY := 3.0
@@ -43,9 +41,6 @@ var _ov_wait := 0.0
 ## HOTW_SHOT_UI="menu_layers"：主菜单弹层取证——设置面板 / 清档确认层，
 ## 输出 /tmp/hotw_ml_1..2.png（与 menu 模式同构的伪造进度，确保新冒险钮可见）
 var _menu_layers := false
-## HOTW_SHOT_UI="cutscene"：开场 CG 取证（真实 Theora 解码上屏）
-var _cutscene := false
-var _cs_cut: Control
 
 
 func _ready() -> void:
@@ -58,16 +53,6 @@ func _ready() -> void:
 	_menu_mode = OS.get_environment("HOTW_SHOT_UI") == "menu"
 	_menu_layers = OS.get_environment("HOTW_SHOT_UI") == "menu_layers"
 	_overlays = OS.get_environment("HOTW_SHOT_UI") == "overlays"
-	_cutscene = OS.get_environment("HOTW_SHOT_UI") == "cutscene"
-	if _cutscene:
-		# 复位已播标记让过场真正开播；next_scene 置空防真切场景（不污染真实档）
-		GameState.seen_intro_cg = false
-		_cs_cut = CUTSCENE_SCENE.instantiate()
-		_cs_cut.next_scene = ""
-		add_child(_cs_cut)
-		_cs_cut.position = Vector2.ZERO
-		_cs_cut.size = get_viewport_rect().size
-		return
 	if _menu_mode or _menu_layers:
 		# 菜单取证：伪造进度（不落盘），让"继续冒险/新的冒险/档案数据"全部就位
 		GameState.ecology_snapshot = {"game_day": 7, "instances": []}
@@ -120,18 +105,6 @@ func _process(delta: float) -> void:
 	_elapsed += delta
 	if _menu_layers:
 		_process_menu_layers()
-		return
-	if _cutscene:
-		# 1.5s 时首帧必然已解码：拍一帧 + 打印播放态即退
-		if not _shot_a and _elapsed >= 1.5:
-			_shot_a = true
-			var video := _cs_cut.get_node("%Video") as VideoStreamPlayer
-			print("cutscene playing=", video.is_playing(), " stream_ok=", video.stream != null)
-			_capture("/tmp/hotw_cs_1.png")
-			get_tree().quit(0)
-		return
-	if _overlays and _elapsed >= 3.0:
-		_process_overlays(delta)
 		return
 	if _dbg_accum >= 0.25:
 		_dbg_accum = 0.0

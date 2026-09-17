@@ -152,6 +152,9 @@ func _ready() -> void:
 	attack_hitbox.body_entered.connect(_on_attack_body_entered)
 	# 延迟到所有节点 ready 之后再推初值，保证 HUD 已连接信号
 	_push_hud.call_deferred()
+	# 升级白闪光（美术 v5 fx 全量）：世界层特效走 fx_requested 通道
+	GameState.stats.leveled_up.connect(func(_level: int, _levels: int) -> void:
+		EventBus.fx_requested.emit("flash", global_position, 1.5))
 
 
 ## 跨会话恢复角色位置与当前资源。世界边界留 20px 安全边距，坏档不会把玩家
@@ -536,6 +539,7 @@ func _try_heal() -> void:
 	_push_skills()
 	SfxManager.play("heal")
 	_play_ring(44.0, Color(0.5, 1.0, 0.55, 0.9))
+	EventBus.fx_requested.emit("flash_blue", global_position, 1.0)
 
 
 ## 武装强化：消耗 MP 进入 6s 普攻增益（伤害 ×1.6 + 命中吸血）；
@@ -552,6 +556,7 @@ func _try_empower() -> void:
 	SfxManager.play("levelup")
 	_set_visual_base(Color(1.0, 0.88, 0.55))
 	_play_ring(40.0, Color(1.0, 0.82, 0.35, 0.9))
+	EventBus.fx_requested.emit("charge", global_position, 1.4)
 
 
 ## 强化激活/结束等边界态写基础色前先杀受击白闪——
@@ -869,6 +874,11 @@ func _on_attack_body_entered(body: Node) -> void:
 				stats.equip_element(), monster.inst.species.element)
 		mult *= em
 		effective = em > 1.0
+		# 元素克制命中特效（美术 v5 fx 全量）：火→焰 / 冰→霜，只在克制时炸开
+		if effective:
+			EventBus.fx_requested.emit(
+				"flame" if stats.equip_element() == "fire" else "frost",
+				monster.global_position, 1.1)
 	body.take_damage(CombatMath.physical_damage(stats.physical_attack() * mult),
 			global_position, _combo == 3, stats.knockback_mult(), effective)
 	# 噬血被动：命中吸血；武装强化期间额外回复最大生命 3%（连击越快续航越强）

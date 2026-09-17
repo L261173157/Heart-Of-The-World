@@ -153,7 +153,9 @@ func _ready() -> void:
 	EventBus.player_died.connect(_on_player_died)
 	GameState.stats.leveled_up.connect(_on_leveled_up)
 
-	%PauseBtn.pressed.connect(_toggle_pause)
+	%PauseBtn.pressed.connect(func() -> void:
+		SfxManager.play("menu")
+		_toggle_pause())
 	%ResumeBtn.pressed.connect(_toggle_pause)
 	%SaveBtn.pressed.connect(_save_progress)
 	%PauseSettingsBtn.pressed.connect(
@@ -227,6 +229,20 @@ var _dialogue_no: TextureButton
 var _dialogue_quest: Dictionary = {}
 var _dialogue_kind := ""
 var _dialogue_timer := 0.0
+## NA 心形五帧（美术 v5 UI 主题化）：条带 80×16，帧 0-4 = 空→满
+const HEART_STRIP := preload("res://assets/na/hud/heart.png")
+var _heart_icon: TextureRect
+var _heart_cache: Array[AtlasTexture] = []
+
+
+func _heart_frame(idx: int) -> AtlasTexture:
+	if _heart_cache.is_empty():
+		for i in 5:
+			var at := AtlasTexture.new()
+			at.atlas = HEART_STRIP
+			at.region = Rect2(i * 16.0, 0.0, 16.0, 16.0)
+			_heart_cache.append(at)
+	return _heart_cache[clampi(idx, 0, 4)]
 const DIALOGUE_INFO_SECONDS := 3.5
 const DIALOGUE_OFFER_SECONDS := 12.0
 
@@ -320,6 +336,8 @@ func _setup_dialogue_bubble() -> void:
 
 func _open_dialogue(payload: Dictionary) -> void:
 	GameState.dialogue_open = true
+	# NA 语音短音（美术 v5 音频全量）：NPC 开口随机一条，说话感
+	SfxManager.play("voice%d" % (1 + randi() % 4))
 	_dialogue_kind = str(payload.get("kind", ""))
 	_dialogue_quest = payload.get("quest", {}) if _dialogue_kind == "quest" else {}
 	_dialogue_name.text = str(payload.get("giver", ""))
@@ -338,6 +356,7 @@ func _on_dialogue_action(action: String) -> void:
 	if not _dialogue_panel.visible:
 		return
 	if action == "confirm":
+		SfxManager.play("menu")
 		if not _dialogue_quest.is_empty():
 			EventBus.dialogue_confirmed.emit(_dialogue_quest)
 		elif _dialogue_kind == "shop":
@@ -547,10 +566,11 @@ func _setup_stats_row() -> void:
 	parent.add_child(row)
 	parent.move_child(row, stats_label.get_index())
 	stats_label.reparent(row)
-	# 血条前的心形：TopLeft 左移让位，图标绝对定位贴条头
+	# 血条前的心形：TopLeft 左移让位，图标绝对定位贴条头；
+	# NA heart 五帧条带（80×16）按血量比例换帧（0=空心 … 4=满心）
 	parent.offset_left += 24.0
 	var heart := TextureRect.new()
-	heart.texture = ICON_HEART
+	heart.texture = _heart_frame(4)
 	heart.position = Vector2(10, 13)
 	heart.custom_minimum_size = Vector2(22, 22)
 	heart.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -559,6 +579,17 @@ func _setup_stats_row() -> void:
 	heart.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.get_parent().add_child(heart)
 	_place_below_modal_layers(heart)
+	_heart_icon = heart
+	# MP 条头苦无（NA hud/kunai）：贴条左侧作蓝量标识
+	var kunai := TextureRect.new()
+	kunai.texture = preload("res://assets/na/hud/kunai.png")
+	kunai.position = Vector2(-17, -3)
+	kunai.custom_minimum_size = Vector2(20, 20)
+	kunai.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	kunai.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	kunai.size = Vector2(20, 20)
+	kunai.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mp_bar.add_child(kunai)
 
 
 ## 全屏暗角：程序生成径向渐变纹理，弱化边缘聚焦画面中心。
@@ -867,8 +898,9 @@ func _pick_passive(index: int) -> void:
 	var id: Variant = btn.get_meta("passive_id", "")
 	if id != null and str(id) != "":
 		GameState.stats.add_passive(str(id))
-	_pending_passive_picks -= 1
-	_open_passive_pick()
+		SfxManager.play("passive")
+		_pending_passive_picks -= 1
+		_open_passive_pick()
 
 
 # --- 氛围 ---
@@ -943,6 +975,10 @@ func _on_hp_changed(current: float, maximum: float) -> void:
 	hp_bar.max_value = maximum
 	_hp_max_cache = maximum
 	_hp_full = current >= maximum - 0.5
+	# NA 心形图标按血量换帧（美术 v5 UI 主题化：0=空心 … 4=满心）
+	if _heart_icon != null and maximum > 0.0:
+		_heart_icon.texture = _heart_frame(int(round(
+			clampf(current / maximum, 0.0, 1.0) * 4.0)))
 	# 平滑条：事件只写目标，_process 逼近；掉血时白色残影先按住片刻
 	if current < _hp_target:
 		_hp_ghost_hold = GHOST_HOLD

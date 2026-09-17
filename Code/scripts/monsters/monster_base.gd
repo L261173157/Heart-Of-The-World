@@ -518,6 +518,10 @@ func on_sim_death() -> void:
 	modulate = Color(0.45, 0.45, 0.45, 0.7)
 	if _hp_bar != null:
 		_hp_bar.notify_change()
+	# 死亡消散烟（美术 v5 fx 全量）：Boss 用暗烟加强份量感
+	EventBus.fx_requested.emit(
+		"darksmoke" if inst.species.is_boss else "smoke",
+		global_position, 1.6 if inst.species.is_boss else 1.0)
 
 
 # --- 子类可重写的机制钩子 ---
@@ -586,6 +590,9 @@ func _perform_attack(player: Node2D) -> void:
 	_squash(Vector2(0.92, 1.08), 0.14)  # 出刀瞬间过冲
 	if player.has_method("take_damage"):
 		player.take_damage(CombatMath.physical_damage(inst.attack_power()), global_position, inst.display_name())
+		# 命中紫色邪光（美术 v5 fx 全量；Boss ×1.5）
+		EventBus.fx_requested.emit("orb", (player as Node2D).global_position,
+			1.5 if inst.species.is_boss else 0.8)
 
 
 ## 受击后钩子（狂暴触发等）；from_position 为 Vector2.INF 表示无来源
