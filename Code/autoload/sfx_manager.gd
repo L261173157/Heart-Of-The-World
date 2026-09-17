@@ -16,22 +16,22 @@ const CROSSFADE := 0.4
 ## 不节流会抢光 4 个轮询通道糊成一片（顿帧侧早有同款 0.2s 节流，音频侧对齐）
 const HIT_SFX_THROTTLE := 0.1
 
-## 事件音（美术 v5 M-C 全量：NA 具名音效优先对口；hurt/dash/heavy/region
-## NA 无对口沿用 Kenney；menu/gold2/gold3/secret/alert/voice 系为全量新增）
+## 事件音（美术 v5 完整包增量 2026-09-17：NA 分类音效全对口，Kenney 全退役；
+## na_ 前缀 = 完整包 Hit&Impact/Whoosh/Jingles 分类件）
 const SFX := {
 	"hit": [
 		preload("res://assets/na/audio/sounds/sword.ogg"),
-		preload("res://assets/sfx/hit_a.ogg"),
+		preload("res://assets/na/audio/sounds/na_hit1.wav"),
 	],
-	"hurt": [preload("res://assets/sfx/hurt.ogg")],
+	"hurt": [preload("res://assets/na/audio/sounds/na_hit2.wav")],
 	"kill": [preload("res://assets/na/audio/sounds/kill.ogg")],
-	"dash": [preload("res://assets/sfx/dash.ogg")],
-	"heavy": [preload("res://assets/sfx/kill.ogg")],
+	"dash": [preload("res://assets/na/audio/sounds/na_whoosh.wav")],
+	"heavy": [preload("res://assets/na/audio/sounds/na_impact.wav")],
 	"bolt": [preload("res://assets/na/audio/sounds/magic-1.ogg")],
 	"heal": [preload("res://assets/na/audio/sounds/succes.ogg")],
-	"levelup": [preload("res://assets/na/audio/sounds/power-up.ogg")],
-	"died": [preload("res://assets/na/audio/sounds/game-over.ogg")],
-	"region": [preload("res://assets/sfx/region.ogg")],
+	"levelup": [preload("res://assets/na/audio/sounds/na_levelup.wav")],
+	"died": [preload("res://assets/na/audio/sounds/na_gameover.wav")],
+	"region": [preload("res://assets/na/audio/sounds/na_bonus2.wav")],
 	"gold": [preload("res://assets/na/audio/sounds/gold-1.ogg")],
 	"gold2": [preload("res://assets/na/audio/sounds/gold-2.ogg")],
 	"gold3": [preload("res://assets/na/audio/sounds/gold-3.ogg")],

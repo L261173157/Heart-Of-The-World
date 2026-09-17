@@ -84,3 +84,12 @@ http://creativecommons.org/publicdomain/zero/1.0/
   assets/na/audio/musics/ 19 曲           ← 六群系+菜单+城塞+Boss+营地 10 槽已接，9 曲预留池
   assets/na/audio/sounds/ 45 个           ← 21 具名对口接线；编号 1-19/magic.wav 身份未验证留库
 音频取用仍以 sfx/LICENSE_kenney_audio_CC0.txt 为补位来源（hurt/dash/heavy/region 四音）。
+
+【完整包增量（2026-09-17 itch R2 直链，用户手动获取）】
+源包：Ninja Adventure - Asset Pack（2234 文件/110MB，解压 ~/hotw-assets/na-full-dl/na-full/）
+本次入库：Audio/Sounds 分类件 7 个 + Jingles 2 个（na_hit1/na_hit2/na_whoosh/na_impact/
+na_bonus2/na_levelup/na_gameover/na_coin，Kenney 音效全退役）。
+待增量池（未入库）：Actor/{Character 903, Monster 132, Boss 116, Animal 116}、
+Backgrounds/Tilesets 全家（Dungeon/House/Interior/Towers/Desert/VillageAbandoned…）、
+Animated 背景（WaterMill/QuickSand/WaterRipples…）、Audio 其余（Musics 41 曲/
+Sounds 全分类）、Items 142、Ui 361。
