@@ -19,7 +19,6 @@ iOS 优先的 2D 动作游戏：ACT 无锁定战斗 + 角色养成 + **怪物生
 Steam 版 Godot 二进制：
 ```
 GODOT="$HOME/Library/Application Support/Steam/steamapps/common/Godot Engine/Godot.app/Contents/MacOS/Godot"
-"$GODOT" --headless --path Code --import   # 首次/改资源后导入并暴露脚本解析错误
 "$GODOT" --headless --path Code --quit     # 单帧加载主场景的冒烟测试
 "$GODOT" --headless --path Code -s tests/sim_test.gd          # 生态不变量单测（纯逻辑，123 项断言）
 "$GODOT" --headless --path Code -s tests/balance_test.gd      # 数值平衡校验（6 地形×物种手感区间，v4 起按地形去重展开）
@@ -28,18 +27,9 @@ GODOT="$HOME/Library/Application Support/Steam/steamapps/common/Godot Engine/God
 "$GODOT" --headless --path Code res://tests/ui_flow_test.tscn --quit-after 8000    # UI/流程冒烟：菜单→世界→死亡重生→回菜单→继续（TERRAIN_THEMES 映射/三路音量总线/快照恢复 26 项）
 "$GODOT" --headless --path Code res://tests/pacing_test.tscn --quit-after 100000   # 节奏浸泡：拟人机器人 10 游戏分钟（首升/Lv3/金币/压力/生态六项区间，约 2.5 分钟真实时间）
 "$GODOT" --headless --path Code -s tools/generate_terrain.gd                      # 生成 6 张群系地表 PNG（v4 起仅主菜单装饰条消费；游戏内地表为运行时分块绘制）
-"$GODOT" --headless --path Code -s tools/generate_world_map.gd                    # 生成小地图总览 PNG（世界 v5 起小地图运行时按种子自采样，此图仅留档参考，可不重跑）
 "$GODOT" --headless --path Code -s tools/generate_obstacle_tileset.gd             # 障碍瓦片集 data/{obstacle,nav}_tileset.tres（改 ObstacleField 的 KIND_INFO/类型表后必须重跑；贴图内嵌 tres 不产 PNG）
 "$GODOT" --headless --path Code -s tools/obstacle_probe.gd                        # 障碍覆盖率探针（调 RECIPES 阈值后看各群系实测%；sim_test 分带守闸）
-"$GODOT" --headless --path Code -s tools/slice_spritesheets.gd                    # 从 sheets/ 精灵表重切帧动画 SpriteFrames（含色相烘焙，见文件头注）
-"$GODOT" --headless --path Code -s tools/slice_spritesheets_v2.gd -- slice        # 高清素材（~/hotw-assets/，LuizMelo/Admurin）切帧+烘焙 → 逐帧 PNG（2026-09-08 美术升级；**现为回退位**，线上美术已换自建卡通，见下两行）
-"$GODOT" --headless --path Code -s tools/generate_creatures.gd                    # ★ 自建卡通生物帧生成（SDF 矢量卡通：22 物种+FX 三件+玩家英雄+图标；改风格/调色板/骨架后重跑，再 --import）
-"$GODOT" --headless --path Code -s tools/generate_creatures.gd -- pack           # 组装引用式 SpriteFrames（die/play 非循环；接线=data/species/*.tres 一行 frames_override，场景 scale 与 v2 姐妹共档）
-"$GODOT" --headless --path Code -s tools/generate_creatures.gd -- sheet          # 风格样张 /tmp/hotw_cartoon_sheet.png（contact sheet，风格验收用）
-"$GODOT" --headless --path Code -s tools/generate_tiles.gd                       # 卡通瓦片图集 cartoon_tileset.png（36 地形格+9 道具，与 na_tileset 同网格同坐标；重跑后 generate_obstacle_tileset/generate_terrain 须跟着重跑）
-"$GODOT" --headless --path Code --import                                           # 导入上一步产出的帧 PNG（v2 切帧后必跑，再进 pack）
-"$GODOT" --headless --path Code -s tools/slice_spritesheets_v2.gd -- pack         # 组装引用式 SpriteFrames（idle/walk/attack/die 统一动画名）
-"$GODOT" --headless --path Code -s tools/build_ai_strips.gd                        # ★ 美术 v4 AI 素材接入（P0 已验证）：~/hotw-assets/ai/<物种>/{base,attack,hurt,melt,puddle}.png 抽白底+程序补间 → pilot/current/<物种>/ 四动画条带；之后 slice v2 → import → pack → .tres frames_override（方案真源 Documents/美术方案-v4.md）
+"$GODOT" --headless --path Code -s tools/slice_spritesheets.gd                    # ★ NA 全家切帧（美术 v5 真源工具：22 怪表+三忍+4 NPC+18 fx 全部条目；改表后重跑，tres 自包含免 import）
 "$GODOT" --headless --path Code -s tools/numbers_audit.gd                        # 数值全盘量化审计（构筑/对刀/经济/生态/寿命基线表）
 "$GODOT" --headless --path Code -s tools/eco_probe.gd                            # 生态长程探针（2000 tick 逐物种存活占比/灭绝次数/死因——捕食结构调参的实证工具）
 python3 Code/tools/subset_font.py    # 重新生成内嵌中文字体 assets/fonts/（iOS 26 系统字体回退失效须自带 CJK 字体；游戏文案缺字变豆腐块时重跑，桌面端缺字静默回退看不出来）
@@ -67,16 +57,17 @@ scripts/
 data/species/  种族配置 .tres（数据驱动，唯一数据源；新增种族改这里不改代码）
 scenes/      main / player / monsters / ui（.tscn）
 tests/       sim_test.gd（生态单测）、combat_test.tscn（战斗自动化）、save_test.tscn（存档）、ui_flow_test.tscn（UI/流程冒烟）、pacing_test.tscn（节奏浸泡）、screenshot.tscn（视觉截图）
-assets/      creatures/sheets/（cartoon_tileset.png=现行瓦片图集（generate_tiles.gd 产物，与 na_tileset 同网格同坐标）；na_tileset.png=旧源回退位）、creatures/frames/（SpriteFrames .tres：**现行=美术 v4 全家（2026-09-11 全量上线）：22 套 `<物种>_pilot` + hero_pilot（成熟版剑客，三段连击独立招式）+ fx_slash/fx_slash_gold/fx_burst，全部 ComfyUI 本地生成（方案真源 Documents/美术方案-v4.md；生成管线 ~/comfyui-workspace/ + ~/hotw-assets/ai/；怪物回退=v3/v2 .tres 一行切，英雄回退=player.tscn 一行改 hero_cartoon）**）、icons_cartoon/（**AI 生成 19 枚 64px**，hud.gd/main_menu.gd 零改动换源）、landmarks/（**AI 地标精灵 11 种**，LandmarkMarker 消费，缺图回退圆环）、terrain/（region_*.png=**AI 厚涂 KeyArt 6 张**主菜单地平线 + 运行时地表种子图集源 + world_map.png 留档）、sfx/（Kenney CC0 音效补位）、na/audio/（NA CC0 音效 7 个 + 群系 BGM 7 曲，取用清单见 LICENSE 文件）
+assets/      creatures/sheets/（na_tileset.png=448×640 瓦片真源（地表/障碍/装饰/KeyArt 四消费方同坐标契约）、creatures/frames/（SpriteFrames .tres：**美术 v5=NA 全家（2026-09-17 回归主线）：22 物种 1:1 NA 怪表 + 三忍（蓝/黑/白，settings.hero_skin 切换）+ 4 地标/营地 NPC + 18 fx 条带，slice_spritesheets.gd 产出（方案真源 Documents/美术方案-v5-NA.md）**）、na/（**NA 补给全家：characters 26 张+faceset 27 立绘+bg 背景动画条带+fx 20 组+items/weapons/hud 图标源+structures 建筑烘焙件（bake_structures.gd）+audio 全量（musics 19 曲/sounds 45 个）**，取用清单见 LICENSE）、terrain/（region_*.png=na_tileset 拼贴 KeyArt 6 张主菜单地平线）、sfx/（Kenney CC0 补位：hurt/dash/heavy/region 四音无 NA 对口）
 ```
 
 ## 世界与物种速查
 
-- **v4 世界结构（2026-09-08 大地图重构）**：80 万像素见方（端到端直线跑图 76 分钟），唯一真源是 `scripts/ecology/biome_map.gd`（BiomeMap 纯逻辑：抖动网格 Voronoi + 域扭曲 → ~100 个犬牙交错群系斑块；出生角强制平原，威胁沿对角线递增至熔岩）。`scripts/main/world_config.gd`（WorldConfig）把 BiomeMap 装配成区域定义（id/terrain/threat/capacity/center/neighbors）与按地形的初始种群表——改世界形状/带位改 BiomeMap（改后须重跑 generate_world_map），改种群分布改 WorldConfig 的 TERRAIN_POPULATION
+- **v4 世界结构（2026-09-08 大地图重构）**：80 万像素见方（端到端直线跑图 76 分钟），唯一真源是 `scripts/ecology/biome_map.gd`（BiomeMap 纯逻辑：抖动网格 Voronoi + 域扭曲 → ~100 个犬牙交错群系斑块；出生角强制平原，威胁沿对角线递增至熔岩）。`scripts/main/world_config.gd`（WorldConfig）把 BiomeMap 装配成区域定义（id/terrain/threat/capacity/center/neighbors）与按地形的初始种群表——改世界形状/带位改 BiomeMap，改种群分布改 WorldConfig 的 TERRAIN_POPULATION
 - 地表为运行时分块绘制（terrain/），怪物/巢穴节点按玩家距离流式生成（game_world `_stream_pass`），模拟层数据始终全局
 - **世界 v5 障碍与探索层（2026-09-08）**：每档全新世界（GameState.world_seed，「新的冒险」重掷；旧档迁移回 DEFAULT_SEED 零损失）。障碍唯一真源是 `ecology/obstacle_field.gd`（FastNoiseLite 确定性，群系差异化配方：平原稀疏 4%/森林树墙 26%/丘陵分段岩脊 21% 等，斑块中心 600px·出生点 1200px 抑制区，sim_test 覆盖带守闸）；表现层 `terrain/obstacle_tile_layer`（TileMap：贴图 y-sort 树冠+瓦片物理墙+LightOccluder 阴影）与 `terrain/nav_tile_layer`（仅导航不渲染，整层单 NavigationRegion，窗 7 块 > 怪物流式 2800px）。怪物 AI = NavigationAgent2D（追击/逃跑/迁徙/巡逻全导航 + RVO 同族避让 + 远程 `intersect_ray` 视线、被掩体挡视线时沿路径逼近重取——射线终点须回撤 28px 避开玩家本体碰撞）。视野 = `vision_lighting.gd`（昼夜 CanvasModulate + 提灯 PointLight2D 阴影投射；白天灯关零成本）。区域进入检测与地标发现均原生 Area2D（BiomeMap.patch_polygons 同源栅格派生多边形；`ecology/landmark_registry.gd` 每斑块 1~2 地标）；战争迷雾 GameState.explored（200×200 位图）开局全黑随移动揭示，小地图未探索盖黑+已发现地标色点。营地/子代/复活点选点经 ObstacleField 通行性校验。**液体场**（同源真源）：snow/hill 深水阻挡（可见水核 +4% 噪声保守边距，浅水滩可趟）、lava 熔岩池可通行但站立灼烧（玩家 3% 最大生命/0.5s，环境伤不走无敌帧）；terrain_painter 的水材质层消费同一 `liquid_kind_in`（可见水 == 判得到的水，抑制区同口径）。**可破坏障碍**：rock/bones/crystal/ice 两刀可碎（普攻射线/法弹破块开路，碎屑演出 + 概率掉金币），摧毁覆盖层存档 v5 往返、导航层即时补可走格；碰撞不依赖瓦片物理——Godot 4.7 TileMapLayer 有"格子只注册视觉、物理体静默不构建"的时序坑（早建/重铺均复现无稳定规避），由 obstacle_tile_layer 每块挂 StaticBody2D 圆形碰撞体承担（游戏内 MOUNTCHECK 哨兵回归守闸）。**地标 NPC + 任务 v1**：石环=营地猎人(狩猎)/荒废遗迹=遗迹学者(捣巢)/精灵泉=泉水守望者(探索)，靠近按攻击键交互接单（不消耗冷却），达成自动结算金币+经验（EconomyMath 与赏金同源）；数据真源 GameState.quests（存档 v5），接单内容按（地标×已完成数）确定性生成，HUD 任务行常驻进度
 - **怪物据点制（MMO 语义，2026-09-08）**：怪物属于地图不属于玩家——每斑块每物种一个确定性营地（`EcologySim.camp_pos`，环距三档 0.05/0.16/0.27 格），初始个体扎根营地 ±180，繁衍子代在亲代 ±220 出生（据点逐代外扩），迁徙/重引入重分配新营地，Boss 盘踞斑块中心，巢穴与营地同址（捣巢=端老窝）。表现层只按「实例 spawn_pos vs 玩家距离」进出节点（2400 生成/2800 回收），位置不随玩家漂移；存活实例必有非 INF 位置（老档恢复时按营地补齐）
 - 种族战斗×生态差异见 `data/species/*.tres`；新增种族 = 复制任一 .tres 改参数 + MONSTER_SCENES 登记表现场景 + WorldConfig.TERRAIN_POPULATION 撒初始种群（三步清单见 species_catalog.gd 头注）
+- **美术 v5 · Ninja Adventure 全面主题化（2026-09-17，方案真源 Documents/美术方案-v5-NA.md）**：22 物种与 NA 22 张怪表一一对应（骷髅兵→甲虫等 11 项更名走 SpeciesCatalog.SPECIES_RENAME_MAP 存档迁移）；英雄=三忍皮肤切换（settings.hero_skin）；地标 NPC=NA 角色精灵+对话气泡（offer/确认接单，dialogue-bubble/faceset/yes-no）；出生营地=NA 房屋+鸟居+行商（对话开商店）+420px 缓回血；**Boss 城塞**=hill/lava 最远斑块城堡墙围合（ObstacleField.DUNGEON_* 结构生成，南门 3 格洞）+Boss+宝箱（Boss 死后可开，重生即重置）；fx 19/20 事件化（EventBus.fx_requested → game_world.FxLayer）；音乐优先级=活Boss临场>城塞内>营地>群系；音效 NA 44+Kenney 4
 
 ## 架构铁律（违反=返工）
 

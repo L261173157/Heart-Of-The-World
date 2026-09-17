@@ -71,3 +71,16 @@ http://creativecommons.org/publicdomain/zero/1.0/
 
 精灵表布局约定（与作者 Godot 演示 system/character/sprite_character.gd 一致）：
   列(x) = 朝向 0下/1上/2左/3右；行(y) = 帧序（怪物 0-3 行走；角色另含 4攻击/5跳跃/6死亡）
+
+			------------------------------
+
+【美术 v5 增补取用（2026-09-17 NA 回归，全量补齐 GitHub 通道）】
+  assets/na/characters/1-25.png+dog.png   ← characters/（三忍=1/2/3；NPC 用 4=老者 6=斗笠村民 7=巫女 8=猎人）
+  assets/na/characters/faceset/*          ← characters/faceset/（25+all+dog 立绘，对话气泡消费）
+  assets/na/fx/1-20.png+gif              ← fx/（18 组已切帧接线，3/4/14 身份未验证留库）
+  assets/na/bg/*                         ← background-elements/（flag/flower/plant/waterfall gif 已转条带；snow.png）
+  assets/na/items|weapons|hud/            ← 全量图标源（HUD 19 槽 + 对话 UI + 图标备用池）
+  assets/na/structures/*                  ← na_tileset 烘焙件（bake_structures.gd：房屋×3/鸟居/招牌/城墙/城塔/地牢砖/宝箱）
+  assets/na/audio/musics/ 19 曲           ← 六群系+菜单+城塞+Boss+营地 10 槽已接，9 曲预留池
+  assets/na/audio/sounds/ 45 个           ← 21 具名对口接线；编号 1-19/magic.wav 身份未验证留库
+音频取用仍以 sfx/LICENSE_kenney_audio_CC0.txt 为补位来源（hurt/dash/heavy/region 四音）。
