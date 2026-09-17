@@ -50,9 +50,10 @@ var ecology_snapshot: Variant = null
 ## 实际把角色免费传回出生点并回满状态。死亡时快照由 Player 归一为出生点满状态。
 var player_snapshot: Variant = null
 ## 设置（主菜单/暂停菜单写入）：三条音量滑条（Master 总音量 / Music 音乐 / SFX 音效，
-## 后两者默认 1.0——旧档无键走默认，响度与单总线时代完全一致）、震屏、伤害数字
+## 后两者默认 1.0——旧档无键走默认，响度与单总线时代完全一致）、震屏、伤害数字、
+## 自动瞄准、三忍外观（blue/dark/white，美术 v5）
 var settings: Dictionary = {"volume": 0.8, "music_volume": 1.0, "sfx_volume": 1.0,
-	"screen_shake": true, "damage_numbers": true}
+	"screen_shake": true, "damage_numbers": true, "hero_skin": "blue"}
 ## 本局击杀数（死亡信息/统计用）
 var session_kills: int = 0
 ## 最近一次成功落盘的时刻（Unix 秒）：冒险档案面板显示"最后保存 HH:MM"。
@@ -646,6 +647,10 @@ func _load() -> void:
 				"screen_shake", "damage_numbers", "auto_aim":
 					if typeof(saved_settings[key]) == TYPE_BOOL:
 						settings[key] = saved_settings[key]
+				"hero_skin":
+					# 三忍外观只认三个合法值，其余一律回落蓝忍
+					if str(saved_settings[key]) in ["blue", "dark", "white"]:
+						settings[key] = str(saved_settings[key])
 	# 生态世界快照（v2+）：由 game_world 启动时消费
 	var saved_ecology: Variant = data.get("ecology", null)
 	if typeof(saved_ecology) == TYPE_DICTIONARY:

@@ -86,3 +86,14 @@ text = "自动瞄准"
 
 [node name="AutoAimCheck" type="CheckButton" parent="Margin/VB/AimRow"]
 unique_name_in_owner = true
+
+[node name="SkinRow" type="HBoxContainer" parent="Margin/VB"]
+
+[node name="Label" type="Label" parent="Margin/VB/SkinRow"]
+custom_minimum_size = Vector2(120, 0)
+text = "忍者外观"
+
+[node name="SkinBtn" type="Button" parent="Margin/VB/SkinRow"]
+unique_name_in_owner = true
+size_flags_horizontal = 3
+text = "蓝忍"

@@ -56,6 +56,14 @@ const FX_SLASH := preload("res://assets/creatures/frames/fx_slash/fx_slash_frame
 const FX_SLASH_GOLD := preload("res://assets/creatures/frames/fx_slash_gold/fx_slash_gold_frames.tres")
 const FX_BURST := preload("res://assets/creatures/frames/fx_burst/fx_burst_frames.tres")
 
+## 三忍皮肤（美术 v5）：蓝/黑/白忍同布局表（idle/walk/attack/die 动画名同构，
+## 换帧零逻辑差异）；存档键 settings.hero_skin，缺省蓝忍
+const HERO_SKINS := {
+	"blue": preload("res://assets/creatures/frames/ninja/ninja_frames.tres"),
+	"dark": preload("res://assets/creatures/frames/ninja_dark/ninja_dark_frames.tres"),
+	"white": preload("res://assets/creatures/frames/ninja_white/ninja_white_frames.tres"),
+}
+
 ## 视觉基础缩放（挤压回弹的恢复基准，_ready 时从场景读）
 var _visual_base_scale := Vector2.ONE
 ## 落地阴影 / 挤压 tween / 行走浮动相位
@@ -117,6 +125,11 @@ var _was_walking := false
 func _ready() -> void:
 	add_to_group("player")
 	stats = GameState.stats
+	# 三忍皮肤：按存档外观换帧（动画名同构；场景默认已接蓝忍，非蓝才需要换）
+	var hero_skin: String = str(GameState.settings.get("hero_skin", "blue"))
+	if HERO_SKINS.has(hero_skin) and visual.sprite_frames != HERO_SKINS[hero_skin]:
+		visual.sprite_frames = HERO_SKINS[hero_skin]
+		visual.play(&"idle")
 	current_hp = stats.max_hp()
 	current_mp = stats.max_mp()
 	# v4 大世界：出生点 = 家园角斑块中心（BiomeMap 确定性派生）；

@@ -1,13 +1,13 @@
 ## 战斗与表现层自动化验证（作为普通场景运行，加载真实主场景）。
 ## 运行："$GODOT" --headless --path Code res://tests/combat_test.tscn --quit-after 30000
 ## 驱动玩家逐物种猎杀，验证：击杀奖励入账、红史莱姆击杀分裂出子代、
-## 沼泽蟹弹幕出现、野猪冲锋/石魔像蓄力状态触发、玩家确实受到伤害。
+## 沼泽蟹弹幕出现、野猪冲锋/石像鬼蓄力状态触发、玩家确实受到伤害。
 ## 全部通过 quit(0)，否则 quit(1)。
 extends Node2D
 
 const MAIN_SCENE := preload("res://scenes/main/main.tscn")
 
-const TARGET_ORDER := ["妖鬼", "红史莱姆", "野猪", "沼泽蟹", "骷髅兵", "石魔像"]
+const TARGET_ORDER := ["妖鬼", "红史莱姆", "野猪", "沼泽蟹", "甲虫", "石像鬼"]
 const STEP_INTERVAL := 0.12
 const TIME_LIMIT := 150.0
 
@@ -18,7 +18,7 @@ var _fails := 0
 var _kills := {}
 var _queue_index := 0
 var _species_tries := 0
-## 机制观察等待计数（沼泽蟹/野猪/石魔像站位等待 AI 起手的步数；
+## 机制观察等待计数（沼泽蟹/野猪/石像鬼站位等待 AI 起手的步数；
 ## 与 _species_tries 分开——后者在找到目标时被清零，等待分支永远数不过 1）
 var _observe_tries := 0
 var _timer := 0.0
@@ -834,7 +834,7 @@ func _step() -> void:
 	var dir := (target.global_position - _player.global_position).normalized()
 	if dir == Vector2.ZERO:
 		dir = Vector2.RIGHT
-	# 机制观察等待（沼泽蟹吐息/野猪冲锋/石魔像蓄力）：中距离站位等 AI 自己起手；
+	# 机制观察等待（沼泽蟹吐息/野猪冲锋/石像鬼蓄力）：中距离站位等 AI 自己起手；
 	# 等 ~6s 未果则把怪直接置入追击态（真实状态机接管，只跳过接近过程）——
 	# 消除帧对齐竞态（蹲巡逻/远锚点/瞬移贴脸一刀秒时 AI 可能迟迟不进机制状态，
 	# 曾让沼泽蟹等待吃满 117s 时钟）。_species_tries 同时兼作找不到活体的计数
@@ -855,7 +855,7 @@ func _step() -> void:
 	elif species_name == "野猪" and not _saw_custom_states.has("野猪") and _elapsed < TIME_LIMIT - 30.0:
 		observe_wait = true
 		_player.global_position = target.global_position - dir * 150.0
-	elif species_name == "石魔像" and not _saw_custom_states.has("石魔像") and _elapsed < TIME_LIMIT - 30.0:
+	elif species_name == "石像鬼" and not _saw_custom_states.has("石像鬼") and _elapsed < TIME_LIMIT - 30.0:
 		observe_wait = true
 		_player.global_position = target.global_position - dir * (target.inst.species.attack_range * 1.2)
 	if observe_wait:
@@ -916,7 +916,7 @@ func _teleport_to_any_populated() -> void:
 	_player.global_position = best
 
 
-## 扫描特殊机制状态：弹幕节点存在、野猪冲锋/蓄力、石魔像蓄力
+## 扫描特殊机制状态：弹幕节点存在、野猪冲锋/蓄力、石像鬼蓄力
 func _scan_special_states() -> void:
 	if not _saw_projectile:
 		for child in _world.get_node("Monsters").get_children():
@@ -986,7 +986,7 @@ func _finish() -> void:
 			"赏金任务已生成（信号 %s/挂载 %s）" % [str(_saw_bounty), str(bounty_alive)])
 	_check(_saw_projectile, "沼泽蟹弹幕出现过")
 	_check(_saw_custom_states.has("野猪"), "野猪进入过冲锋前摇/冲锋状态")
-	_check(_saw_custom_states.has("石魔像"), "石魔像进入过蓄力重击状态")
+	_check(_saw_custom_states.has("石像鬼"), "石像鬼进入过蓄力重击状态")
 	if _fails == 0:
 		print("=== 战斗验证全部通过 ===")
 		get_tree().quit(0)
@@ -1011,7 +1011,7 @@ func _cover_setup(target: MonsterBase, _min_dist: float, _max_dist: float) -> Ve
 	# 围绕"玩家当前位置"找孤立岩石，把靶怪/玩家分置两侧（靶怪自家营地附近没有
 	# 合适岩石是常态——营地常落在障碍稀疏带，水晶/树墙又天然成簇不孤立；
 	# 怪的位置测试可控，岩石才是不可造的自然资源）。布距 130+85=215：
-	# <= 小魔鬼侦测 180x1.3（不脱战）、<= 曼德拉草攻击圈 230（逼出吐息分支）、
+	# <= 绿蛙侦测 180x1.3（不脱战）、<= 曼德拉草攻击圈 230（逼出吐息分支）、
 	# > 近战攻击圈（必须移动）
 	var center := _player.global_position
 	var c0 := Vector2i(floori((center.x - 900.0) / 32.0), floori((center.y - 900.0) / 32.0))
@@ -1064,7 +1064,7 @@ func _los_blocked_pure(a: Vector2, b: Vector2) -> bool:
 func _verify_cover() -> void:
 	if _cover_phase == 0 or _cover_phase == 2:
 		# 靶种取自 TARGET_ORDER 之外（六物种段已把它们清光，找不到活体布阵会轮空）
-		var species := "小魔鬼" if _cover_phase == 0 else "曼德拉草"
+		var species := "绿蛙" if _cover_phase == 0 else "曼德拉草"
 		var target := _find_alive(species)
 		if target == null:
 			_teleport_to_species(species)

@@ -90,29 +90,29 @@ var _boss_name_label: Label
 var _boss_bar: ProgressBar
 
 # --- 触控按钮图标（NA CC0 像素素材，与怪物/道具同风格源） ---
-const ICON_ATTACK := preload("res://assets/icons_cartoon/sword.png")
-const ICON_DASH := preload("res://assets/icons_cartoon/shuriken.png")
-const ICON_HEAVY := preload("res://assets/icons_cartoon/hammer.png")
-const ICON_BOLT := preload("res://assets/icons_cartoon/fireball.png")
-const ICON_HEAL := preload("res://assets/icons_cartoon/life-pot.png")
-const ICON_EMPOWER := preload("res://assets/icons_cartoon/scroll-thunder.png")
-const ICON_ECO := preload("res://assets/icons_cartoon/scroll-plant.png")
-const ICON_SHOP := preload("res://assets/icons_cartoon/coin-2.png")
-const ICON_CODEX := preload("res://assets/icons_cartoon/scroll-ice.png")
-const ICON_COIN := preload("res://assets/icons_cartoon/gold-coin.png")
-const ICON_HEART := preload("res://assets/icons_cartoon/heart.png")
+const ICON_ATTACK := preload("res://assets/na/weapons/sword.png")
+const ICON_DASH := preload("res://assets/na/hud/shuriken.png")
+const ICON_HEAVY := preload("res://assets/na/weapons/hammer.png")
+const ICON_BOLT := preload("res://assets/na/items/fireball.png")
+const ICON_HEAL := preload("res://assets/na/items/life-pot.png")
+const ICON_EMPOWER := preload("res://assets/na/items/scroll-thunder.png")
+const ICON_ECO := preload("res://assets/na/items/scroll-plant.png")
+const ICON_SHOP := preload("res://assets/na/items/coin-2.png")
+const ICON_CODEX := preload("res://assets/na/items/scroll-ice.png")
+const ICON_COIN := preload("res://assets/na/items/gold-coin.png")
+const ICON_HEART := preload("res://assets/na/items/heart.png")
 ## 升级三选一：被动 id → 图标（缺省用空卷轴）
 const PASSIVE_ICONS := {
 	"lifesteal": ICON_HEART, "atk_speed": ICON_DASH, "move": ICON_BOLT,
-	"cdr": preload("res://assets/icons_cartoon/scroll-empty.png"),
-	"hp": preload("res://assets/icons_cartoon/medipack.png"),
-	"mp_regen": preload("res://assets/icons_cartoon/water-pot.png"),
+	"cdr": preload("res://assets/na/items/scroll-empty.png"),
+	"hp": preload("res://assets/na/items/medipack.png"),
+	"mp_regen": preload("res://assets/na/items/water-pot.png"),
 	"phys": ICON_HEAVY, "magic": ICON_BOLT, "gold": ICON_COIN,
-	"xp": preload("res://assets/icons_cartoon/fortune-cookie.png"),
+	"xp": preload("res://assets/na/items/fortune-cookie.png"),
 	"heal_power": ICON_HEAL,
-	"knock": preload("res://assets/icons_cartoon/axe.png"),
+	"knock": preload("res://assets/na/weapons/axe.png"),
 }
-const PASSIVE_ICON_DEFAULT := preload("res://assets/icons_cartoon/scroll-empty.png")
+const PASSIVE_ICON_DEFAULT := preload("res://assets/na/items/scroll-empty.png")
 
 
 func _ready() -> void:
@@ -369,10 +369,10 @@ func _setup_icon_buttons() -> void:
 		HotwTheme.add_icon(btn, pair[1], 9.0)
 	HotwTheme.style_circle_button(%PauseBtn)
 	# 暂停面板/商店/三选一的图标走 Button.icon（文字说明保留，图标辅助扫读）
-	%ResumeBtn.icon = preload("res://assets/icons_cartoon/arrow.png")
-	%SaveBtn.icon = preload("res://assets/icons_cartoon/little-treasure-chest.png")
-	%PauseSettingsBtn.icon = preload("res://assets/icons_cartoon/scroll-empty.png")
-	%MenuBtn.icon = preload("res://assets/icons_cartoon/dialogue-bubble.png")
+	%ResumeBtn.icon = preload("res://assets/na/hud/arrow.png")
+	%SaveBtn.icon = preload("res://assets/na/items/little-treasure-chest.png")
+	%PauseSettingsBtn.icon = preload("res://assets/na/items/scroll-empty.png")
+	%MenuBtn.icon = preload("res://assets/na/hud/dialogue-bubble.png")
 	%ResumeBtn.expand_icon = true
 	%SaveBtn.expand_icon = true
 	%PauseSettingsBtn.expand_icon = true

@@ -152,7 +152,7 @@ func _test_shop() -> void:
 
 ## 图鉴 / 被动 / 设置 的存档往返
 func _test_progress_meta() -> void:
-	GameState.codex = {"妖鬼": 5, "獾王": 1}
+	GameState.codex = {"妖鬼": 5, "獾王": 1, "青史莱姆": 3}
 	GameState.stats.passives = {"hp": 2, "cdr": 1}
 	GameState.settings = {"volume": 0.5, "screen_shake": false, "damage_numbers": true}
 	GameState.save_now()
@@ -160,7 +160,7 @@ func _test_progress_meta() -> void:
 	GameState.stats.passives = {}
 	GameState.settings = {"volume": 0.8, "screen_shake": true, "damage_numbers": true}
 	GameState._load()
-	_check(int(GameState.codex.get("妖鬼", 0)) == 5 and int(GameState.codex.get("獾王", 0)) == 1,
+	_check(int(GameState.codex.get("妖鬼", 0)) == 5 and int(GameState.codex.get("锹形虫王", 0)) == 1 and int(GameState.codex.get("冰史莱姆", 0)) == 3,
 		"读档恢复图鉴（%s）" % str(GameState.codex))
 	_check(GameState.stats.passive_level("hp") == 2 and GameState.stats.passive_level("cdr") == 1,
 		"读档恢复被动等级")
@@ -324,7 +324,7 @@ func _test_ecology_snapshot() -> void:
 	_check(restored_child != null and restored_child.generation == 1
 			and absf(restored_child.size_scale - 0.6) < 0.001,
 		"分裂世代与体型跨会话保留")
-	_check(int(sim2.boss_respawn_timers.get("獾王", 0)) == 123, "Boss 重生倒计时跨会话保留")
+	_check(int(sim2.boss_respawn_timers.get("锹形虫王", 0)) == 123, "Boss 重生倒计时跨会话保留（旧名獾王→锹形虫王迁移）")
 	var nest: Dictionary = sim2.nests.get("center|红史莱姆", {})
 	_check(not nest.is_empty() and not nest["active"], "巢穴捣毁状态跨会话保留")
 	_check(sim2.next_id > maxi(elite.id, child.id), "实例 id 计数器正确恢复")

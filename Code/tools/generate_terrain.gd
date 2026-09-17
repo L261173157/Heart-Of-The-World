@@ -12,7 +12,7 @@ extends SceneTree
 const W := 1100
 const H := 700
 const OUT_DIR := "res://assets/terrain/"
-const TILESET := "res://assets/creatures/sheets/cartoon_tileset.png"
+const TILESET := "res://assets/creatures/sheets/na_tileset.png"
 const TS := 16
 
 ## 瓦片坐标（列,行）——程序化像素统计验证（2026-09-03）：

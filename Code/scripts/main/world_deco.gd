@@ -36,7 +36,7 @@ const PARTICLE_Z := 5
 ## 草c12-13 蘑菇c14-15 原木c16-17（r10 行）；宝石堆r12c5-6（蓝67%+白25% 色分布确凿）、
 ## 香蒲r15c9-10（绿茎31%+棕穗33%）。曾尝试的其余行道具矩形经色分布复核为误读已撤
 ## （雪堆候选实为红棕、骨堆候选含 26% 蓝、墓碑候选红黑主导、花田候选无白/绿占比）
-const TILESET := preload("res://assets/creatures/sheets/cartoon_tileset_textured.png")
+const TILESET := preload("res://assets/creatures/sheets/na_tileset.png")
 const PROP_SRC := {
 	"tree": Rect2(0, 160, 32, 32),
 	"pine": Rect2(64, 160, 32, 32),

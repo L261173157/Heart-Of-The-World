@@ -10,7 +10,7 @@
 class_name TerrainPainter
 extends RefCounted
 
-const TILESET_PATH := "res://assets/creatures/sheets/cartoon_tileset_textured.png"
+const TILESET_PATH := "res://assets/creatures/sheets/na_tileset.png"
 const TS := 16
 ## 群系过渡带宽度（世界像素）：双斑块距离差在此宽度内线性混瓦
 const BLEND_PX := 72.0

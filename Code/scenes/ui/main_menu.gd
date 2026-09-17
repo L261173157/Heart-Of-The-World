@@ -2,11 +2,11 @@
 ## 作为游戏主场景（project.godot run/main_scene）。
 extends Control
 
-const ICON_START := preload("res://assets/icons_cartoon/sword.png")
-const ICON_NEW := preload("res://assets/icons_cartoon/axe.png")
-const ICON_ARCHIVE := preload("res://assets/icons_cartoon/scroll-plant.png")
-const ICON_SETTINGS := preload("res://assets/icons_cartoon/scroll-empty.png")
-const ICON_QUIT := preload("res://assets/icons_cartoon/arrow.png")
+const ICON_START := preload("res://assets/na/weapons/sword.png")
+const ICON_NEW := preload("res://assets/na/weapons/axe.png")
+const ICON_ARCHIVE := preload("res://assets/na/items/scroll-plant.png")
+const ICON_SETTINGS := preload("res://assets/na/items/scroll-empty.png")
+const ICON_QUIT := preload("res://assets/na/hud/arrow.png")
 ## 底部群系地平线装饰条（六群系地表图，与游戏内同源素材）
 const REGION_TERRAINS: Array[String] = [
 	"res://assets/terrain/region_center.png",

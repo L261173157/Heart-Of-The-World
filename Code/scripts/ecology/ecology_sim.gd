@@ -784,8 +784,8 @@ func restore_from_dict(p_regions: Array, p_species_list: Array[SpeciesData], dat
 			if typeof(key) == TYPE_STRING and typeof(nest) == TYPE_DICTIONARY:
 				var nd: Dictionary = nest
 				# 巢键 "区域|物种"：物种段经更名迁移后须仍存在（已删物种的巢一并丢弃）
-				var nest_region := key.get_slice("|", 0)
-				var nest_species := find_species(SpeciesCatalog.migrate_name(key.get_slice("|", 1)))
+				var nest_region: String = key.get_slice("|", 0)
+				var nest_species: SpeciesData = find_species(SpeciesCatalog.migrate_name(key.get_slice("|", 1)))
 				if nest_species == null:
 					continue
 				var active := _safe_bool(nd.get("active", true), true)
@@ -799,7 +799,7 @@ func restore_from_dict(p_regions: Array, p_species_list: Array[SpeciesData], dat
 	if typeof(saved_timers) == TYPE_DICTIONARY:
 		for key: Variant in saved_timers:
 			if typeof(key) == TYPE_STRING:
-				var boss_name := SpeciesCatalog.migrate_name(key)
+				var boss_name: String = SpeciesCatalog.migrate_name(key)
 				if find_species(boss_name) != null:
 					boss_respawn_timers[boss_name] = _safe_int_field(saved_timers[key], 1)
 	# 玩家灭杀致绝名单（世界线记忆；旧档无键 = 空名单，行为等同此前）；
@@ -808,7 +808,7 @@ func restore_from_dict(p_regions: Array, p_species_list: Array[SpeciesData], dat
 	if typeof(saved_extinct) == TYPE_DICTIONARY:
 		for key: Variant in saved_extinct:
 			if typeof(key) == TYPE_STRING:
-				var extinct_name := SpeciesCatalog.migrate_name(key)
+				var extinct_name: String = SpeciesCatalog.migrate_name(key)
 				if find_species(extinct_name) != null:
 					player_extinct[extinct_name] = true
 	# 成败判定看活体而不是字典非空：死实例也占 instances——一个"全死快照"

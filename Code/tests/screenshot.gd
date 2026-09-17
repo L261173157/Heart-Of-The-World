@@ -286,7 +286,7 @@ func _process_overlays(delta: float) -> void:
 			GameState.stats.pending_points = 2
 			hud._refresh_stats_label(GameState.stats.level, 2)
 			EventBus.quest_updated.emit("委托·捣巢：摧毁荒废遗迹旁的巢穴（0/1）")
-			EventBus.boss_tracked.emit(true, "窟魔王")
+			EventBus.boss_tracked.emit(true, "龟王")
 			EventBus.boss_hp_changed.emit(620.0, 1000.0)
 			_ov_arm("/tmp/hotw_ov_1.png")
 		1:

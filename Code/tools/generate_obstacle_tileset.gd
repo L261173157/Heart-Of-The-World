@@ -10,7 +10,7 @@
 ## 与 ObstacleField.KIND_INFO/RECIPES 的 kind 键一一对应；改障碍种类两边同步。
 extends SceneTree
 
-const SRC := "res://assets/creatures/sheets/cartoon_tileset.png"
+const SRC := "res://assets/creatures/sheets/na_tileset.png"
 const TILESET_TRES := "res://data/obstacle_tileset.tres"
 const NAV_TRES := "res://data/nav_tileset.tres"
 

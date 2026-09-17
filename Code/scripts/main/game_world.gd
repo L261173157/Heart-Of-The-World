@@ -452,7 +452,7 @@ func _reveal_fog() -> void:
 		GameState._queue_save()
 
 
-## 地标视觉标记：AI 地标精灵（assets/landmarks/<种类>.png，缺图回退纯圆环）
+## 地标视觉标记：地标精灵探图（assets/landmarks/<种类>.png，缺图回退纯圆环；美术 v5 起默认回退圆环，NA 风格地标图到位后放回即生效）
 ## + 底部微光环作发现指示（发现后高亮）
 class LandmarkMarker extends Node2D:
 	var kind := ""
