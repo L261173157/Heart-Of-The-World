@@ -145,9 +145,9 @@ func _ready() -> void:
 	EventBus.hit_stop_requested.connect(_on_hit_stop)
 	# "本局击杀"按进入世界清零（ autoload 计数不跨局累计）
 	GameState.session_kills = 0
-	_dmg_style_normal = _make_dmg_style(20, Color(1, 0.95, 0.7))
-	_dmg_style_player = _make_dmg_style(26, Color(1, 0.35, 0.3))
-	_dmg_style_effective = _make_dmg_style(26, Color(1, 0.6, 0.15))
+	_dmg_style_normal = _make_dmg_style(26, Color(1, 0.95, 0.7))
+	_dmg_style_player = _make_dmg_style(32, Color(1, 0.35, 0.3))
+	_dmg_style_effective = _make_dmg_style(32, Color(1, 0.6, 0.15))
 	# 先 start（挂到 WorldSim）再 setup：初始种群的节点生成会读 WorldSim.sim
 	WorldSim.start(_sim)
 	var regions := _build_regions()
@@ -885,14 +885,14 @@ class LandmarkNPC extends Node2D:
 		add_child(_visual)
 		var label := Label.new()
 		var style := LabelSettings.new()
-		style.font_size = 12
+		style.font_size = 24
 		style.font_color = Color(1, 1, 1, 0.85)
 		style.outline_size = 4
 		style.outline_color = Color(0, 0, 0, 0.7)
 		label.label_settings = style
 		label.text = giver
-		label.position = Vector2(-26, -52)
-		label.size = Vector2(52, 14)
+		label.position = Vector2(-52, -104)
+		label.size = Vector2(104, 28)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		add_child(label)
 
@@ -1411,7 +1411,7 @@ func _spawn_damage_number(pos: Vector2, amount: int, is_player_hurt: bool, is_ef
 	label.global_position = pos + Vector2(randf_range(-14.0, 14.0), randf_range(-30.0, -14.0))
 	var tween := label.create_tween()
 	tween.set_parallel(true)
-	tween.tween_property(label, "position:y", label.position.y - 42.0, 0.7)
+	tween.tween_property(label, "position:y", label.position.y - 64.0, 0.7)
 	tween.tween_property(label, "modulate:a", 0.0, 0.7).set_delay(0.2)
 	tween.chain().tween_callback(label.hide)
 
@@ -1420,6 +1420,6 @@ func _make_dmg_style(font_size: int, color: Color) -> LabelSettings:
 	var style := LabelSettings.new()
 	style.font_size = font_size
 	style.font_color = color
-	style.outline_size = 4
+	style.outline_size = 6
 	style.outline_color = Color(0, 0, 0, 0.6)
 	return style

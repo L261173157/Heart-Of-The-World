@@ -5,8 +5,8 @@
 class_name MonsterHpBar
 extends Node2D
 
-const BAR_WIDTH := 28.0
-const BAR_HEIGHT := 4.0
+const BAR_WIDTH := 56.0
+const BAR_HEIGHT := 8.0
 const OFFSET_Y := -26.0
 
 var _monster: MonsterBase

@@ -148,6 +148,7 @@ func _ready() -> void:
 	_shadow.shadow_scale = Vector2.ONE * _visual_base_scale.x
 	_shadow.position.y = 9.0 * _visual_base_scale.y
 	add_child(_shadow)
+	_add_player_marker()
 	attack_shape.disabled = true
 	attack_hitbox.body_entered.connect(_on_attack_body_entered)
 	# 延迟到所有节点 ready 之后再推初值，保证 HUD 已连接信号
@@ -155,6 +156,12 @@ func _ready() -> void:
 	# 升级白闪光（美术 v5 fx 全量）：世界层特效走 fx_requested 通道
 	GameState.stats.leveled_up.connect(func(_level: int, _levels: int) -> void:
 		EventBus.fx_requested.emit("flash", global_position, 1.5))
+
+
+## 头顶定位标记（zoom1 广角下绿衣忍者在草地背景中可寻性不足，视觉分析实证；
+## 死亡/重生随宿主整体 visible 自动隐藏恢复）
+func _add_player_marker() -> void:
+	add_child(PlayerMarker.new())
 
 
 ## 跨会话恢复角色位置与当前资源。世界边界留 20px 安全边距，坏档不会把玩家

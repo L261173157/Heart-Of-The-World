@@ -21,10 +21,11 @@ const BIOME_TINT := {
 	"forest": Color(0.95, 1.02, 0.95),
 }
 const TERRAIN_POLL := 0.5
-## 提灯尺度：256px 渐变纹理 × 1.5 = 直径 384px 光池。曾经 ×5 盖满整个 zoom6
+## 提灯尺度：256px 渐变纹理 × 3.6 = 直径 921px 光池。曾经 ×5 盖满整个 zoom6
 ## 视口——加法光把夜色压暗完全抵消，夜里亮如白天（2026-09-13 体检实证）；
-## 收到视口内后中心暖亮，屏幕角落可见夜色与障碍树影
-const LANTERN_SCALE := 1.5
+## 按「光池半径 = 可见对角半径的 ~54%」等比迁移（zoom1 对角 860×0.54≈461）：
+## 中心暖亮，屏幕角落可见夜色与障碍树影。zoom 调整时按此比例换算
+const LANTERN_SCALE := 3.6
 
 var _modulate := CanvasModulate.new()
 var _light: PointLight2D

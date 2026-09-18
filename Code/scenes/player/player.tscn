@@ -28,7 +28,7 @@ limit_left = 0
 limit_top = 0
 limit_right = 800000
 limit_bottom = 800000
-zoom = Vector2(3, 3)
+zoom = Vector2(1, 1)
 script = ExtResource("3_camera")
 
 [node name="AttackHitbox" type="Area2D" parent="."]
