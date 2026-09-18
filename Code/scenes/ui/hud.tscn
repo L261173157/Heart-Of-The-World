@@ -90,9 +90,10 @@ text = "生态"
 
 [node name="EcologyPanel" type="PanelContainer" parent="Root"]
 unique_name_in_owner = true
+visible = false
 offset_left = 16.0
 offset_top = 178.0
-offset_right = 372.0
+offset_right = 356.0
 offset_bottom = 392.0
 mouse_filter = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_eco")
@@ -112,8 +113,10 @@ text = "生态监测（↑增 ↓减 ＋迁入 ✕灭绝）"
 
 [node name="EcologyContent" type="Label" parent="Root/EcologyPanel/EcoMargin/EcoVB"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(320, 0)
 theme_override_colors/font_color = Color(0.85, 0.85, 0.85, 0.9)
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 18
+autowrap_mode = 3
 text = " "
 
 [node name="StatButtons" type="HBoxContainer" parent="Root"]
@@ -183,11 +186,12 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -176.0
-offset_top = -200.0
+offset_left = -136.0
+offset_top = -160.0
 offset_right = -24.0
 offset_bottom = -48.0
-theme_override_font_sizes/font_size = 28
+custom_minimum_size = Vector2(112, 112)
+theme_override_font_sizes/font_size = 24
 text = ""
 
 [node name="DashBtn" type="Button" parent="Root"]
@@ -196,10 +200,11 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -304.0
-offset_top = -160.0
-offset_right = -192.0
+offset_left = -224.0
+offset_top = -136.0
+offset_right = -136.0
 offset_bottom = -48.0
+custom_minimum_size = Vector2(88, 88)
 theme_override_font_sizes/font_size = 20
 text = ""
 
@@ -209,10 +214,11 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -428.0
-offset_top = -160.0
-offset_right = -316.0
+offset_left = -320.0
+offset_top = -136.0
+offset_right = -232.0
 offset_bottom = -48.0
+custom_minimum_size = Vector2(88, 88)
 theme_override_font_sizes/font_size = 20
 text = ""
 
@@ -222,10 +228,11 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -428.0
-offset_top = -284.0
-offset_right = -316.0
-offset_bottom = -172.0
+offset_left = -320.0
+offset_top = -232.0
+offset_right = -232.0
+offset_bottom = -144.0
+custom_minimum_size = Vector2(88, 88)
 theme_override_font_sizes/font_size = 18
 text = ""
 
@@ -235,10 +242,11 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -304.0
-offset_top = -284.0
-offset_right = -192.0
-offset_bottom = -172.0
+offset_left = -224.0
+offset_top = -232.0
+offset_right = -136.0
+offset_bottom = -144.0
+custom_minimum_size = Vector2(88, 88)
 theme_override_font_sizes/font_size = 18
 text = ""
 
@@ -248,24 +256,49 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -552.0
-offset_top = -160.0
-offset_right = -440.0
+offset_left = -416.0
+offset_top = -136.0
+offset_right = -328.0
 offset_bottom = -48.0
+custom_minimum_size = Vector2(88, 88)
+theme_override_font_sizes/font_size = 18
+text = ""
+
+[node name="QuickSlotBtn" type="Button" parent="Root"]
+unique_name_in_owner = true
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -512.0
+offset_top = -136.0
+offset_right = -424.0
+offset_bottom = -48.0
+custom_minimum_size = Vector2(88, 88)
 theme_override_font_sizes/font_size = 18
 text = ""
 
 [node name="BtnShop" type="Button" parent="Root"]
 unique_name_in_owner = true
 anchor_left = 1.0
-anchor_top = 1.0
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -648.0
-offset_top = -220.0
-offset_right = -568.0
-offset_bottom = -140.0
+offset_left = -176.0
+offset_top = 206.0
+offset_right = -96.0
+offset_bottom = 286.0
+custom_minimum_size = Vector2(80, 80)
 text = "商店"
+
+[node name="BtnBag" type="Button" parent="Root"]
+unique_name_in_owner = true
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -440.0
+offset_top = 206.0
+offset_right = -360.0
+offset_bottom = 286.0
+custom_minimum_size = Vector2(80, 80)
+text = "物品"
 
 [node name="ShopPanel" type="PanelContainer" parent="Root"]
 unique_name_in_owner = true
@@ -275,10 +308,10 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -220.0
-offset_top = -170.0
-offset_right = 220.0
-offset_bottom = 170.0
+offset_left = -260.0
+offset_top = -252.0
+offset_right = 260.0
+offset_bottom = 252.0
 
 [node name="Margin" type="MarginContainer" parent="Root/ShopPanel"]
 theme_override_constants/margin_left = 18
@@ -291,7 +324,7 @@ theme_override_constants/margin_bottom = 14
 [node name="Title" type="Label" parent="Root/ShopPanel/Margin/VB"]
 theme_override_colors/font_color = Color(1, 0.9, 0.6, 1)
 theme_override_font_sizes/font_size = 22
-text = "游商营地（永久强化）"
+text = "游商营地"
 horizontal_alignment = 1
 
 [node name="GoldLabel" type="Label" parent="Root/ShopPanel/Margin/VB"]
@@ -425,25 +458,23 @@ horizontal_alignment = 1
 [node name="PauseBtn" type="Button" parent="Root"]
 unique_name_in_owner = true
 anchor_left = 1.0
-anchor_top = 1.0
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -648.0
-offset_top = -128.0
-offset_right = -568.0
-offset_bottom = -48.0
+offset_left = -88.0
+offset_top = 206.0
+offset_right = -8.0
+offset_bottom = 286.0
+custom_minimum_size = Vector2(80, 80)
 text = "‖"
 
 [node name="BtnCodex" type="Button" parent="Root"]
 unique_name_in_owner = true
 anchor_left = 1.0
-anchor_top = 1.0
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -648.0
-offset_top = -312.0
-offset_right = -568.0
-offset_bottom = -232.0
+offset_left = -264.0
+offset_top = 206.0
+offset_right = -184.0
+offset_bottom = 286.0
+custom_minimum_size = Vector2(80, 80)
 text = "图鉴"
 
 [node name="DeathLabel" type="Label" parent="Root"]

@@ -88,6 +88,21 @@ var _hp_ghost_bar: ProgressBar
 var _boss_layer: VBoxContainer
 var _boss_name_label: Label
 var _boss_bar: ProgressBar
+# --- 物品系统（玩法 v7 P0） ---
+## 商店页签容器（强化/补给/收购）与两页数据驱动按钮
+var _supply_btns: Dictionary = {}
+var _sell_btns: Dictionary = {}
+## 物品栏弹层（阅读型：打开暂停世界，照图鉴口径）
+var _inv_layer: Control
+var _inv_grid: GridContainer
+var _inv_hint: Label
+## 战斗快捷槽：固定优先级取背包里最高级恢复品（零配置绑定；
+## life-pot 应急性最强置顶，水壶垫底——HP 恢复是战斗刚需）
+const QUICK_PRIORITY := ["life-pot", "medipack", "sushi", "onigiri", "water-pot"]
+var _quick_btn: Button
+var _quick_icon: TextureRect
+var _quick_badge: Label
+var _quick_id := ""
 
 # --- 触控按钮图标（NA CC0 像素素材，与怪物/道具同风格源） ---
 const ICON_ATTACK := preload("res://assets/na/weapons/sword.png")
@@ -101,6 +116,8 @@ const ICON_SHOP := preload("res://assets/na/items/coin-2.png")
 const ICON_CODEX := preload("res://assets/na/items/scroll-ice.png")
 const ICON_COIN := preload("res://assets/na/items/gold-coin.png")
 const ICON_HEART := preload("res://assets/na/items/heart.png")
+## 物品栏按钮（v7）：NA jar 罐子 = 收纳意象
+const ICON_BAG := preload("res://assets/na/items/jar.png")
 ## 升级三选一：被动 id → 图标（缺省用空卷轴）
 const PASSIVE_ICONS := {
 	"lifesteal": ICON_HEART, "atk_speed": ICON_DASH, "move": ICON_BOLT,
@@ -141,6 +158,13 @@ func _ready() -> void:
 	%BtnWeapon.pressed.connect(func() -> void: _try_buy("weapon"))
 	%BtnStaff.pressed.connect(func() -> void: _try_buy("staff"))
 	%BtnVigor.pressed.connect(func() -> void: _try_buy("vigor"))
+	%BtnBag.pressed.connect(_toggle_inventory)
+	# v7 物品：拾取播报 + 背包变化刷新快捷槽/物品栏（lambda 无捕获，安全）
+	EventBus.item_gained.connect(_on_item_gained)
+	EventBus.inventory_changed.connect(func() -> void:
+		_refresh_quick_slot()
+		if _inv_layer != null and _inv_layer.visible:
+			_refresh_inventory())
 	EventBus.world_event.connect(func(text: String) -> void: _toast(text))
 	EventBus.bounty_updated.connect(func(text: String) -> void: bounty_label.text = text)
 	# 任务行（世界 v5 地标 NPC 委托）：空串隐藏（无任务时不占行高）
@@ -178,6 +202,9 @@ func _ready() -> void:
 	_setup_hp_ghost_bar()
 	_setup_boss_bar()
 	_setup_dialogue_bubble()
+	_setup_shop_tabs()
+	_setup_inventory_layer()
+	_setup_quick_slot()
 	_apply_theme()
 	_setup_icon_buttons()
 	_setup_stats_row()
@@ -501,24 +528,25 @@ func _bar_fill(c: Color) -> StyleBoxFlat:
 ## 只换视觉层——图标/遮罩子节点全部鼠标穿透，不挡按钮命中。
 func _setup_icon_buttons() -> void:
 	HotwTheme.style_circle_button(%AttackBtn)
-	HotwTheme.add_icon(%AttackBtn, ICON_ATTACK, 40.0)
+	HotwTheme.add_icon(%AttackBtn, ICON_ATTACK, 32.0)
 	var skill_btns: Array = [%DashBtn, %HeavyBtn, %BoltBtn, %HealBtn, %EmpowerBtn]
 	var skill_icons: Array = [ICON_DASH, ICON_HEAVY, ICON_BOLT, ICON_HEAL, ICON_EMPOWER]
 	for i in skill_btns.size():
 		var btn: Button = skill_btns[i]
 		HotwTheme.style_circle_button(btn)
-		var icon := HotwTheme.add_icon(btn, skill_icons[i], 26.0)
+		var icon := HotwTheme.add_icon(btn, skill_icons[i], 22.0)
 		var cd_parts := HotwTheme.add_cd_overlay(btn)
 		HotwTheme.add_badge(btn, str(int(skill_cds[i]["mp"])))
 		skill_cds[i]["icon"] = icon
 		skill_cds[i]["overlay"] = cd_parts["overlay"]
 		skill_cds[i]["cd_label"] = cd_parts["cd"]
-	# 右下功能钮列：圆形小图标钮（生态/图鉴/商店），暂停保留 ‖ 字形
-	for pair: Array in [[%BtnEco, ICON_ECO], [%BtnCodex, ICON_CODEX], [%BtnShop, ICON_SHOP]]:
+	# 右上功能钮行（小地图正下方）：圆形小图标钮（生态/图鉴/商店/物品），暂停保留 ‖ 字形
+	for pair: Array in [[%BtnEco, ICON_ECO], [%BtnCodex, ICON_CODEX], [%BtnShop, ICON_SHOP],
+			[%BtnBag, ICON_BAG]]:
 		var btn: Button = pair[0]
 		HotwTheme.style_circle_button(btn)
 		btn.text = ""
-		HotwTheme.add_icon(btn, pair[1], 22.0)
+		HotwTheme.add_icon(btn, pair[1], 18.0)
 	HotwTheme.style_circle_button(%PauseBtn)
 	# 暂停面板/商店/三选一的图标走 Button.icon（文字说明保留，图标辅助扫读）
 	%ResumeBtn.icon = preload("res://assets/na/hud/arrow.png")
@@ -629,7 +657,7 @@ func _update_smooth_bars(delta: float) -> void:
 		_hp_ghost_bar.value = _hp_ghost
 
 
-## 键盘开关生态面板（Tab）/ 图鉴（C）/ 商店（B）/ 暂停（ESC）；触屏走按钮
+## 键盘开关生态面板（Tab）/ 图鉴（C）/ 商店（B）/ 物品栏（I）/ 暂停（ESC）；触屏走按钮
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_ecology"):
 		ecology_panel.visible = not ecology_panel.visible
@@ -640,12 +668,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("toggle_shop"):
 		_toggle_shop()
 		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("toggle_inventory"):
+		_toggle_inventory()
+		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("pause"):
 		_close_top_layer_or_toggle_pause()
 		get_viewport().set_input_as_handled()
 
 
-## ESC 先关最上层弹层（设置→图鉴→商店），全关后才切暂停——
+## ESC 先关最上层弹层（设置→图鉴→物品栏→商店），全关后才切暂停——
 ## 否则世界解除暂停恢复战斗，设置层却还悬浮在画面上挡操作
 func _close_top_layer_or_toggle_pause() -> void:
 	if pause_settings_layer.visible:
@@ -653,6 +684,10 @@ func _close_top_layer_or_toggle_pause() -> void:
 	elif codex_layer.visible:
 		codex_layer.visible = false
 		# 图鉴打开期间世界是暂停的（_toggle_codex），关闭即恢复
+		get_tree().paused = false
+	elif _inv_layer != null and _inv_layer.visible:
+		_inv_layer.visible = false
+		# 物品栏与图鉴同口径（打开时暂停），关闭即恢复
 		get_tree().paused = false
 	elif shop_panel.visible:
 		shop_panel.visible = false
@@ -913,6 +948,10 @@ func _on_day_phase(night: bool) -> void:
 # --- 游商营地 ---
 
 func _toggle_shop() -> void:
+	# 物品栏开着（世界暂停）时开商店会留下"商店可点而世界冻结"的怪态——先收起
+	if _inv_layer != null and _inv_layer.visible:
+		_inv_layer.visible = false
+		get_tree().paused = false
 	shop_panel.visible = not shop_panel.visible
 	if shop_panel.visible:
 		_refresh_shop()
@@ -923,6 +962,8 @@ func _refresh_shop() -> void:
 	_refresh_shop_btn(%BtnWeapon, "weapon", "武器磨刀", "物理攻击", ICON_HEAVY)
 	_refresh_shop_btn(%BtnStaff, "staff", "法杖赋能", "魔法攻击", ICON_BOLT)
 	_refresh_shop_btn(%BtnVigor, "vigor", "体质淬炼", "生命上限", ICON_HEART)
+	_refresh_supply()
+	_refresh_sellout()
 
 
 func _refresh_shop_btn(btn: Button, kind: String, display: String, effect: String,
@@ -950,6 +991,239 @@ func _try_buy(kind: String) -> void:
 	else:
 		_toast_combat("金币不足（需要 %d）" % GameState.upgrade_cost(kind))
 	_refresh_shop()
+
+
+# --- 物品系统（玩法 v7 P0）：商店三分区 + 物品栏弹层 + 战斗快捷槽 ---
+
+## 商店页签化：强化页收编既有三按钮（reparent 不改 owner，%引用不受影响——
+## 与 _setup_stats_row 的 StatsLabel 同款手法）；补给/收购两页的商品按钮
+## 从 EconomyMath 价格表数据驱动生成，增删物品零 UI 改动
+func _setup_shop_tabs() -> void:
+	var vb: VBoxContainer = shop_panel.get_node("Margin/VB")
+	var tabs := TabContainer.new()
+	tabs.name = "ShopTabs"
+	tabs.custom_minimum_size = Vector2(0, 336)
+	tabs.add_theme_font_size_override("font_size", 18)
+
+	var tab_up := VBoxContainer.new()
+	tab_up.name = "强化"
+	tabs.add_child(tab_up)
+	for btn: Button in [%BtnWeapon, %BtnStaff, %BtnVigor]:
+		btn.reparent(tab_up)
+
+	var tab_supply := VBoxContainer.new()
+	tab_supply.name = "补给"
+	tabs.add_child(tab_supply)
+	for id: String in EconomyMath.ITEM_BUY:
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(0, 52)
+		b.icon = ItemCatalog.icon_of(id)
+		b.expand_icon = true
+		b.pressed.connect(_buy_item.bind(id))
+		tab_supply.add_child(b)
+		_supply_btns[id] = b
+
+	var tab_sell := VBoxContainer.new()
+	tab_sell.name = "收购"
+	tabs.add_child(tab_sell)
+	for id: String in EconomyMath.ITEM_SELL:
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(0, 52)
+		b.icon = ItemCatalog.icon_of(id)
+		b.expand_icon = true
+		b.pressed.connect(_sell_item.bind(id))
+		tab_sell.add_child(b)
+		_sell_btns[id] = b
+
+	vb.add_child(tabs)
+	vb.move_child(tabs, 2)  # GoldLabel 之后、关闭按钮之前
+
+
+func _refresh_supply() -> void:
+	for id: String in _supply_btns:
+		var btn: Button = _supply_btns[id]
+		var price := EconomyMath.item_price(id)
+		btn.text = "%s %s ｜ %d 金币" % [ItemCatalog.name_of(id), ItemCatalog.desc_of(id), price]
+		btn.disabled = GameState.gold < price or GameState.count_item(id) >= GameState.ITEM_MAX
+
+
+func _refresh_sellout() -> void:
+	for id: String in _sell_btns:
+		var btn: Button = _sell_btns[id]
+		var n := GameState.count_item(id)
+		btn.text = "%s ×%d ｜ 售 %d 金/个" % [ItemCatalog.name_of(id), n,
+			EconomyMath.item_sell_price(id)]
+		btn.disabled = n <= 0
+
+
+func _buy_item(id: String) -> void:
+	if GameState.buy_item(id):
+		SfxManager.play("levelup")
+		_toast_combat("购入 %s" % ItemCatalog.name_of(id))
+	else:
+		SfxManager.play("menu")
+		_toast_combat("金币不足或背包已满")
+	_refresh_shop()
+
+
+func _sell_item(id: String) -> void:
+	var n := GameState.sell_material(id)
+	if n > 0:
+		SfxManager.play("levelup")
+		_toast_combat("售出 %s ×%d（+%d 金）" % [ItemCatalog.name_of(id), n,
+			n * EconomyMath.item_sell_price(id)])
+	_refresh_shop()
+
+
+## 拾取播报：主 toast 通道（与装备掉落同位——战斗播报位留给击杀行，
+## 0.4s 短窗合并让连杀+连拾自然拼行）
+func _on_item_gained(item_id: String, count: int, total: int) -> void:
+	_toast("拾取 %s ×%d（共 %d）" % [ItemCatalog.name_of(item_id), count, total])
+
+
+## 物品栏弹层（阅读型，照图鉴口径：打开暂停世界 + 清触屏队列；
+## 全代码构建避免 .tscn 手术，结构同 CodexLayer：Dim → Panel → VB → Scroll → Grid）
+func _setup_inventory_layer() -> void:
+	var root := get_node("Root") as Control
+	_inv_layer = Control.new()
+	_inv_layer.name = "InventoryLayer"
+	_inv_layer.visible = false
+	_inv_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.add_child(_inv_layer)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.45)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP  # 挡住下层触控
+	_inv_layer.add_child(dim)
+
+	var panel := PanelContainer.new()
+	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_MINSIZE)
+	panel.custom_minimum_size = Vector2(560, 600)
+	_inv_layer.add_child(panel)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 20)
+	margin.add_theme_constant_override("margin_top", 14)
+	margin.add_theme_constant_override("margin_right", 20)
+	margin.add_theme_constant_override("margin_bottom", 14)
+	panel.add_child(margin)
+	var vb := VBoxContainer.new()
+	margin.add_child(vb)
+
+	var title := Label.new()
+	title.text = "物品栏"
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", Color(1, 0.9, 0.6))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(title)
+
+	_inv_hint = Label.new()
+	_inv_hint.add_theme_font_size_override("font_size", 16)
+	_inv_hint.add_theme_color_override("font_color", Color(0.85, 0.85, 0.8, 0.9))
+	_inv_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_inv_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vb.add_child(_inv_hint)
+
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(0, 420)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	vb.add_child(scroll)
+	_inv_grid = GridContainer.new()
+	_inv_grid.columns = 6
+	_inv_grid.add_theme_constant_override("h_separation", 10)
+	_inv_grid.add_theme_constant_override("v_separation", 10)
+	_inv_grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	scroll.add_child(_inv_grid)
+
+	var close := Button.new()
+	close.text = "关闭（I）"
+	close.custom_minimum_size = Vector2(0, 56)
+	close.pressed.connect(_toggle_inventory)
+	vb.add_child(close)
+
+
+func _toggle_inventory() -> void:
+	# 暂停菜单/设置/三选一/图鉴已占屏时不响应（与 _toggle_codex 同防穿层）
+	if _inv_layer == null:
+		return
+	if not _inv_layer.visible and (pause_layer.visible or pause_settings_layer.visible \
+			or passive_layer.visible or codex_layer.visible):
+		return
+	if _inv_layer.visible == false and shop_panel.visible:
+		shop_panel.visible = false  # 商店不暂停，与暂停态物品栏互斥
+	_inv_layer.visible = not _inv_layer.visible
+	if _inv_layer.visible:
+		# 阅读型面板（照图鉴口径）：读背包时被围殴不是乐趣是干扰
+		get_tree().paused = true
+		TouchInput.clear_queues()
+		_refresh_inventory()
+	else:
+		get_tree().paused = false
+
+
+func _refresh_inventory() -> void:
+	for child in _inv_grid.get_children():
+		child.queue_free()
+	var ids: Array[String] = []
+	ids.append_array(ItemCatalog.ids_of_kind("consumable"))
+	ids.append_array(ItemCatalog.ids_of_kind("material"))
+	var shown := 0
+	for id: String in ids:
+		var n := GameState.count_item(id)
+		if n <= 0:
+			continue
+		shown += 1
+		var btn := Button.new()
+		btn.custom_minimum_size = Vector2(76, 76)
+		btn.icon = ItemCatalog.icon_of(id)
+		btn.expand_icon = true
+		HotwTheme.add_badge(btn, "×%d" % n).add_theme_font_size_override("font_size", 16)
+		btn.pressed.connect(_on_inv_cell.bind(id))
+		_inv_grid.add_child(btn)
+	_inv_hint.text = "消耗品点击即使用 ｜ 材料可整叠售予营地行商" if shown > 0 \
+			else "背包空空——猎杀野兽有机会拾取材料与补给"
+
+
+## 物品格子点击：消耗品 → 经 item_use_requested 交 player 应用（满血拦截也在那）；
+## 材料 → 文案播报（面板是暂停态，_toast 计时冻结可从容读）
+func _on_inv_cell(id: String) -> void:
+	if ItemCatalog.is_consumable(id):
+		EventBus.item_use_requested.emit(id)
+		_refresh_inventory()  # player 同步扣减，立刻反映数量
+	else:
+		_toast("%s：%s（%d 金/个）" % [ItemCatalog.name_of(id), ItemCatalog.desc_of(id),
+			EconomyMath.item_sell_price(id)])
+
+
+## 战斗快捷槽：零配置绑定——按 QUICK_PRIORITY 取背包里最高级的恢复品，
+## 显示持有数；点击经 item_use_requested 交 player（满血满蓝拦截在 player 侧）
+func _setup_quick_slot() -> void:
+	_quick_btn = %QuickSlotBtn
+	HotwTheme.style_circle_button(_quick_btn)
+	_quick_icon = HotwTheme.add_icon(_quick_btn, ICON_HEART, 18.0)
+	_quick_badge = HotwTheme.add_badge(_quick_btn, "")
+	_quick_btn.pressed.connect(_on_quick_slot)
+	_refresh_quick_slot()
+
+
+func _refresh_quick_slot() -> void:
+	if _quick_btn == null:
+		return
+	var pick := ""
+	for id: String in QUICK_PRIORITY:
+		if GameState.count_item(id) > 0:
+			pick = id
+			break
+	_quick_id = pick
+	_quick_btn.disabled = pick == ""
+	_quick_icon.texture = ItemCatalog.icon_of(pick) if pick != "" else null
+	_quick_badge.text = str(GameState.count_item(pick)) if pick != "" else ""
+
+
+func _on_quick_slot() -> void:
+	if _quick_id == "":
+		return
+	EventBus.item_use_requested.emit(_quick_id)
 
 
 func _on_hp_changed(current: float, maximum: float) -> void:
@@ -1052,6 +1326,13 @@ func _on_sim_tick(summary: Dictionary) -> void:
 			if not species_counts.has(species_name):
 				parts.append("✕%s" % species_name)
 		_last_species[terrain] = species_counts.duplicate()
+		# 明细截断：每地形最多 3 项 +「等N种」，行宽控在面板 320px 内容宽内
+		#（Label 另有 autowrap 兜底极端长名），展开面板右缘距屏幕中心英雄尚有
+		# 360px+ 净空，任何状态下都不再横压画面中部
+		if parts.size() > 3:
+			var hidden := parts.size() - 3
+			parts = parts.slice(0, 3)
+			parts.append("等%d种" % hidden)
 		var detail := " ".join(parts) if not parts.is_empty() else "—"
 		lines.append("%s %s%d/%d  %s" % [
 			terrain_names.get(terrain, bucket["name"]), trend, alive, bucket["capacity"], detail])
