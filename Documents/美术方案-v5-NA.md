@@ -89,3 +89,18 @@ generate_creatures/slice_spritesheets_v2/build_ai_strips/generate_world_map）�
 音乐优先级断言/pacing 六带）；结构探针 dungeon_check 通过（37 墙+3 门洞+内腔净空）；
 运行时实证：城塞宝箱/Boss 节点在场。取证图：/tmp/v5_*.png（营地/城塞/菜单/
 夜晚/战斗 fx）。**遗留**：iOS 包体核对（音频全量后，超预算则 ogg 降码率）。
+
+## 10. Godot 4 官方示例包评估（2026-09-17，~/hotw-assets/na-full-dl/na-demo/）
+
+37 脚本/21 场景的关卡制小框架——**约定确认 + 局部借鉴，不搬架构**（我们是流式
+大世界+生态模拟，整体不兼容）。逐项结论：
+- **约定验证（零改动）**：精灵表 布局（列=朝向 0下/1上/2左/3右，行=帧 0-3走/4攻/5跳/6死）与
+  IMAGE_SPEED=6 同我们的 col3+flip 切帧、6fps 完全一致；受击白闪+震屏+粒子与我们同构。
+- **借鉴①（高价值）**：`theme/nine_path_*.png` 官方九宫格 UI 件 12 张+像素字体——
+  对话气泡/菜单/图鉴面板可换官方九宫格铺底，比单张 dialogue-bubble 耐铺。
+- **借鉴②**：`sprite_character.gd` 四方向渲染（frame_coords.x=方向列）——完整包
+  903 角色均为四向表，NPC/角色升级时做真四向（上下移动不再侧身 flip）。
+- **借鉴③**：`transition.gd`（41 行淡入淡出）+ `teleporter.gd`（Area2D 成对传送）——
+  未来「进房屋室内」（Interior tileset）的现成参考件。
+- **不借鉴**：fog（shader alpha 位图方案弱于我们的迷雾系统）、camera_grid（复古
+  分格相机与连续相机路线不同）、behavior/damage/destroyable（我们对应系统更完整）。
