@@ -178,6 +178,28 @@ func _check_economy(by_name: Dictionary) -> void:
 		print("  PASS  经济：长寿 Boss 单杀 %d 金 ≤ 1300（年龄封顶生效）" % boss_gold)
 	else:
 		_fail("经济", "长寿 Boss 单杀 %d 金 > 1300，年龄封顶失效" % boss_gold)
+	# 物品经济（v7）：材料单杀估值带——低于 5 无拾取感、高于 35 会让金币掉落
+	# 沦为配角（卷轴 30 是 2.2+ 威胁区专属的高位值，风险收益对齐）
+	for species_name: String in EconomyMath.SPECIES_MATERIAL:
+		var value := EconomyMath.material_value_per_kill(species_name)
+		if value < 5.0 or value > 35.0:
+			_fail("经济", "%s 材料单杀估值 %.0f 超出 [5,35]" % [species_name, value])
+	print("  PASS  经济：%d 个物种材料单杀估值 ∈ [5,35]" % EconomyMath.SPECIES_MATERIAL.size())
+	# 消耗品性价比（基准 5 力量 160 血）：梯度 = 便宜的单位恢复效率高；
+	# 带宽 [1.0, 3.5]——下限防"生命药剂纯陷阱"，上限防饭团碾压治疗技能
+	var stats := CharacterStats.new()
+	var hp := stats.max_hp()
+	var prev_eff := INF
+	var ok := true
+	for id: String in ["onigiri", "sushi", "medipack", "life-pot"]:
+		var frac := float(CharacterStats.ITEM_HP_FRAC[id])
+		var eff := frac * hp / float(EconomyMath.item_price(id))
+		if eff < 1.0 or eff > 3.5 or eff >= prev_eff:
+			ok = false
+			_fail("经济", "%s 每金恢复 %.2f HP 违反带 [1.0,3.5] 或梯度递减" % [id, eff])
+		prev_eff = eff
+	if ok:
+		print("  PASS  经济：消耗品性价比 ∈ [1.0,3.5] 且越贵单位效率越低")
 
 
 func _fail(tag: String, why: String) -> void:

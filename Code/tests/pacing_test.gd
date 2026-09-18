@@ -249,6 +249,14 @@ func _finish() -> void:
 	var alive_final: int = WorldSim.sim._build_summary()["total_alive"] if WorldSim.sim != null else 0
 	_check(alive_avg > 10.0,
 		"生态未崩盘（近 60 tick 存活均值 %.1f >10，终点 %d）" % [alive_avg, alive_final])
+	# v7 物品闸门：10 游戏分钟的猎杀应攒下可见的材料流（拾取感），
+	# 但不爆仓（材料是金币补充而非替代）。上界放宽到 ITEM_MAX×物种数级别
+	# 不现实，取 60 = 击杀 114~173 实测 × 掉材料物种占比 × 平均 1.x 件的包络
+	var material_count := 0
+	for id: String in EconomyMath.ITEM_SELL:
+		material_count += GameState.count_item(id)
+	_check(material_count >= 5 and material_count <= 60,
+		"材料拾取节奏健康（10 分钟 %d 件 ∈ [5,60]）" % material_count)
 
 	if _fails == 0:
 		print("=== 节奏验证全部通过 ===")

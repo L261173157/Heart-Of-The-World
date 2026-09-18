@@ -209,6 +209,34 @@ func _test_world_death_respawn() -> void:
 			and hud.toast_label.modulate.a > 0.9, "暂停菜单「保存进度」出「已保存」toast")
 	hud._toggle_pause()
 	_check(not get_tree().paused, "手动保存后可正常恢复游戏")
+	# --- 物品栏与快捷槽（玩法 v7）：开关/暂停口径/屏内/互斥链/零配置绑定 ---
+	hud._toggle_inventory()
+	_check(hud._inv_layer.visible and get_tree().paused, "物品栏打开时暂停世界（阅读型口径）")
+	var inv_panel: Control = hud._inv_layer.get_child(1)
+	_check(viewport_rect.encloses(inv_panel.get_global_rect()), "物品栏弹层完整位于屏幕内")
+	_check(hud._quick_btn.disabled, "空背包时快捷槽置灰")
+	GameState.add_item("medipack", 2)
+	_check(not hud._quick_btn.disabled and hud._quick_badge.text == "2",
+			"拾取恢复品后快捷槽自动绑定（×2）")
+	hud._refresh_inventory()
+	_check(hud._inv_grid.get_child_count() == 1, "物品栏格子按持有点亮（1 格）")
+	hud._toggle_inventory()
+	_check(not hud._inv_layer.visible and not get_tree().paused, "物品栏关闭解除暂停")
+	# ESC 弹层链：物品栏优先于暂停菜单
+	hud._toggle_inventory()
+	hud._close_top_layer_or_toggle_pause()
+	_check(not hud._inv_layer.visible and not get_tree().paused
+			and not hud.pause_layer.visible, "ESC 先收物品栏而非弹暂停菜单")
+	# 商店互斥：物品栏（暂停态）打开时按 B → 收物品栏再开商店（不暂停）
+	hud._toggle_inventory()
+	hud._toggle_shop()
+	_check(not hud._inv_layer.visible and not get_tree().paused
+			and hud.shop_panel.visible, "商店打开时自动收起物品栏并恢复运行")
+	_check(hud._supply_btns.size() == EconomyMath.ITEM_BUY.size()
+			and hud._sell_btns.size() == EconomyMath.ITEM_SELL.size(),
+			"商店补给/收购商品与经济表同源（%d/%d）" % [hud._supply_btns.size(), hud._sell_btns.size()])
+	hud._toggle_shop()
+	GameState.inventory = {}
 
 
 ## 回菜单（快照暂存）→ 有进度文案 → 继续冒险（快照恢复 + 静默接回区域曲）

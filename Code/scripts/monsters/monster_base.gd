@@ -720,6 +720,14 @@ func _die_by_player() -> void:
 	GameState.add_gold(gold)
 	# 物种名随信号直传：赏金/图鉴/成就不再解析 display_name 字符串
 	EventBus.monster_killed_by_player.emit(xp, gold, inst.display_name(), inst.species.species_name)
+	# v7 材料掉落：按物种确定性入包（自动拾取，与金币同口径——M0 简化延续）；
+	# 精英 ×2 / Boss ×3 + Boss 附加一件消耗品（hash 确定性，无 RNG）。
+	# add_item 内部发 item_gained，HUD 战斗播报位订阅呈现
+	var material := EconomyMath.material_for(inst.species.species_name)
+	if material != "":
+		GameState.add_item(material, EconomyMath.drop_count(inst))
+	if inst.species.is_boss:
+		GameState.add_item(EconomyMath.boss_bonus_item(GameState.world_seed, inst.id), 1)
 	# 装备掉落：Boss 必掉史诗，精英 40% 稀有，普通 8% 精良；评分更高自动替换，否则折金
 	var drop_rarity := -1
 	if inst.species.is_boss:

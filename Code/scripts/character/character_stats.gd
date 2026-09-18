@@ -67,6 +67,12 @@ const EMPOWER_MULT := 1.6
 ## 每次普攻命中回复最大生命的比例（连击节奏越快收益越高）
 const EMPOWER_HEAL_FRAC := 0.03
 
+## --- 消耗品（玩法 v7 物品系统）：恢复比例真源，数值只动这里 ---
+## 按最大生命/精力的比例恢复（不吃 heal_power——食物药品与技能治疗是两条线，
+## 词条/被动不放大补给收益，性价比带稳定可守闸）；ItemCatalog.desc_of 动态拼接
+const ITEM_HP_FRAC := {"onigiri": 0.35, "sushi": 0.5, "medipack": 0.8, "life-pot": 1.0}
+const ITEM_MP_FRAC := {"water-pot": 0.5}
+
 
 ## 每级强化幅度（+15%）
 const UPGRADE_BONUS := 0.15

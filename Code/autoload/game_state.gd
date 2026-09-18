@@ -9,8 +9,9 @@ var SAVE_PATH := "user://save.json"
 const SAVE_DEBOUNCE := 2.0
 ## 存档版本：v1 角色侧；v2 增加生态世界；v3 增加角色位置/当前生命与魔法；
 ## v4（世界 v5）增加 world_seed（每档全新世界）+ 探索进度（explored/discovered）；
-## v5 增加 destroyed（已摧毁障碍格）+ quests（任务进度）
-const SAVE_VERSION := 5
+## v5 增加 destroyed（已摧毁障碍格）+ quests（任务进度）；
+## v6（玩法 v7）增加 inventory（物品栏：消耗品/材料）
+const SAVE_VERSION := 6
 
 ## 世界种子（世界 v5）：「新的冒险」重掷，游戏内 BiomeMap.configure 消费；
 ## v3 旧档无此键 → DEFAULT_SEED（旧世界与旧 ecology 存档严丝合缝）
@@ -27,6 +28,10 @@ var discovered_landmarks: Array[String] = []
 var destroyed_cells: Array[String] = []
 ## 任务系统数据真源（存档 v5）：active=进行中任务数组，completed=各 NPC 已完成数
 var quests := {"active": [], "completed": {}}
+## 物品栏（玩法 v7，存档 v6）：id -> 数量（钳 ITEM_MAX）。合法 id 真源是
+## EconomyMath 的价格表（纯逻辑层，随迁服务端）；表现元数据在 ItemCatalog
+var inventory: Dictionary = {}
+const ITEM_MAX := 99
 
 ## stats 对象被重建（reset_all）时通知常驻订阅者（如 SfxManager）重连信号
 signal stats_rebuilt
@@ -274,6 +279,72 @@ func buy_upgrade(kind: String) -> bool:
 	return true
 
 
+# --- 物品栏（玩法 v7 P0）：库存单点；掉落/购买/售出统一入口 ---
+
+## 获得物品（monster 掉落 / 商店购买 / P1 任务奖励都走这）。
+## 未知 id 忽略；总量钳 ITEM_MAX（满 99 静默丢溢出——单机游戏不惩罚囤积）
+func add_item(id: String, count: int = 1) -> void:
+	if not EconomyMath.knows_item(id) or count <= 0:
+		return
+	var total := mini(int(inventory.get(id, 0)) + count, ITEM_MAX)
+	inventory[id] = total
+	EventBus.item_gained.emit(id, count, total)
+	EventBus.inventory_changed.emit()
+	_queue_save()
+
+
+## 扣减物品（不足返回 false 不改状态）；归零即 erase（存档不留 0 键）
+func remove_item(id: String, count: int = 1) -> bool:
+	var have := int(inventory.get(id, 0))
+	if have < count or count <= 0:
+		return false
+	have -= count
+	if have <= 0:
+		inventory.erase(id)
+	else:
+		inventory[id] = have
+	EventBus.inventory_changed.emit()
+	_queue_save()
+	return true
+
+
+func count_item(id: String) -> int:
+	return int(inventory.get(id, 0))
+
+
+## 使用消耗品：只管库存校验与扣减（必须是可购买的消耗品 id）。
+## 效果应用与满血满蓝拦截在 player 侧（生命/精力的权威持有者），
+## player 先验拦截再调本方法——库存与效果两层各司其职
+func try_use_consumable(id: String) -> bool:
+	if not EconomyMath.ITEM_BUY.has(id):
+		return false
+	return remove_item(id, 1)
+
+
+## 商店购买消耗品：钱不够 / 已满 ITEM_MAX 返回 false
+func buy_item(id: String) -> bool:
+	var price := EconomyMath.item_price(id)
+	if price <= 0 or gold < price or count_item(id) >= ITEM_MAX:
+		return false
+	gold -= price
+	EventBus.gold_changed.emit(gold)
+	add_item(id, 1)
+	return true
+
+
+## 商店出售材料（一次性全卖该 id）：返回卖出件数（0 = 不可售或没货）。
+## 收入走 add_gold（贪婪被动与装备折金同口径放大）
+func sell_material(id: String) -> int:
+	var price := EconomyMath.item_sell_price(id)
+	var n := count_item(id)
+	if price <= 0 or n <= 0:
+		return 0
+	inventory.erase(id)
+	EventBus.inventory_changed.emit()
+	add_gold(price * n)
+	return n
+
+
 func set_tutorial_flag(key: String) -> void:
 	if tutorial_flags.has(key):
 		return
@@ -345,6 +416,7 @@ func reset_all() -> void:
 	discovered_landmarks = []
 	destroyed_cells = []
 	quests = {"active": [], "completed": {}}
+	inventory = {}
 	save_now()
 	stats_rebuilt.emit()
 	EventBus.player_progress_changed.emit(stats.level, stats.xp, stats.xp_to_next(), stats.pending_points)
@@ -447,6 +519,9 @@ func save_now() -> void:
 	if not quests["active"].is_empty() or not quests["completed"].is_empty():
 		data["quests"] = {"active": (quests["active"] as Array).duplicate(true),
 			"completed": (quests["completed"] as Dictionary).duplicate(true)}
+	# 物品栏（v6+）：非空才写（照 quests 口径）
+	if not inventory.is_empty():
+		data["inventory"] = inventory.duplicate(true)
 	# 原子写：iOS 退后台瞬间进程可能在写入中途被杀留下半截档——
 	# 先写临时文件再改名（rename 是原子操作），主档任何时刻都是完整状态
 	var tmp_path := "%s.tmp" % SAVE_PATH
@@ -691,6 +766,17 @@ func _load() -> void:
 		for id in saved_marks:
 			if typeof(id) == TYPE_STRING and id.begins_with("lm_"):
 				discovered_landmarks.append(id)
+	# 物品栏（v6+）：逐条消毒——未知 id / 非 String 键丢弃，数量只收正整数钳
+	# ITEM_MAX（手改档负数/浮点/超限都按边界收敛，不中断整个背包）
+	inventory = {}
+	var saved_inventory: Variant = data.get("inventory", {})
+	if typeof(saved_inventory) == TYPE_DICTIONARY:
+		for key in saved_inventory:
+			if typeof(key) != TYPE_STRING or not EconomyMath.knows_item(key):
+				continue
+			var n := clampi(_safe_int(saved_inventory[key], 0), 0, ITEM_MAX)
+			if n > 0:
+				inventory[key] = n
 	last_save_unix = maxf(0.0, _safe_float(data.get("last_save_unix", 0.0), 0.0))
 	_apply_settings()
 	EventBus.player_progress_changed.emit(

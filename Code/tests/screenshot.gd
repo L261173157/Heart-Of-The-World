@@ -129,14 +129,31 @@ func _process(delta: float) -> void:
 					BiomeMap.terrain_at((pl as Node2D).global_position) if pl != null else "?",
 					WorldSim.day_time, WorldSim.night_intensity()])
 	_dbg_accum += delta
-	if not _ui_opened and _elapsed >= 2.6 and OS.get_environment("HOTW_SHOT_UI") == "codex":
-		var hud := get_tree().get_first_node_in_group("hud")
-		if hud == null:
-			# HUD 当前未登记组名，按截图场景的固定结构兜底定位。
-			hud = get_node_or_null("Main/HUD")
-		if hud != null:
-			hud._toggle_codex()
-		_ui_opened = true
+	if not _ui_opened and _elapsed >= 2.6:
+		# UI 弹层取证：codex=图鉴 / inventory=物品栏（v7，预填材料与补给出格子）
+		# / shop=商店（v7 三分区页签，预填收购货源与金币）
+		var ui_mode := OS.get_environment("HOTW_SHOT_UI")
+		if ui_mode == "codex" or ui_mode == "inventory" or ui_mode == "shop":
+			var hud := get_tree().get_first_node_in_group("hud")
+			if hud == null:
+				# HUD 当前未登记组名，按截图场景的固定结构兜底定位。
+				hud = get_node_or_null("Main/HUD")
+			if hud != null:
+				match ui_mode:
+					"inventory":
+						GameState.gold = 326
+						GameState.add_item("beaf", 3)
+						GameState.add_item("medipack", 1)
+						GameState.add_item("scroll-fire", 2)
+						GameState.add_item("fish", 1)
+						hud._toggle_inventory()
+					"shop":
+						GameState.gold = 326
+						GameState.add_item("beaf", 5)
+						hud._toggle_shop()
+					_:
+						hud._toggle_codex()
+			_ui_opened = true
 	# 2s 起按住右移：截图时刻玩家处于行走循环中（验证帧动画），邻近怪会追击；
 	# 战斗/探针取证模式例外（要贴身输出或站桩摆件，不能走开）
 	if not _menu_mode and not _fight and not _probe and not _overlays \

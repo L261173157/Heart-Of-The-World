@@ -136,3 +136,16 @@ generate_creatures/slice_spritesheets_v2/build_ai_strips/generate_world_map）�
 - **音乐升级**：城塞→"21 Dungeon"、Boss→"17 Fight"、营地→"33 Calm Village"
   （完整包具名曲目）。留库：其余 36 曲（Quicksand/WaterRipples 动画与沙漠/废弃
   村庄瓦片待后续地貌扩展）。
+
+## 13. 玩法 v7 P0 物品系统取用（2026-09-18）
+
+- **新增消费 items 图标 13 张**（此前 0 引用→接入）：消耗品 onigiri 饭团/sushi
+  寿司/medipack 医疗包/life-pot 生命药剂/water-pot 竹水壶；材料 beaf 兽肉/fish
+  鲜鱼/shrimp 鲜虾/octopus 章鱼足/tea-leaf 茶叶/scroll-fire 火之卷轴/scroll-rock
+  岩之卷轴；物品栏按钮 jar 罐子。消费方：ItemCatalog（真源表）→ HUD 商店
+  补给/收购页、物品栏格子、战斗快捷槽。
+- **items 余量 15 张待 P1/P2**：big/little-treasure-chest（P1 钥匙宝箱）、
+  gold/silver-key（P1）、gold-cup/silver-cup、arrow/ice-spike/kunai/shuriken
+  （投射物图标候选）、calamari/empty-pot/milk-pot/noodle/sushi-2/tea-leaf 之外
+  的食物变体（yakitori/honey/fish 已用或候补）——按"宁缺毋滥"口径不强行上。
+- **HUD 侧零新增素材**：快捷槽/物品栏钮全部复用 HotwTheme 样式 + 已有图标。

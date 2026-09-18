@@ -12,6 +12,7 @@ func _ready() -> void:
 	GameState.save_enabled = true
 	_test_roundtrip()
 	_test_shop()
+	_test_inventory()
 	_test_progress_meta()
 	_test_lifespan()
 	_test_ecology_snapshot()
@@ -147,6 +148,68 @@ func _test_shop() -> void:
 
 
 ## 图鉴 / 被动 / 设置 的存档往返
+## 物品栏（存档 v6）：入包钳制 / 往返 / 坏档消毒 / v5 旧档无键 / 购买-售出闭环
+func _test_inventory() -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(GameState.SAVE_PATH))
+	GameState.inventory = {}
+	GameState.add_item("beaf", 3)
+	GameState.add_item("onigiri", 2)
+	GameState.add_item("不存在的东西", 5)
+	_check(GameState.count_item("beaf") == 3 and GameState.count_item("onigiri") == 2,
+			"add_item 入包（未知 id 被忽略）")
+	GameState.add_item("beaf", 500)
+	_check(GameState.count_item("beaf") == GameState.ITEM_MAX,
+			"持有上限 %d 钳制（实际 %d）" % [GameState.ITEM_MAX, GameState.count_item("beaf")])
+	GameState.inventory["beaf"] = 3
+	GameState.save_now()
+	GameState.inventory = {}
+	GameState._load()
+	_check(GameState.count_item("beaf") == 3 and GameState.count_item("onigiri") == 2,
+			"读档恢复物品栏")
+	# 消毒：非整数数量 / 负数 / 超限 / 未知 id 各自收敛，不中断整个背包
+	var bad := {
+		"version": 6, "level": 2,
+		"inventory": {"beaf": "x", "fish": -3, "shrimp": 9999, "hack-item": 1, "tea-leaf": 4},
+	}
+	var file := FileAccess.open(GameState.SAVE_PATH, FileAccess.WRITE)
+	file.store_string(JSON.stringify(bad))
+	file.close()
+	GameState.inventory = {}
+	GameState._load()
+	_check(GameState.count_item("beaf") == 0 and GameState.count_item("fish") == 0,
+			"坏类型/负数数量条目被丢弃")
+	_check(GameState.count_item("shrimp") == GameState.ITEM_MAX,
+			"超限数量钳到 %d（实际 %d）" % [GameState.ITEM_MAX, GameState.count_item("shrimp")])
+	_check(GameState.count_item("hack-item") == 0, "未知物品 id 被丢弃")
+	_check(GameState.count_item("tea-leaf") == 4, "合法条目照常保留")
+	# v5 旧档无 inventory 键 → 空背包
+	var legacy := {"version": 5, "level": 3, "gold": 10}
+	file = FileAccess.open(GameState.SAVE_PATH, FileAccess.WRITE)
+	file.store_string(JSON.stringify(legacy))
+	file.close()
+	GameState.inventory = {"beaf": 9}
+	GameState._load()
+	_check(GameState.inventory.is_empty(), "v5 旧档无物品键 → 空背包")
+	# 购买/使用/售出闭环（库存层；效果应用在 player 由 combat_test 覆盖）
+	GameState.gold = 500
+	_check(GameState.buy_item("medipack"), "购买消耗品成功")
+	_check(GameState.gold == 500 - EconomyMath.item_price("medipack"), "购买扣费")
+	_check(GameState.count_item("medipack") == 1, "消耗品入包")
+	_check(not GameState.buy_item("beaf"), "材料不可购买")
+	_check(GameState.try_use_consumable("medipack"), "消耗品可使用（库存扣减）")
+	_check(GameState.count_item("medipack") == 0, "使用后库存归零")
+	_check(not GameState.try_use_consumable("beaf"), "材料不可使用")
+	_check(GameState.sell_material("beaf") == 0, "无货材料售出返回 0")
+	GameState.add_item("beaf", 2)
+	var gold_before := GameState.gold
+	var sold := GameState.sell_material("beaf")
+	_check(sold == 2 and GameState.gold >= gold_before + 2 * EconomyMath.item_sell_price("beaf")
+			and GameState.count_item("beaf") == 0,
+			"整叠售出材料（%d 件，+≥%d 金）" % [sold, 2 * EconomyMath.item_sell_price("beaf")])
+	GameState.reset_all()
+	_check(GameState.inventory.is_empty(), "reset_all 清空物品栏")
+
+
 func _test_progress_meta() -> void:
 	GameState.codex = {"妖鬼": 5, "獾王": 1, "青史莱姆": 3}
 	GameState.stats.passives = {"hp": 2, "cdr": 1}

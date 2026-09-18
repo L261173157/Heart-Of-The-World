@@ -156,6 +156,9 @@ func _ready() -> void:
 	# 升级白闪光（美术 v5 fx 全量）：世界层特效走 fx_requested 通道
 	GameState.stats.leveled_up.connect(func(_level: int, _levels: int) -> void:
 		EventBus.fx_requested.emit("flash", global_position, 1.5))
+	# v7 消耗品：HUD 快捷槽/物品栏发 item_use_requested，效果应用在本节点
+	# （生命/精力的权威持有者，满血满蓝拦截与治疗技能同口径）
+	EventBus.item_use_requested.connect(use_item)
 
 
 ## 头顶定位标记（zoom1 广角下绿衣忍者在草地背景中可寻性不足，视觉分析实证；
@@ -554,6 +557,31 @@ func _try_heal() -> void:
 	SfxManager.play("heal")
 	_play_ring(44.0, Color(0.5, 1.0, 0.55, 0.9))
 	EventBus.fx_requested.emit("flash_blue", global_position, 1.0)
+
+
+## 使用消耗品（v7 物品系统）：HUD 快捷槽/物品栏经 item_use_requested 触发。
+## 拦截顺序：死亡 → 恢复项满档（满血吃 HP 类 / 满蓝喝水壶白费，与治疗满血
+## 拦截同口径）→ 库存扣减（GameState）。效果按最大值比例恢复，不吃 heal_power
+func use_item(id: String) -> void:
+	if _is_dead or not ItemCatalog.is_consumable(id):
+		return
+	var hp_frac := float(Skill.ITEM_HP_FRAC.get(id, 0.0))
+	var mp_frac := float(Skill.ITEM_MP_FRAC.get(id, 0.0))
+	if hp_frac > 0.0 and current_hp >= stats.max_hp() - 0.5:
+		return
+	if mp_frac > 0.0 and current_mp >= stats.max_mp() - 0.5:
+		return
+	if not GameState.try_use_consumable(id):
+		return
+	if hp_frac > 0.0:
+		current_hp = minf(stats.max_hp(), current_hp + stats.max_hp() * hp_frac)
+		EventBus.player_hp_changed.emit(current_hp, stats.max_hp())
+	if mp_frac > 0.0:
+		current_mp = minf(stats.max_mp(), current_mp + stats.max_mp() * mp_frac)
+		EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
+	SfxManager.play("heal")
+	_play_ring(38.0, Color(0.6, 1.0, 0.6, 0.85))
+	EventBus.fx_requested.emit("flash_gold", global_position, 1.0)
 
 
 ## 武装强化：消耗 MP 进入 6s 普攻增益（伤害 ×1.6 + 命中吸血）；

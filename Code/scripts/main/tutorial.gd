@@ -72,6 +72,9 @@ func _ready() -> void:
 
 	EventBus.player_entered_region.connect(_on_region)
 	EventBus.monster_killed_by_player.connect(_on_kill)
+	# v7 物品：首获材料（指路卖钱出口）+ 低血有补给（快捷槽救急）
+	EventBus.item_gained.connect(_on_item_gained)
+	EventBus.player_hp_changed.connect(_on_hp_for_item_hint)
 	EventBus.player_died.connect(func() -> void:
 		_hint("died", "你死了，但生态不会停：它们仍在繁衍、迁徙、衰老")
 	)
@@ -79,6 +82,21 @@ func _ready() -> void:
 	if WorldSim.sim != null:
 		WorldSim.sim.instance_spawned.connect(_on_spawned)
 		WorldSim.sim.instance_migrated.connect(_on_migrated)
+
+
+func _on_item_gained(item_id: String, _count: int, _total: int) -> void:
+	if not ItemCatalog.is_consumable(item_id) and not _seen("first_material"):
+		_hint("first_material", "拾取了 %s——材料可在营地行商处整叠换金币" % ItemCatalog.name_of(item_id))
+
+
+## 低血 + 背包里有恢复品时点一次快捷槽教学（不打扰战斗节奏，只提一次）
+func _on_hp_for_item_hint(current: float, maximum: float) -> void:
+	if current >= maximum * 0.4 or _seen("quick_slot"):
+		return
+	for id: String in ["life-pot", "medipack", "sushi", "onigiri", "water-pot"]:
+		if GameState.count_item(id) > 0:
+			_hint("quick_slot", "带上补给了！左下快捷槽一键服用 %s 回复状态" % ItemCatalog.name_of(id))
+			return
 
 
 func _hint_opening1(controls: String) -> void:

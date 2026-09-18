@@ -95,6 +95,8 @@ var _v5_rock := Vector2(0, 0)
 var _v5_rock_cell := Vector2i.ZERO
 var _v5_hold_hp := false
 var _v5_swings := 0
+# --- 物品段（玩法 v7）：掉落入包 / 消耗品使用闭环 / 信号链路 ---
+var _items_verified := false
 var _windup_retries := 0
 var _windup_phase := 0
 var _windup_target: MonsterBase
@@ -761,7 +763,7 @@ func _process(delta: float) -> void:
 	if _timer <= 0.0:
 		_timer = STEP_INTERVAL
 		_step()
-	if _elapsed >= TIME_LIMIT or (_queue_index >= TARGET_ORDER.size() and _cover_verified and _v5_phase >= 6):
+	if _elapsed >= TIME_LIMIT or (_queue_index >= TARGET_ORDER.size() and _cover_verified and _v5_phase >= 6 and _items_verified):
 		_finish()
 
 
@@ -774,6 +776,9 @@ func _step() -> void:
 			return
 		if _v5_phase < 6:
 			_verify_v5_interactions()
+			return
+		if not _items_verified:
+			_verify_items()
 		return
 	# 复活窗口不推进断言段：技能施放类断言会被 _is_dead 静默拦截
 	# （营地怪群围攻下死亡瞬间的 0.x 秒空窗，判定口径与技能无关）
@@ -960,6 +965,39 @@ func _advance() -> void:
 	_queue_index += 1
 	_species_tries = 0
 	_observe_tries = 0
+
+
+## 物品段（玩法 v7，同步断言）：六物种击杀后背包应有对应材料；
+## 消耗品经 item_use_requested 信号链路（HUD 快捷槽同款）走 player 应用闭环
+func _verify_items() -> void:
+	_items_verified = true
+	# 1. 掉落入包：TARGET_ORDER 里 野猪→兽肉 / 沼泽蟹→鲜虾 / 甲虫+石像鬼→岩卷轴
+	_check(GameState.count_item("beaf") >= 1, "野猪击杀掉落兽肉入包（×%d）" % GameState.count_item("beaf"))
+	_check(GameState.count_item("shrimp") >= 1, "沼泽蟹击杀掉落鲜虾入包（×%d）" % GameState.count_item("shrimp"))
+	_check(GameState.count_item("scroll-rock") >= 2, "甲虫/石像鬼击杀掉落岩卷轴（×%d）" % GameState.count_item("scroll-rock"))
+	# 2. Boss 附加件确定性（同参数两次调用一致——无 RNG 契约）
+	_check(EconomyMath.boss_bonus_item(GameState.world_seed, 42)
+			== EconomyMath.boss_bonus_item(GameState.world_seed, 42),
+			"Boss 附加消耗品确定性抽取")
+	# 3. 消耗品使用闭环（信号链路 = HUD 快捷槽/物品栏真实路径）
+	GameState.add_item("medipack", 1)
+	GameState.add_item("water-pot", 1)
+	var max_hp := _player.stats.max_hp()
+	var max_mp := _player.stats.max_mp()
+	_player.current_hp = max_hp * 0.3
+	_player.current_mp = max_mp * 0.2
+	EventBus.player_hp_changed.emit(_player.current_hp, max_hp)
+	EventBus.player_mp_changed.emit(_player.current_mp, max_mp)
+	EventBus.item_use_requested.emit("medipack")
+	_check(_player.current_hp >= max_hp - 0.5, "医疗包回复 80%%（0.3→%.0f/%.0f 满血）" % [_player.current_hp, max_hp])
+	_check(GameState.count_item("medipack") == 0, "使用后库存扣减归零")
+	EventBus.item_use_requested.emit("water-pot")
+	_check(_player.current_mp >= max_mp * 0.65, "竹水壶回复 50%% 精力（实际 %.0f%%）" % (_player.current_mp / max_mp * 100.0))
+	# 4. 满血拦截（与治疗技能同口径：白吃拦截在 player 侧）
+	GameState.add_item("onigiri", 1)
+	EventBus.item_use_requested.emit("onigiri")
+	_check(GameState.count_item("onigiri") == 1, "满血时 HP 类消耗品被拦截（库存不变）")
+	GameState.inventory.erase("onigiri")
 
 
 func _finish() -> void:

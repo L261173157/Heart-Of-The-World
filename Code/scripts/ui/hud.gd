@@ -33,6 +33,9 @@ const DAY_TOAST_MAX := 4
 @onready var quest_label: Label = %QuestLabel
 @onready var shop_panel: Control = %ShopPanel
 @onready var shop_gold_label: Label = %GoldLabel
+## 强化三按钮引用在 reparent 进页签前缓存：% 唯一名查找在 reparent 到
+## 代码构建容器后不可靠（金币行能刷新而按钮行静默失败的根因）
+@onready var shop_upgrade_btns: Array = [%BtnWeapon, %BtnStaff, %BtnVigor]
 @onready var skill_cds: Array = [
 	{"panel": %SlotDash, "label": %SlotDash/VB/Cd, "button": %DashBtn,
 			"name": "冲刺", "mp": CharacterStats.DASH_COST},
@@ -959,9 +962,9 @@ func _toggle_shop() -> void:
 
 func _refresh_shop() -> void:
 	shop_gold_label.text = "金币 %d" % GameState.gold
-	_refresh_shop_btn(%BtnWeapon, "weapon", "武器磨刀", "物理攻击", ICON_HEAVY)
-	_refresh_shop_btn(%BtnStaff, "staff", "法杖赋能", "魔法攻击", ICON_BOLT)
-	_refresh_shop_btn(%BtnVigor, "vigor", "体质淬炼", "生命上限", ICON_HEART)
+	_refresh_shop_btn(shop_upgrade_btns[0], "weapon", "武器磨刀", "物理攻击", ICON_HEAVY)
+	_refresh_shop_btn(shop_upgrade_btns[1], "staff", "法杖赋能", "魔法攻击", ICON_BOLT)
+	_refresh_shop_btn(shop_upgrade_btns[2], "vigor", "体质淬炼", "生命上限", ICON_HEART)
 	_refresh_supply()
 	_refresh_sellout()
 
@@ -1008,7 +1011,7 @@ func _setup_shop_tabs() -> void:
 	var tab_up := VBoxContainer.new()
 	tab_up.name = "强化"
 	tabs.add_child(tab_up)
-	for btn: Button in [%BtnWeapon, %BtnStaff, %BtnVigor]:
+	for btn: Button in shop_upgrade_btns:
 		btn.reparent(tab_up)
 
 	var tab_supply := VBoxContainer.new()
@@ -1098,8 +1101,16 @@ func _setup_inventory_layer() -> void:
 	_inv_layer.add_child(dim)
 
 	var panel := PanelContainer.new()
-	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_MINSIZE)
-	panel.custom_minimum_size = Vector2(560, 600)
+	# 中心锚定 + 四向偏移（照 ShopPanel 的 tscn 模式）：PRESET_CENTER 的
+	# MINSIZE 模式把控件左上角放在屏幕中心，600 高的面板底部直接出屏
+	panel.anchor_left = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -280.0
+	panel.offset_top = -290.0
+	panel.offset_right = 280.0
+	panel.offset_bottom = 290.0
 	_inv_layer.add_child(panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 20)
@@ -1162,7 +1173,10 @@ func _toggle_inventory() -> void:
 
 
 func _refresh_inventory() -> void:
-	for child in _inv_grid.get_children():
+	# 先摘除再延迟释放：queue_free 是帧末生效，同帧连刷（拾取信号 + 使用后刷新）
+	# 会把待释放格子留在树里，格数统计与布局都失真
+	for child in _inv_grid.get_children().duplicate():
+		_inv_grid.remove_child(child)
 		child.queue_free()
 	var ids: Array[String] = []
 	ids.append_array(ItemCatalog.ids_of_kind("consumable"))

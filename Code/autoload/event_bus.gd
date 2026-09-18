@@ -84,3 +84,13 @@ signal dialogue_confirmed(quest: Dictionary)
 ## 全局特效请求（美术 v5 fx 全量接线）：kind 见 game_world.FxLayer.TABLE，
 ## pos 世界坐标，scale 视觉倍率（1.0 ≈ 32px 实际尺寸）
 signal fx_requested(kind: String, pos: Vector2, scale: float)
+
+# --- 物品系统（玩法 v7）：掉落/购买/使用 ---
+## 获得物品（GameState.add_item 统一发出：击杀掉落/商店购买/任务奖励）；
+## count = 本次增量，total = 持有总量（HUD 战斗播报 "兽肉 ×2（共 5）" 用）
+signal item_gained(item_id: String, count: int, total: int)
+## 背包内容任何变化（获得/使用/售出后都发；HUD 物品栏/快捷槽的刷新源）
+signal inventory_changed
+## 使用消耗品请求（HUD 快捷槽/物品栏发出）→ player 订阅：满血拦截与恢复
+## 应用在 player（生命/精力的权威持有者），库存扣减在 GameState
+signal item_use_requested(item_id: String)
