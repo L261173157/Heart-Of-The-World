@@ -118,3 +118,21 @@ generate_creatures/slice_spritesheets_v2/build_ai_strips/generate_world_map）�
   （CanvasLayer 90 黑幕 0.22s/0.3s，相机 snap_to_player 防长镜头滑移）→ 世界内嵌
   室内口袋（ObstacleField.INTERIOR_POCKETS 出生点正南 52 万 px ×2 间，障碍/液体
   双抑制）＝木地板平铺+墙环 StaticBody+床+南门回程传送。截图 HOTW_SHOT_INTERIOR=N。
+
+## 12. 完整包全量增量（2026-09-17 第三批，b9283b6）
+
+- **NPC 命名角色**：营地猎人→Hunter、遗迹学者→Inspector、泉水守望者→SorcererOrange、
+  行商→Villager（64×112 同布局直接换装+专属 Faceset 101-104，四方向+踱步保留）。
+- **Boss 专属形象**：锹形虫王→GiantBlueSamurai 大武士（48px×12帧 Idle/Walk/Hit）、
+  龟王→GiantFlam 火焰魔王（50px 条带）；slicer 新增「按动画独立条带源+cell 格宽」
+  Boss 模式；SpeciesData.visual_scale（0.33/0.32）对齐 16px 基准体型。
+- **物种扩容 22→29**：战斗怪 雪熊(snow charger)/独眼巨人(hill soldier)/眼魔(swamp
+  ranged)/火龙(lava ranged)；**被动动物** 鸡(plains)/浣熊(forest)/鹦鹉(swamp+forest)
+  ——SpeciesData.ambient（永不主动攻击+玩家近身即逃+balance 承伤带豁免），侧视
+  32×16 双帧表走 strip 模式。种群表六地形重排（余量守恒），妖鬼捕食链+鸡。
+- **城塞瓦片**：castle kind 换完整包 TilesetDungeon 专用墙砖（DERIVE.src_img 独立
+  源机制），障碍图集重生成。
+- **营地动画件**：水车(3帧)+旋转桨叶(2帧)+旗帜(4帧)，_add_animated_prop 通用挂件。
+- **音乐升级**：城塞→"21 Dungeon"、Boss→"17 Fight"、营地→"33 Calm Village"
+  （完整包具名曲目）。留库：其余 36 曲（Quicksand/WaterRipples 动画与沙漠/废弃
+  村庄瓦片待后续地貌扩展）。
