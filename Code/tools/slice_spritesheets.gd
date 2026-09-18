@@ -52,6 +52,24 @@ const CREATURES := {
 		"sheet": "na_ch_villager.png", "col": 3, "flop": false, "dirs": true,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
 	},
+	# --- 玩法 v7 P1：新地标 NPC（GitHub 包 characters 表，了望石塔/古树） ---
+	## 瞭望者 = characters/13（深蓝兜帽，哨兵气质；faceset 同号 13）
+	"npc_watchman": {
+		"sheet": "na_ch_watchman.png", "col": 3, "flop": false, "dirs": true,
+		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
+	},
+	## 草药师 = characters/9（橙红和服，温和医者；faceset 同号 9）
+	"npc_herbalist": {
+		"sheet": "na_ch_herbalist.png", "col": 3, "flop": false, "dirs": true,
+		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
+	},
+	# --- 玩法 v7 P2：群系动画装饰（NA Animated bg 条带） ---
+	## 瀑布三段（start 5 帧 / middle 5 帧 / end 3 帧，16px 格）
+	"deco_waterfall_start": {"sheet": "res://assets/na/bg/frames/waterfall-start.png", "strip": true, "fps": 6.0, "anim": {"play": "auto"}},
+	"deco_waterfall_middle": {"sheet": "res://assets/na/bg/frames/waterfall-middle.png", "strip": true, "fps": 6.0, "anim": {"play": "auto"}},
+	"deco_waterfall_end": {"sheet": "res://assets/na/bg/frames/waterfall-end.png", "strip": true, "fps": 6.0, "anim": {"play": "auto"}},
+	## 草叶摇摆（64×16 = 4 帧；flower 20×8 不合 16 网格弃用）
+	"deco_plant": {"sheet": "res://assets/na/bg/frames/plant.png", "strip": true, "fps": 4.0, "anim": {"play": "auto"}},
 	# --- Boss 专属形象（美术 v5 完整包 48-50px 横条带；按动画独立源 + cell 格宽） ---
 	## 锹形虫王 → 大武士（GiantBlueSamurai，48px×12 帧）
 	"boss_samurai": {

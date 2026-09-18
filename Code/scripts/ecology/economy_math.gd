@@ -69,7 +69,7 @@ const ITEM_BUY := {
 ## 击杀收益的补充而非替代；稀有卷轴（2.2+ 威胁区物种）给到 30，风险收益对齐
 const ITEM_SELL := {
 	"beaf": 8, "fish": 8, "shrimp": 8, "octopus": 10, "tea-leaf": 6,
-	"scroll-fire": 30, "scroll-rock": 30,
+	"scroll-fire": 30, "scroll-rock": 30, "silver-key": 15, "gold-key": 25,
 }
 
 ## 物种 → 掉落材料（确定性；未列出的物种不掉材料——史莱姆/蝙蝠/幽灵等
@@ -88,6 +88,22 @@ const BOSS_MATERIAL := {"树人": "tea-leaf", "锹形虫王": "scroll-rock", "�
 
 ## Boss 附加消耗品池（击杀必附 1 件，确定性抽取）
 const BOSS_BONUS_POOL := ["onigiri", "sushi", "medipack", "water-pot"]
+
+## --- 钥匙（玩法 v7 P1）：城塞宝箱的开启凭证 ---
+## 银钥匙：精英怪 15% 掉落（hill 城塞）；金钥匙：collect 任务奖励（lava 城塞）
+const KEY_SILVER := "silver-key"
+const KEY_GOLD := "gold-key"
+## 城塞地形 → 钥匙 id（"" = 无钥门）；hill 用银（精英可刷）、lava 用金（任务闭环）
+const DUNGEON_KEYS := {"hill": KEY_SILVER, "lava": KEY_GOLD}
+
+## --- collect 交付任务（P1）：材料池避开 beaf——兽肉来源含鸡/浣熊/鹦鹉等
+## 被动动物，悬赏引导会教玩家灭绝生态；高价池（2.2+ 威胁区材料）在 NPC
+## 已完成 ≥3 单后解锁，与玩家的推进深度对齐
+const COLLECT_POOL := ["fish", "shrimp", "octopus", "tea-leaf"]
+const COLLECT_POOL_RARE := ["scroll-fire", "scroll-rock"]
+
+## collect 任务溢价：收购价 = 材料卖价 × 此系数（悬赏高于市价才值得交而不是卖）
+const COLLECT_PREMIUM := 2.0
 
 
 ## 合法物品 id（存档消毒 / 商店校验共用）

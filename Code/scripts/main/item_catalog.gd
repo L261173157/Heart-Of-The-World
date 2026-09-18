@@ -22,6 +22,9 @@ const ITEMS := {
 	"tea-leaf": {"name": "茶叶", "kind": "material", "icon": "res://assets/na/items/tea-leaf.png"},
 	"scroll-fire": {"name": "火之卷轴", "kind": "material", "icon": "res://assets/na/items/scroll-fire.png"},
 	"scroll-rock": {"name": "岩之卷轴", "kind": "material", "icon": "res://assets/na/items/scroll-rock.png"},
+	# --- 钥匙（P1：城塞宝箱凭证；银=精英掉落开 hill 城塞，金=collect 奖励开 lava 城塞） ---
+	"silver-key": {"name": "银钥匙", "kind": "key", "icon": "res://assets/na/items/silver-key.png"},
+	"gold-key": {"name": "金钥匙", "kind": "key", "icon": "res://assets/na/items/gold-key.png"},
 }
 
 static var _tex_cache: Dictionary = {}

@@ -119,6 +119,11 @@ const ICON_SHOP := preload("res://assets/na/items/coin-2.png")
 const ICON_CODEX := preload("res://assets/na/items/scroll-ice.png")
 const ICON_COIN := preload("res://assets/na/items/gold-coin.png")
 const ICON_HEART := preload("res://assets/na/items/heart.png")
+## P2 武器图标补位（NA weapons 闲置件）：katana=武器磨刀（刀）、fork=法杖赋能
+## （三叉法器）、sai=蛮力被动（叉手）；lance/bow 无语义位留库
+const ICON_KATANA := preload("res://assets/na/weapons/katana.png")
+const ICON_FORK := preload("res://assets/na/weapons/fork.png")
+const ICON_SAI := preload("res://assets/na/weapons/sai.png")
 ## 物品栏按钮（v7）：NA jar 罐子 = 收纳意象
 const ICON_BAG := preload("res://assets/na/items/jar.png")
 ## 升级三选一：被动 id → 图标（缺省用空卷轴）
@@ -127,7 +132,7 @@ const PASSIVE_ICONS := {
 	"cdr": preload("res://assets/na/items/scroll-empty.png"),
 	"hp": preload("res://assets/na/items/medipack.png"),
 	"mp_regen": preload("res://assets/na/items/water-pot.png"),
-	"phys": ICON_HEAVY, "magic": ICON_BOLT, "gold": ICON_COIN,
+		"phys": ICON_SAI, "magic": ICON_BOLT, "gold": ICON_COIN,
 	"xp": preload("res://assets/na/items/fortune-cookie.png"),
 	"heal_power": ICON_HEAL,
 	"knock": preload("res://assets/na/weapons/axe.png"),
@@ -172,6 +177,9 @@ func _ready() -> void:
 	EventBus.bounty_updated.connect(func(text: String) -> void: bounty_label.text = text)
 	# 任务行（世界 v5 地标 NPC 委托）：空串隐藏（无任务时不占行高）
 	EventBus.quest_updated.connect(_on_quest_updated)
+	# P1：任务行可点击放弃首个任务（读档注释遗留项；桌面/触屏同通道）
+	quest_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	quest_label.gui_input.connect(_on_quest_label_input)
 	EventBus.bounty_completed.connect(func(text: String) -> void: _toast(text))
 	EventBus.player_skills_changed.connect(_on_skills_changed)
 	EventBus.achievement_unlocked.connect(func(title: String) -> void: _toast("🏆 成就解锁：%s" % title))
@@ -199,6 +207,14 @@ func _ready() -> void:
 	GameState.stats.leveled_up.connect(func(new_level: int, _levels: int) -> void:
 		_toast("升级！Lv.%d   属性点 +1" % new_level)
 	)
+
+	# P2 面板底：暂停菜单换 NA 对话框九宫格（np_dialogue）——
+	# 覆盖 glass 主题底但保留其按钮样式
+	var pause_panel := get_node("Root/PauseLayer/PausePanel") as PanelContainer
+	var pause_bg := HotwTheme.nine_patch_bg("res://assets/na/ui/np_dialogue.png")
+	if pause_bg != null:
+		pause_panel.add_child(pause_bg)
+		pause_panel.move_child(pause_bg, 0)
 
 	toast_label.modulate.a = 0.0
 	_setup_combat_toast()
@@ -937,6 +953,19 @@ func _on_quest_updated(text: String) -> void:
 	quest_label.visible = text != ""
 
 
+## 任务行点击 → 放弃首个任务（QuestManager 单点处理并刷新 HUD 行）
+func _on_quest_label_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed \
+			and event.button_index == MOUSE_BUTTON_LEFT:
+		var qm := get_tree().get_first_node_in_group("quest_manager")
+		if qm == null:
+			return
+		var msg: String = qm.abandon_first()
+		if msg != "":
+			SfxManager.play("menu")
+			_toast(msg)
+
+
 func _on_day_phase(night: bool) -> void:
 	# 昼夜视觉（压暗/提灯）由 VisionLighting 按连续曲线驱动，这里只做播报
 	# （限前 2 个游戏日，见 DAY_TOAST_MAX 注释）
@@ -962,8 +991,8 @@ func _toggle_shop() -> void:
 
 func _refresh_shop() -> void:
 	shop_gold_label.text = "金币 %d" % GameState.gold
-	_refresh_shop_btn(shop_upgrade_btns[0], "weapon", "武器磨刀", "物理攻击", ICON_HEAVY)
-	_refresh_shop_btn(shop_upgrade_btns[1], "staff", "法杖赋能", "魔法攻击", ICON_BOLT)
+	_refresh_shop_btn(shop_upgrade_btns[0], "weapon", "武器磨刀", "物理攻击", ICON_KATANA)
+	_refresh_shop_btn(shop_upgrade_btns[1], "staff", "法杖赋能", "魔法攻击", ICON_FORK)
 	_refresh_shop_btn(shop_upgrade_btns[2], "vigor", "体质淬炼", "生命上限", ICON_HEART)
 	_refresh_supply()
 	_refresh_sellout()

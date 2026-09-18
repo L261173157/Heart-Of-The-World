@@ -26,12 +26,15 @@ const KIND_COLORS := {
 }
 ## 发现半径（表现层 Area2D 圆；走近即"发现"）
 const DISCOVER_RADIUS := 400.0
-## 地标 NPC（世界 v5）：特定类型地标常驻 NPC 发任务——靠近按攻击键交互。
-## quest 类型：hunt=狩猎 / ransack=捣巢 / explore=探索
+## 地标 NPC（世界 v5 + 玩法 v7 P1 扩容）：特定类型地标常驻 NPC 发任务——
+## 靠近按攻击键交互。quest 类型：hunt=狩猎 / ransack=捣巢 / explore=探索 /
+## collect=收集交付（P1）
 const NPC_BY_KIND := {
 	"石环": {"name": "营地猎人", "quest": "hunt"},
 	"荒废遗迹": {"name": "遗迹学者", "quest": "ransack"},
 	"精灵泉": {"name": "泉水守望者", "quest": "explore"},
+	"了望石塔": {"name": "瞭望者", "quest": "collect"},
+	"古树": {"name": "草药师", "quest": "collect"},
 }
 
 static var _cache: Array = []

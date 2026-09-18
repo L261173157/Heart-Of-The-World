@@ -728,6 +728,9 @@ func _die_by_player() -> void:
 		GameState.add_item(material, EconomyMath.drop_count(inst))
 	if inst.species.is_boss:
 		GameState.add_item(EconomyMath.boss_bonus_item(GameState.world_seed, inst.id), 1)
+	elif inst.is_elite and randf() < 0.15:
+		# P1 银钥匙：精英怪 15%（hill 城塞宝箱的钥匙来源；与装备掉落同款表现层 RNG）
+		GameState.add_item(EconomyMath.KEY_SILVER, 1)
 	# 装备掉落：Boss 必掉史诗，精英 40% 稀有，普通 8% 精良；评分更高自动替换，否则折金
 	var drop_rarity := -1
 	if inst.species.is_boss:

@@ -998,6 +998,37 @@ func _verify_items() -> void:
 	EventBus.item_use_requested.emit("onigiri")
 	_check(GameState.count_item("onigiri") == 1, "满血时 HP 类消耗品被拦截（库存不变）")
 	GameState.inventory.erase("onigiri")
+	# 5. collect 任务闭环（P1）：接单→交料→结算扣料+金钥匙；放弃任务
+	var qm := get_tree().get_first_node_in_group("quest_manager")
+	if qm == null:
+		_fail("QuestManager 未挂载（quest_manager 组）")
+		return
+	var off: Dictionary = qm.offer("lm_collect_test", "collect", "草药师")
+	if off["kind"] != "quest":
+		_fail("collect 委托未能生成（%s）" % str(off.get("text", "")))
+		return
+	var quest: Dictionary = off["quest"]
+	var item_id: String = quest["item"]
+	var stock := GameState.count_item(item_id)
+	var keys := GameState.count_item("gold-key")
+	qm.accept(quest)
+	GameState.add_item(item_id, int(quest["need"]))
+	_check(GameState.count_item("gold-key") == keys + 1, "collect 结算奖励金钥匙")
+	_check(GameState.count_item(item_id) == stock, "结算扣缴 %s ×%d（存量保留）" % [item_id, quest["need"]])
+	var gone := true
+	for aq: Dictionary in GameState.quests["active"]:
+		if aq["id"] == quest["id"]:
+			gone = false
+	_check(gone, "collect 任务完成后移出任务栏")
+	# 放弃（P1）：再造一单立即放弃
+	GameState.quests["completed"].erase("lm_collect_test")
+	var off2: Dictionary = qm.offer("lm_collect_test", "collect", "草药师")
+	if off2["kind"] == "quest":
+		qm.accept(off2["quest"])
+		var msg: String = qm.abandon_first()
+		_check(msg != "" and GameState.quests["active"].is_empty(), "任务行点击可放弃（%s）" % msg)
+	else:
+		_check(false, "第二单 collect 委托未生成（放弃用例跳过）")
 
 
 func _finish() -> void:

@@ -139,3 +139,23 @@ static func add_badge(btn: Control, text: String) -> Label:
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(badge)
 	return badge
+
+
+## NA 官方九宫格件作面板底（玩法 v7 P2）：4.7 无 StyleBoxTexture 边距 API，
+## 用 NinePatchRect 铺满面板覆盖原 stylebox（调用方 add_child 后 move_child(0)
+## 压到内容之下）。纹理 64×64 NEAREST 放大保像素、边距带 20（与对话气泡同款）
+static func nine_patch_bg(path: String) -> NinePatchRect:
+	var tex: Texture2D = load(path)
+	if tex == null:
+		return null
+	var img: Image = tex.get_image()
+	img.resize(64, 64, Image.INTERPOLATE_NEAREST)
+	var np := NinePatchRect.new()
+	np.texture = ImageTexture.create_from_image(img)
+	np.patch_margin_left = 20
+	np.patch_margin_top = 20
+	np.patch_margin_right = 20
+	np.patch_margin_bottom = 20
+	np.set_anchors_preset(Control.PRESET_FULL_RECT)
+	np.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return np

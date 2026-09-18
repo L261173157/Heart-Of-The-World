@@ -1,7 +1,8 @@
-## 任务系统 v1（世界 v5 地标 NPC 化）：三种任务——狩猎（击杀 N 只某物种）、
-## 捣巢（捣毁 N 个巢穴）、探索（发现 N 个地标）。任务由地标 NPC 发放
-## （石环=营地猎人/荒废遗迹=遗迹学者/精灵泉=泉水守望者），靠近按攻击键接取；
-## 达成自动结算（金币+经验，公式与赏金同源 EconomyMath）。
+## 任务系统 v2（世界 v5 地标 NPC 化 + 玩法 v7 P1）：四种任务——狩猎（击杀 N 只
+## 某物种）、捣巢（捣毁 N 个巢穴）、探索（发现 N 个地标）、收集（向 NPC 交付
+## N 个材料，悬赏按市价双倍溢价）。任务由地标 NPC 发放（石环=营地猎人/
+## 荒废遗迹=遗迹学者/精灵泉=泉水守望者/了望石塔=瞭望者/古树=草药师），
+## 靠近按攻击键接取；达成自动结算（金币+经验+物品奖励，公式与赏金同源）。
 ## 数据真源在 GameState.quests（存档 v5 持久化），本节点只做逻辑与信号——
 ## 进度全部订阅 EventBus，只读世界状态不改写。接取内容按（地标 id × 该 NPC
 ## 已完成数）确定性生成：读档后同一 NPC 的下一单不漂移。
@@ -15,9 +16,13 @@ const _GameWorld := preload("res://scripts/main/game_world.gd")
 
 
 func _ready() -> void:
+	# HUD 任务行点击放弃时经组名定位（跨模块不互相持有引用，铁律 3）
+	add_to_group("quest_manager")
 	EventBus.monster_killed_by_player.connect(_on_kill)
 	EventBus.nest_ransacked.connect(_on_ransack)
 	EventBus.landmark_discovered.connect(_on_discover)
+	# collect（P1）：进度 = 当前持有数（接单前的存量同样计入）
+	EventBus.item_gained.connect(_on_item_gained)
 	# 对话气泡按"是"接单（HUD 发出，气泡自己关闭）
 	EventBus.dialogue_confirmed.connect(func(quest: Dictionary) -> void:
 		var text: String = accept(quest)
@@ -51,7 +56,11 @@ func accept(quest: Dictionary) -> String:
 		if q["id"] == quest.get("id", ""):
 			return "%s：任务进行中——%s" % [quest.get("giver", ""), q["title"]]
 	data["active"].append(quest)
-	GameState._queue_save()
+	# collect 边界：接单时背包存量已达标 → 立即结算（悬赏是收购要约，货够即成）
+	if int(quest.get("progress", 0)) >= int(quest.get("need", 1)):
+		_complete(quest)
+	else:
+		GameState._queue_save()
 	_push_hud()
 	return "接取委托——%s" % quest["title"]
 
@@ -88,10 +97,25 @@ func _gen_quest(landmark_id: String, quest_kind: String, giver: String) -> Dicti
 	elif quest_kind == "ransack":
 		quest["need"] = 1 + rng.randi() % 2
 		quest["title"] = "捣毁巢穴 ×%d" % quest["need"]
+	elif quest_kind == "collect":
+		# 材料池避开被动动物来源（EconomyMath.COLLECT_POOL 注释）；
+		# 高价池在 NPC 已完成 ≥3 单后加入（与推进深度对齐）
+		var pool: Array = EconomyMath.COLLECT_POOL.duplicate()
+		if count >= 3:
+			pool.append_array(EconomyMath.COLLECT_POOL_RARE)
+		var item: String = pool[rng.randi() % pool.size()]
+		quest["item"] = item
+		quest["need"] = 3 + rng.randi() % 3
+		quest["title"] = "收集：%s ×%d" % [ItemCatalog.name_of(item), quest["need"]]
+		quest["progress"] = mini(GameState.count_item(item), quest["need"])
 	else:
 		quest["need"] = 2 + rng.randi() % 2
 		quest["title"] = "探索：发现新地标 ×%d" % quest["need"]
 	quest["gold"] = EconomyMath.bounty_gold(quest["need"] + 2, GameState.stats.level)
+	if quest_kind == "collect":
+		# 收集悬赏 = 赏金 + 材料市价双倍溢价（低于市价玩家宁可卖掉）
+		quest["gold"] += roundi(EconomyMath.item_sell_price(quest["item"]) \
+				* quest["need"] * EconomyMath.COLLECT_PREMIUM)
 	quest["xp"] = EconomyMath.bounty_xp(quest["need"] + 2)
 	return quest
 
@@ -127,6 +151,36 @@ func _on_discover(_id: String, _patch: String, _kind: String, _pos: Vector2) -> 
 	_progress_match(func(q: Dictionary) -> bool: return q["kind"] == "explore")
 
 
+## collect 进度 = 当前持有数（接单前存量也计入；卖掉材料会回退进度）
+func _on_item_gained(item_id: String, _count: int, _total: int) -> void:
+	var data: Dictionary = GameState.quests
+	var changed := false
+	for q: Dictionary in data["active"].duplicate():
+		if q["kind"] != "collect" or q.get("item", "") != item_id:
+			continue
+		var have := mini(GameState.count_item(item_id), int(q["need"]))
+		if have != int(q["progress"]):
+			q["progress"] = have
+			changed = true
+		if int(q["progress"]) >= int(q["need"]):
+			_complete(q)
+	_push_hud()
+	if changed:
+		GameState._queue_save()
+
+
+## 放弃任务（HUD 任务行点击触发；读档注释的"任务栏可手动放弃"遗留项落地）
+func abandon_first() -> String:
+	var data: Dictionary = GameState.quests
+	if data["active"].is_empty():
+		return ""
+	var q: Dictionary = data["active"][0]
+	data["active"].erase(q)
+	GameState._queue_save()
+	_push_hud()
+	return "已放弃：%s" % q["title"]
+
+
 func _progress_match(predicate: Callable) -> void:
 	var data: Dictionary = GameState.quests
 	var changed := false
@@ -147,16 +201,31 @@ func _complete(quest: Dictionary) -> void:
 	data["active"].erase(quest)
 	data["completed"][quest["landmark_id"]] = \
 			int(data["completed"].get(quest["landmark_id"], 0)) + 1
+	# collect 结算先扣材料（存量可能正好=need；卖掉后进度回退不会再进这里）
+	if quest["kind"] == "collect" and not GameState.remove_item(quest["item"], int(quest["need"])):
+		return  # 库存意外不足（跨存档边角）：不结算不销单，等材料再攒
 	GameState.add_gold(quest["gold"])
 	GameState.add_xp(quest["xp"])
+	# 物品奖励（P1）：collect 固定附金钥匙（lava 城塞的钥匙闭环）；其余任务
+	# 按 hash(单号) 确定性 30% 附一件随机补给（无 RNG——同单任何端结果一致）
+	var bonus := ""
+	if quest["kind"] == "collect":
+		bonus = EconomyMath.KEY_GOLD
+	elif hash("quest-bonus|%s" % quest["id"]) % 10 < 3:
+		var pool: Array = EconomyMath.BOSS_BONUS_POOL
+		bonus = pool[hash("quest-bonus2|%s" % quest["id"]) % pool.size()]
+	var bonus_text := ""
+	if bonus != "":
+		GameState.add_item(bonus, 1)
+		bonus_text = " +%s" % ItemCatalog.name_of(bonus)
 	# 结算金闪（美术 v5 fx 全量）：在玩家位置炸开
 	var player := get_tree().get_first_node_in_group("player") as Node2D
 	if player != null:
 		EventBus.fx_requested.emit("flash_yellow", player.global_position, 1.3)
 	SfxManager.play("quest")
 	SfxManager.play("gold3")
-	EventBus.quest_completed.emit("✅ %s 完成（+%d 金币 +%d 经验）" % [
-		quest["title"], quest["gold"], quest["xp"]])
+	EventBus.quest_completed.emit("✅ %s 完成（+%d 金币 +%d 经验%s）" % [
+		quest["title"], quest["gold"], quest["xp"], bonus_text])
 
 
 ## HUD 任务行：首个进行中的任务（多任务时显示计数）

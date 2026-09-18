@@ -347,6 +347,9 @@ func _setup_camp() -> void:
 	_add_structure("house_red", spawn + Vector2(-310, -60), Vector2(140, 44))
 	_add_structure("house_brown", spawn + Vector2(215, -185), Vector2(140, 44))
 	_add_structure("torii", spawn + Vector2(-4, -235), Vector2(120, 36), true)
+	# P2 闲置件补位：灰屋（营地东侧民居）+ 道场招牌（鸟居旁，练武去处的暗示）
+	_add_structure("house_grey", spawn + Vector2(430, -70), Vector2(140, 44))
+	_add_structure("sign_dojo", spawn + Vector2(-118, -212), Vector2(40, 12), true)
 	# 行商：对话气泡确认后开商店（HUD 侧 kind=="shop" 分支）
 	var merchant := LandmarkNPC.new()
 	merchant.position = spawn + Vector2(96, 24)
@@ -566,6 +569,7 @@ func _update_dungeons() -> void:
 			var chest := DungeonChest.new()
 			chest.position = center + Vector2(0, -110)
 			chest.boss_name = boss_name
+			chest.key_id = EconomyMath.DUNGEON_KEYS.get(dg["terrain"], "")
 			_landmark_root.add_child(chest)
 			_chests[patch_id] = chest
 		elif not near and _chests.has(patch_id):
@@ -641,27 +645,43 @@ class FxLayer extends Node2D:
 		fx.animation_finished.connect(fx.queue_free)
 
 
-## 城塞宝箱：Boss 被讨伐期间（重生倒计时进行中）可开——金币奖励走
-## EconomyMath 与赏金同源；加入 npcs 组复用玩家的最近交互路由（攻击键开箱）
+## 城塞宝箱（v7 P1 钥匙模式）：Boss 被讨伐期间（重生倒计时进行中）解封，
+## 还需对应钥匙——银钥匙开 hill 城塞（精英怪掉落）、金钥匙开 lava 城塞
+## （collect 任务奖励）；开箱 = 金币 + 双件物品（hash 确定性抽取）。
+## 加入 npcs 组复用玩家的最近交互路由（攻击键开箱）
 class DungeonChest extends Node2D:
-	const CHEST_TEX := preload("res://assets/na/structures/chest.png")
+	## 大宝箱（NA items 图标 16px ×3）；箱顶悬浮所需钥匙图标提示
+	const CHEST_TEX := preload("res://assets/na/items/big-treasure-chest.png")
 	var boss_name := ""
+	var key_id := ""
 	var locked := true
 	var taken := false
 	var _sprite: Sprite2D
+	var _key_hint: Sprite2D
 
 	func _ready() -> void:
 		add_to_group("npcs")
 		add_to_group("chests")
 		_sprite = Sprite2D.new()
 		_sprite.texture = CHEST_TEX
-		_sprite.scale = Vector2(1.2, 1.2)
+		_sprite.scale = Vector2(3.0, 3.0)
 		add_child(_sprite)
+		if key_id != "":
+			_key_hint = Sprite2D.new()
+			_key_hint.texture = ItemCatalog.icon_of(key_id)
+			_key_hint.scale = Vector2(2.0, 2.0)
+			_key_hint.position = Vector2(0, -34)
+			add_child(_key_hint)
 
 	func _process(_delta: float) -> void:
 		visible = not taken
-		# 锁定时微暗提示"开不了"
+		# 锁定时微暗提示"开不了"；解封且需钥匙时，箱顶钥匙图标随缺口闪示
 		_sprite.modulate = Color(1, 1, 1, 0.75) if locked else Color(1, 1, 1, 1)
+		if _key_hint != null:
+			var need_key: bool = not locked and not taken \
+					and GameState.count_item(key_id) <= 0
+			_key_hint.visible = need_key
+			_key_hint.modulate = Color(1, 0.85, 0.5, 0.7 + 0.3 * sin(Time.get_ticks_msec() * 0.004))
 
 	func interact() -> void:
 		if taken:
@@ -669,12 +689,26 @@ class DungeonChest extends Node2D:
 		if locked:
 			EventBus.hint_requested.emit("🔒 宝箱被城主的力量封印着——讨伐%s再说" % boss_name)
 			return
+		if key_id != "" and not GameState.remove_item(key_id, 1):
+			EventBus.hint_requested.emit("🗝 需要%s才能打开（%s）" % [
+				ItemCatalog.name_of(key_id),
+				"完成收集委托获得" if key_id == EconomyMath.KEY_GOLD else "击败精英怪有几率掉落"])
+			return
 		taken = true
 		var gold: int = EconomyMath.bounty_gold(8, GameState.stats.level)
 		GameState.add_gold(gold)
+		# 双件物品奖励（hash 确定性，无 RNG）：补给 1 件 + 稀有材料 1 件
+		var h: int = hash("chest|%s|%d" % [key_id, GameState.stats.level])
+		var supply: Array = EconomyMath.BOSS_BONUS_POOL
+		var rares: Array = EconomyMath.COLLECT_POOL_RARE
+		var item1: String = supply[absi(h) % supply.size()]
+		var item2: String = rares[absi(h >> 8) % rares.size()]
+		GameState.add_item(item1, 1)
+		GameState.add_item(item2, 1)
 		SfxManager.play("secret")
 		SfxManager.play("gold2")
-		EventBus.hint_requested.emit("📦 城塞宝箱 +%d 金币" % gold)
+		EventBus.hint_requested.emit("📦 城塞宝箱 +%d 金币 +%s +%s" % [
+			gold, ItemCatalog.name_of(item1), ItemCatalog.name_of(item2)])
 		# 开箱光柱 + 爆散（美术 v5 fx 全量）
 		EventBus.fx_requested.emit("pillar", position, 2.0)
 		EventBus.fx_requested.emit("flash_gold", position, 1.4)
@@ -779,6 +813,7 @@ func _update_landmark_markers() -> void:
 			marker.discovered = GameState.discovered_landmarks.has(id)
 			marker.z_index = -1
 			_landmark_root.add_child(marker)
+			_attach_landmark_deco(marker, lm["kind"])
 			_landmark_markers[id] = marker
 		elif not near and _landmark_markers.has(id):
 			(_landmark_markers[id] as Node).queue_free()
@@ -801,6 +836,42 @@ func _update_landmark_markers() -> void:
 		elif not near and _npc_nodes.has(id):
 			(_npc_nodes[id] as Node).queue_free()
 			_npc_nodes.erase(id)
+
+
+## 地标动画装饰（玩法 v7 P2）：随标记流式同进出——精灵泉挂瀑布三段纵排
+## （NA Animated waterfall 条带，水从泉眼流出）、古树挂草叶摇摆 ×2；
+## 其余地标保持原有圆环/精灵不抢戏
+func _attach_landmark_deco(marker: Node2D, kind: String) -> void:
+	# 偏移是相对地标的局部坐标（装饰作为 marker 子节点随其流式同进出）
+	if kind == "精灵泉":
+		var wf := [
+			["deco_waterfall_start", Vector2(-44, -30)],
+			["deco_waterfall_middle", Vector2(-44, 2)],
+			["deco_waterfall_end", Vector2(-44, 34)],
+		]
+		for pair in wf:
+			marker.add_child(_make_animated_prop(
+				"res://assets/creatures/frames/%s/%s_frames.tres" % [pair[0], pair[0]],
+				pair[1], 2.0))
+	elif kind == "古树":
+		for offset in [Vector2(-40, 6), Vector2(40, -4)]:
+			marker.add_child(_make_animated_prop(
+				"res://assets/creatures/frames/deco_plant/deco_plant_frames.tres",
+				offset, 2.0))
+
+
+## 动画挂件（地标装饰版：相对地标的局部坐标，随标记同生命周期）
+func _make_animated_prop(frames_path: String, pos: Vector2, scale := 2.0) -> Node2D:
+	var node := Node2D.new()
+	node.position = pos
+	var sp := AnimatedSprite2D.new()
+	sp.sprite_frames = load(frames_path)
+	sp.scale = Vector2(scale, scale)
+	var frames: SpriteFrames = sp.sprite_frames
+	if frames != null and frames.get_animation_names().size() > 0:
+		sp.play(frames.get_animation_names()[0])
+	node.add_child(sp)
+	return node
 
 
 ## 战争迷雾揭示：玩家所在 3×3 格入档（跨格才动笔，版本号通知小地图重建）
@@ -851,15 +922,19 @@ class LandmarkMarker extends Node2D:
 ## 交互 = 玩家贴近按攻击键（player 侧查询 npcs 组）→ 结构化委托经
 ## EventBus.npc_dialogue 由 HUD 对话气泡呈现（是/否接取）
 class LandmarkNPC extends Node2D:
-	## 地标类型 → NA 角色帧（characters 表 8=猎人 4=老者 7=巫女 6=行商，视觉盘点定）
+	## 地标类型 → NA 角色帧（characters 表 8=猎人 4=老者 7=巫女 6=行商；
+	## P1 扩容 13=瞭望者 9=草药师，视觉盘点定）
 	const FRAMES := {
 		"石环": preload("res://assets/creatures/frames/npc_hunter/npc_hunter_frames.tres"),
 		"荒废遗迹": preload("res://assets/creatures/frames/npc_scholar/npc_scholar_frames.tres"),
 		"精灵泉": preload("res://assets/creatures/frames/npc_keeper/npc_keeper_frames.tres"),
 		"merchant": preload("res://assets/creatures/frames/npc_merchant/npc_merchant_frames.tres"),
+		"了望石塔": preload("res://assets/creatures/frames/npc_watchman/npc_watchman_frames.tres"),
+		"古树": preload("res://assets/creatures/frames/npc_herbalist/npc_herbalist_frames.tres"),
 	}
 	## 立绘编号（faceset 同源表号；0 = 无立绘兜底）
-	const FACESETS := {"石环": 101, "荒废遗迹": 102, "精灵泉": 103, "merchant": 104}
+	const FACESETS := {"石环": 101, "荒废遗迹": 102, "精灵泉": 103, "merchant": 104,
+		"了望石塔": 13, "古树": 9}
 	var landmark_id := ""
 	var giver := ""
 	var quest_kind := ""

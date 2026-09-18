@@ -23,6 +23,14 @@ var _species_total := -1
 
 func _ready() -> void:
 	_apply_style()
+	# P2 面板底：冒险档案面板换 NA 档案卷轴九宫格（np_archive），
+	# 覆盖 glass 主题底但保留按钮样式（与暂停面板 np_dialogue 同款手法）。
+	# ArchivePanel 无唯一名登记，走路径定位
+	var archive_panel := get_node("ArchiveLayer/ArchivePanel") as PanelContainer
+	var archive_bg := HotwTheme.nine_patch_bg("res://assets/na/ui/np_archive.png")
+	if archive_panel != null and archive_bg != null:
+		archive_panel.add_child(archive_bg)
+		archive_panel.move_child(archive_bg, 0)
 	# iOS 刘海/圆角：菜单根整体收进安全区。Bg 随之缩进后，边带露出的是
 	# project.godot 的 default_clear_color（已设为同色），视觉无缝
 	SafeAreaRoot.apply_to(self)

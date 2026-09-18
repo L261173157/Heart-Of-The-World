@@ -149,3 +149,20 @@ generate_creatures/slice_spritesheets_v2/build_ai_strips/generate_world_map）�
   （投射物图标候选）、calamari/empty-pot/milk-pot/noodle/sushi-2/tea-leaf 之外
   的食物变体（yakitori/honey/fish 已用或候补）——按"宁缺毋滥"口径不强行上。
 - **HUD 侧零新增素材**：快捷槽/物品栏钮全部复用 HotwTheme 样式 + 已有图标。
+
+## 14. 玩法 v7 P1/P2 取用与素材终账（2026-09-18 晚）
+
+- **P1 新增**：金/银钥匙图标（城塞宝箱双钥门）+ big-treasure-chest（宝箱箱体
+  换大件）；characters/13=瞭望者、characters/9=草药师 入 sheets
+  （na_ch_watchman/na_ch_herbalist）+ faceset 13/9 立绘接入。
+- **P2 新增**：瀑布三段（waterfall-start/middle/end 条带，精灵泉挂件）+
+  plant 草叶（古树挂件）；structures house_grey/sign_dojo 营地摆放；
+  weapons katana/fork/sai（商店武器/法杖 + 被动蛮力图标）；ui np_archive/
+  np_dialogue（档案/暂停面板九宫格底）。
+- **明示退役留档**：fx/3（小型闪光，与 flash 系重叠）、fx/4（散射粉尘，与
+  smoke/burst 重叠）——功能重叠无独占玩法位；weapons lance/bow（无语义位）、
+  flower（20×8 不合 16px 切帧网格）；预留音乐 12 首情绪验证需人耳，留库待拍板。
+- **终账（v7 三批后库内剩余零引用）**：items 约 20（食物变体/奖杯/杯壶/
+  投射物图标）、characters 全身表约 16 + faceset 约 21、bg 余件（watermill_b/
+  桨叶源/gif 源）、sounds 编号件 1~19 与备用件、musics 12、fx 2（3/4 退役）。
+  口径维持"该用的用尽、用不上的明示退役留档"。
