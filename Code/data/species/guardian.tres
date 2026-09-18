@@ -7,6 +7,7 @@
 script = ExtResource("1_st3n2")
 frames_override = ExtResource("2_frames")
 species_name = "石像鬼"
+visual_scale = 0.93
 tint = Color(0.5, 0.5, 0.55, 1)
 ai_archetype = "guardian"
 habitats = Array[String](["lava"])

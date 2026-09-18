@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_mdk")
 species_name = "曼德拉草"
+visual_scale = 0.91
 frames_override = ExtResource("2_frames")
 ai_archetype = "ranged"
 habitats = Array[String](["forest"])

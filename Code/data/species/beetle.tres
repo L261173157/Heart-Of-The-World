@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_1p8w4")
 species_name = "甲虫"
+visual_scale = 0.86
 tint = Color(0.5, 0.55, 0.72, 1)
 frames_override = ExtResource("2_frames")
 ai_archetype = "soldier"

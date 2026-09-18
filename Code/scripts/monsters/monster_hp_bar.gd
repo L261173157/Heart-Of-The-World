@@ -20,9 +20,10 @@ func _ready() -> void:
 
 ## 宿主受击/死亡/重置时调用；幂等
 func notify_change() -> void:
-	# 体型越大血条抬得越高（Boss 2.2× 的血条不再插在身体里）
+	# 体型越大血条抬得越高（Boss 2.2× 的血条不再插在身体里；非 Boss 随
+	# 物种档位/分裂子代同缩，血条不悬浮在小体型个体头顶半空）
 	if _monster != null and _monster.inst != null:
-		position.y = OFFSET_Y * clampf(_monster.inst.size_scale, 0.45, 2.6)
+		position.y = OFFSET_Y * clampf(_monster.body_k(), 0.45, 2.6)
 	queue_redraw()
 
 

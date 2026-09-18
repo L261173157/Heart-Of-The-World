@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_mrrl7")
 species_name = "野猪"
+visual_scale = 1.08
 tint = Color(0.72, 0.45, 0.2, 1)
 frames_override = ExtResource("2_frames")
 ai_archetype = "charger"

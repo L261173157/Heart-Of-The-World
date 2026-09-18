@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_eye")
 species_name = "眼魔"
+visual_scale = 0.91
 tint = Color(0.8, 0.5, 0.9, 1)
 frames_override = ExtResource("2_frames")
 ai_archetype = "ranged"

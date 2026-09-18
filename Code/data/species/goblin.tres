@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_hvab1")
 species_name = "妖鬼"
+visual_scale = 0.94
 frames_override = ExtResource("2_frames")
 habitats = Array[String](["plains", "forest"])
 expansion_threshold = 8

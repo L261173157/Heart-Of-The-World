@@ -11,7 +11,7 @@ func _process(delta: float) -> void:
 	if state == S_CORPSE or visual == null or inst == null:
 		return
 	_wobble += delta * 5.0
-	var base := sprite_base_scale * maxf(0.45, inst.size_scale)
+	var base := _visual_base()
 	# 果冻脉动：横向膨胀时纵向压缩，体积观感守恒；
 	# 写入带脏检查（阈值内跳过）——分裂子代成群时每帧×N 的 scale 写入
 	# 会连坐 Node2D transform 脏标记向父链传播，量级可观

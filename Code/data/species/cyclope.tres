@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_cyc")
 species_name = "独眼巨人"
+visual_scale = 1.11
 tint = Color(0.75, 0.6, 0.5, 1)
 frames_override = ExtResource("2_frames")
 ai_archetype = "soldier"

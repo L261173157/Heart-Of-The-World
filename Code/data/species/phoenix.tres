@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_pho")
 species_name = "火鸟"
+visual_scale = 1.18
 frames_override = ExtResource("2_frames")
 ai_archetype = "ranged"
 habitats = Array[String](["lava"])

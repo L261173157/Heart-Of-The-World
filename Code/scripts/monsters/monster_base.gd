@@ -144,10 +144,24 @@ func setup(p_inst: MonsterInstance) -> void:
 		modulate = _base_modulate
 	_apply_size_visual()
 	# 阴影随体型缩放（含场景基础缩放，与脚点 y 同源——否则石魔像/Boss
-	# "大怪踩小影"，阴影与体型读数对不上）
+	# "大怪踩小影"，阴影与体型读数对不上）；占地系数走 body_k()
+	var body := body_k()
 	if _shadow != null:
-		_shadow.shadow_scale = Vector2.ONE * sprite_base_scale.x * maxf(0.45, inst.size_scale)
-		_shadow.position.y = 9.0 * sprite_base_scale.y * maxf(0.45, inst.size_scale)
+		_shadow.shadow_scale = Vector2.ONE * sprite_base_scale.x * body
+		_shadow.position.y = 9.0 * sprite_base_scale.y * body
+	# 碰撞体随体型缩放（duplicate 防共享 shape 资源被同场景多物种互相污染）：
+	# 小型档更好绕开、大型档更好命中——命中判定与视觉占地一致
+	var cs := $CollisionShape2D as CollisionShape2D
+	if cs != null and cs.shape != null and not is_equal_approx(body, 1.0):
+		var scaled := cs.shape.duplicate()
+		if scaled is CircleShape2D:
+			(scaled as CircleShape2D).radius *= body
+		elif scaled is RectangleShape2D:
+			(scaled as RectangleShape2D).size *= body
+		else:
+			scaled = null  # 其余形状类型暂无场景使用，出现时按需补
+		if scaled != null:
+			cs.shape = scaled
 	# 种族帧覆盖（冰晶史莱姆共用红史莱姆场景但换蓝色帧）：换帧会停播，重开 idle
 	if inst.species.frames_override != null:
 		visual.sprite_frames = inst.species.frames_override
@@ -250,8 +264,22 @@ func _get_player() -> Node2D:
 
 ## 体型表现（分裂子代缩小）；子类可扩展（如红史莱姆的果冻脉动在此基础上叠加）
 func _apply_size_visual() -> void:
-	# visual_scale：物种级画幅补偿（完整包 Boss 48-50px 条带 ×0.33 对齐 16px 基准）
-	visual.scale = sprite_base_scale * maxf(0.45, inst.size_scale) * inst.species.visual_scale
+	visual.scale = _visual_base()
+
+
+## visual.scale 的稳态基准（果冻脉动/squash 回弹目标同源）：
+## 场景画幅 × 个体体型 × 物种 visual_scale（Boss=画幅补偿对齐 16px 基准；
+## 非 Boss=iOS 横屏重设计的体型档位：小型 0.7 / 标准 1.0 / 大型 1.3 / 守卫 1.7）
+func _visual_base() -> Vector2:
+	return sprite_base_scale * maxf(0.45, inst.size_scale) * inst.species.visual_scale
+
+
+## 碰撞/阴影/血条抬升的占地系数：非 Boss 含物种档位（占地随视觉缩放）；
+## Boss 只含 size_scale——其 visual_scale 是画幅补偿，不改变世界占地
+func body_k() -> float:
+	if inst.species.is_boss:
+		return maxf(0.45, inst.size_scale)
+	return maxf(0.45, inst.size_scale) * inst.species.visual_scale
 
 
 func _physics_process(delta: float) -> void:
@@ -413,7 +441,7 @@ func _update_anim() -> void:
 func _squash(amount: Vector2, dur := 0.16) -> void:
 	if visual == null:
 		return
-	var base := sprite_base_scale * maxf(0.45, inst.size_scale)
+	var base := _visual_base()
 	if _squash_tween != null and _squash_tween.is_valid():
 		_squash_tween.kill()
 	_squash_tween = visual.create_tween()

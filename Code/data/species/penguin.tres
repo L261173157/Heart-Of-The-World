@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_png")
 species_name = "企鹅"
+visual_scale = 0.83
 frames_override = ExtResource("2_frames")
 ai_archetype = "charger"
 habitats = Array[String](["snow"])

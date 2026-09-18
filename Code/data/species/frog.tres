@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_frg")
 species_name = "绿蛙"
+visual_scale = 0.66
 frames_override = ExtResource("2_frames")
 ai_archetype = "melee_swarm"
 habitats = Array[String](["forest"])
