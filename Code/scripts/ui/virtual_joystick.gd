@@ -8,9 +8,11 @@
 class_name TouchJoystick
 extends Control
 
-const BASE_RADIUS := 56.0
-const KNOB_RADIUS := 24.0
-const MAX_STICK := 44.0
+## iOS 横屏画布（720 高 ≈390pt）上拇指可及的尺寸：底盘直径 128px ≈70pt，
+## 手柄与行程随动；桌面上同比例略大，可接受
+const BASE_RADIUS := 64.0
+const KNOB_RADIUS := 28.0
+const MAX_STICK := 50.0
 ## 激活阈值：超过该推动量摇杆才生效（防误触）
 const DEAD_ZONE := 0.15
 ## 释放阈值低于激活阈值形成滞回：推动量在临界附近抖动时

@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://scenes/ui/settings_panel.gd" id="1_settings"]
 
 [node name="SettingsPanel" type="PanelContainer"]
-custom_minimum_size = Vector2(420, 0)
+custom_minimum_size = Vector2(480, 0)
 script = ExtResource("1_settings")
 
 [node name="Margin" type="MarginContainer" parent="."]
@@ -17,7 +17,7 @@ theme_override_constants/separation = 12
 
 [node name="Title" type="Label" parent="Margin/VB"]
 theme_override_colors/font_color = Color(1, 0.9, 0.6, 1)
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 22
 text = "设置"
 horizontal_alignment = 1
 
@@ -25,11 +25,12 @@ horizontal_alignment = 1
 
 [node name="Label" type="Label" parent="Margin/VB/VolumeRow"]
 custom_minimum_size = Vector2(120, 0)
+theme_override_font_sizes/font_size = 18
 text = "总音量"
 
 [node name="VolumeSlider" type="HSlider" parent="Margin/VB/VolumeRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 44)
+custom_minimum_size = Vector2(0, 56)
 size_flags_horizontal = 3
 max_value = 1.0
 step = 0.05
@@ -38,11 +39,12 @@ step = 0.05
 
 [node name="Label" type="Label" parent="Margin/VB/MusicRow"]
 custom_minimum_size = Vector2(120, 0)
+theme_override_font_sizes/font_size = 18
 text = "音乐"
 
 [node name="MusicSlider" type="HSlider" parent="Margin/VB/MusicRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 44)
+custom_minimum_size = Vector2(0, 56)
 size_flags_horizontal = 3
 max_value = 1.0
 step = 0.05
@@ -51,11 +53,12 @@ step = 0.05
 
 [node name="Label" type="Label" parent="Margin/VB/SfxRow"]
 custom_minimum_size = Vector2(120, 0)
+theme_override_font_sizes/font_size = 18
 text = "音效"
 
 [node name="SfxSlider" type="HSlider" parent="Margin/VB/SfxRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 44)
+custom_minimum_size = Vector2(0, 56)
 size_flags_horizontal = 3
 max_value = 1.0
 step = 0.05
@@ -64,6 +67,7 @@ step = 0.05
 
 [node name="Label" type="Label" parent="Margin/VB/ShakeRow"]
 custom_minimum_size = Vector2(120, 0)
+theme_override_font_sizes/font_size = 18
 text = "镜头震动"
 
 [node name="ShakeCheck" type="CheckButton" parent="Margin/VB/ShakeRow"]
@@ -73,6 +77,7 @@ unique_name_in_owner = true
 
 [node name="Label" type="Label" parent="Margin/VB/DmgRow"]
 custom_minimum_size = Vector2(120, 0)
+theme_override_font_sizes/font_size = 18
 text = "伤害数字"
 
 [node name="DmgNumCheck" type="CheckButton" parent="Margin/VB/DmgRow"]
@@ -82,6 +87,7 @@ unique_name_in_owner = true
 
 [node name="Label" type="Label" parent="Margin/VB/AimRow"]
 custom_minimum_size = Vector2(120, 0)
+theme_override_font_sizes/font_size = 18
 text = "自动瞄准"
 
 [node name="AutoAimCheck" type="CheckButton" parent="Margin/VB/AimRow"]
@@ -91,9 +97,11 @@ unique_name_in_owner = true
 
 [node name="Label" type="Label" parent="Margin/VB/SkinRow"]
 custom_minimum_size = Vector2(120, 0)
+theme_override_font_sizes/font_size = 18
 text = "忍者外观"
 
 [node name="SkinBtn" type="Button" parent="Margin/VB/SkinRow"]
 unique_name_in_owner = true
 size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
 text = "蓝忍"

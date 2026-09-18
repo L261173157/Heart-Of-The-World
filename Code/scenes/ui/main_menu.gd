@@ -23,6 +23,10 @@ var _species_total := -1
 
 func _ready() -> void:
 	_apply_style()
+	# iOS 刘海/圆角：菜单根整体收进安全区。Bg 随之缩进后，边带露出的是
+	# project.godot 的 default_clear_color（已设为同色），视觉无缝
+	SafeAreaRoot.apply_to(self)
+	get_viewport().size_changed.connect(func() -> void: SafeAreaRoot.apply_to(self))
 	# 主菜单 BGM（进世界后由区域检测换成区域曲）
 	SfxManager.play_music("menu")
 	# 复位触屏输入残留：按住摇杆时退出世界（节点释放收不到 release 事件），
@@ -63,7 +67,10 @@ func _apply_style() -> void:
 		btn.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		# 图标与文字之间留出呼吸位（展开图标默认贴文字）
 		btn.add_theme_constant_override("h_separation", 14)
-	%StartBtn.add_theme_font_size_override("font_size", 20)
+	%StartBtn.add_theme_font_size_override("font_size", 22)
+	# 档案面板网格标签（真源在 tscn 无字号覆写）：iOS 上默认 16 号≈8.7pt 不可读
+	for grid_label: Label in %InfoGrid.get_children():
+		grid_label.add_theme_font_size_override("font_size", 18)
 	var strip := HBoxContainer.new()
 	strip.name = "TerrainStrip"
 	strip.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)

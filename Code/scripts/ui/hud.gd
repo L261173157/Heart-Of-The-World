@@ -181,7 +181,6 @@ func _ready() -> void:
 	_apply_theme()
 	_setup_icon_buttons()
 	_setup_stats_row()
-	_apply_safe_area()
 	_apply_vignette()
 	# 初值用真源实值：读档进世界（如 Lv.7 带 3 待分配点）时 HUD 不再闪显 Lv.1 空经验条
 	_on_progress_changed(GameState.stats.level, GameState.stats.xp,
@@ -197,10 +196,10 @@ func _setup_combat_toast() -> void:
 	_combat_toast.anchor_right = toast_label.anchor_right
 	_combat_toast.offset_left = toast_label.offset_left
 	_combat_toast.offset_right = toast_label.offset_right
-	_combat_toast.offset_top = toast_label.offset_top + 34.0
-	_combat_toast.offset_bottom = toast_label.offset_bottom + 34.0
+	_combat_toast.offset_top = toast_label.offset_top + 52.0
+	_combat_toast.offset_bottom = toast_label.offset_bottom + 52.0
 	_combat_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_combat_toast.add_theme_font_size_override("font_size", 16)
+	_combat_toast.add_theme_font_size_override("font_size", 20)
 	_combat_toast.add_theme_color_override("font_color", Color(1, 0.95, 0.8, 0.9))
 	_combat_toast.modulate.a = 0.0
 	toast_label.get_parent().add_child(_combat_toast)
@@ -254,8 +253,8 @@ func _setup_dialogue_bubble() -> void:
 	_dialogue_panel = Control.new()
 	_dialogue_panel.name = "DialogueBubble"
 	_dialogue_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_dialogue_panel.position = Vector2(-330, -190)
-	_dialogue_panel.size = Vector2(660, 150)
+	_dialogue_panel.position = Vector2(-330, -216)
+	_dialogue_panel.size = Vector2(660, 176)
 	_dialogue_panel.visible = false
 	_dialogue_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_dialogue_panel)
@@ -276,31 +275,31 @@ func _setup_dialogue_bubble() -> void:
 
 	var box := TextureRect.new()
 	box.texture = preload("res://assets/na/hud/faceset-box.png")
-	box.position = Vector2(18, 33)
-	box.size = Vector2(84, 84)
+	box.position = Vector2(20, 40)
+	box.size = Vector2(96, 96)
 	box.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	box.stretch_mode = TextureRect.STRETCH_SCALE
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dialogue_panel.add_child(box)
 	_dialogue_faceset = TextureRect.new()
-	_dialogue_faceset.position = Vector2(27, 42)
-	_dialogue_faceset.size = Vector2(66, 66)
+	_dialogue_faceset.position = Vector2(32, 52)
+	_dialogue_faceset.size = Vector2(72, 72)
 	_dialogue_faceset.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_dialogue_faceset.stretch_mode = TextureRect.STRETCH_SCALE
 	_dialogue_faceset.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dialogue_panel.add_child(_dialogue_faceset)
 
 	_dialogue_name = Label.new()
-	_dialogue_name.position = Vector2(118, 16)
-	_dialogue_name.size = Vector2(300, 20)
-	_dialogue_name.add_theme_font_size_override("font_size", 17)
+	_dialogue_name.position = Vector2(130, 22)
+	_dialogue_name.size = Vector2(310, 24)
+	_dialogue_name.add_theme_font_size_override("font_size", 20)
 	_dialogue_name.add_theme_color_override("font_color", Color(1, 0.92, 0.6))
 	_dialogue_panel.add_child(_dialogue_name)
 
 	_dialogue_text = Label.new()
-	_dialogue_text.position = Vector2(118, 42)
-	_dialogue_text.size = Vector2(404, 66)
-	_dialogue_text.add_theme_font_size_override("font_size", 15)
+	_dialogue_text.position = Vector2(130, 52)
+	_dialogue_text.size = Vector2(396, 84)
+	_dialogue_text.add_theme_font_size_override("font_size", 18)
 	_dialogue_text.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
 	_dialogue_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_dialogue_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -309,30 +308,30 @@ func _setup_dialogue_bubble() -> void:
 
 	_dialogue_yes = TextureButton.new()
 	_dialogue_yes.texture_normal = preload("res://assets/na/hud/yes-button.png")
-	_dialogue_yes.scale = Vector2(2.2, 2.2)
-	_dialogue_yes.position = Vector2(452, 104)
+	_dialogue_yes.scale = Vector2(2.6, 2.6)
+	_dialogue_yes.position = Vector2(462, 112)
 	_dialogue_yes.pressed.connect(_on_dialogue_action.bind("confirm"))
 	_dialogue_panel.add_child(_dialogue_yes)
 	_dialogue_no = TextureButton.new()
 	_dialogue_no.texture_normal = preload("res://assets/na/hud/no-button.png")
-	_dialogue_no.scale = Vector2(2.2, 2.2)
-	_dialogue_no.position = Vector2(536, 104)
+	_dialogue_no.scale = Vector2(2.6, 2.6)
+	_dialogue_no.position = Vector2(552, 112)
 	_dialogue_no.pressed.connect(_on_dialogue_action.bind("decline"))
 	_dialogue_panel.add_child(_dialogue_no)
 	var yes_label := Label.new()
 	yes_label.text = "是[攻击]"
-	yes_label.position = Vector2(448, 148)
-	yes_label.size = Vector2(70, 16)
+	yes_label.position = Vector2(452, 160)
+	yes_label.size = Vector2(84, 18)
 	yes_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	yes_label.add_theme_font_size_override("font_size", 12)
+	yes_label.add_theme_font_size_override("font_size", 14)
 	yes_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dialogue_panel.add_child(yes_label)
 	var no_label := Label.new()
 	no_label.text = "否[冲刺]"
-	no_label.position = Vector2(532, 148)
-	no_label.size = Vector2(70, 16)
+	no_label.position = Vector2(542, 160)
+	no_label.size = Vector2(84, 18)
 	no_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	no_label.add_theme_font_size_override("font_size", 12)
+	no_label.add_theme_font_size_override("font_size", 14)
 	no_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dialogue_panel.add_child(no_label)
 
@@ -426,10 +425,10 @@ func _setup_hp_ghost_bar() -> void:
 func _setup_boss_bar() -> void:
 	_boss_name_label = Label.new()
 	_boss_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_boss_name_label.add_theme_font_size_override("font_size", 18)
+	_boss_name_label.add_theme_font_size_override("font_size", 20)
 	_boss_name_label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.6))
 	_boss_bar = ProgressBar.new()
-	_boss_bar.custom_minimum_size = Vector2(420, 14)
+	_boss_bar.custom_minimum_size = Vector2(520, 18)
 	_boss_bar.show_percentage = false
 	_boss_bar.add_theme_stylebox_override("fill", _bar_fill(Color(0.85, 0.2, 0.15)))
 	var boss_bg := StyleBoxFlat.new()
@@ -441,7 +440,7 @@ func _setup_boss_bar() -> void:
 	_boss_layer.add_child(_boss_bar)
 	_boss_layer.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	_boss_layer.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_boss_layer.position = Vector2(-210, 132)
+	_boss_layer.position = Vector2(-260, 96)
 	_boss_layer.visible = false
 	_boss_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	(get_node("Root") as Control).add_child(_boss_layer)
@@ -461,29 +460,8 @@ func _on_boss_hp(current: float, maximum: float) -> void:
 	_boss_bar.value = current
 
 
-## iOS 刘海/Home 指示条：把 HUD 根收进安全区（无刘海设备安全区=全屏，零影响）。
-## Root 的子节点全部相对 Root 定位，缩 Root 即整体内收。
-## 安全区是窗口坐标（iOS 上为 points），Root 偏移是拉伸后的画布单位——
-## canvas_items 拉伸下二者差一个缩放系数（iPhone 横屏画布 720 高对 390pt ≈0.54），
-## 不换算只内缩一半左右，血条仍会伸进刘海/Dynamic Island 15~25pt
-func _apply_safe_area() -> void:
-	var root := get_node("Root") as Control
-	var win := get_window()
-	var win_rect := Rect2i(win.position, win.size)
-	var safe := DisplayServer.get_display_safe_area().intersection(win_rect)
-	if not safe.has_area():
-		return
-	var xf := win.get_final_transform()
-	root.offset_left = (safe.position.x - win_rect.position.x) / xf.get_scale().x
-	root.offset_top = (safe.position.y - win_rect.position.y) / xf.get_scale().y
-	root.offset_right = (safe.end.x - win_rect.end.x) / xf.get_scale().x
-	root.offset_bottom = (safe.end.y - win_rect.end.y) / xf.get_scale().y
-
-
-## 分屏/外接屏/旋转导致的窗口尺寸变化时安全区重算（_ready 只算一次会过期）
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_WM_SIZE_CHANGED:
-		_apply_safe_area()
+## iOS 刘海/Home 指示条的安全区内收已统一由 Root 上的 SafeAreaRoot
+## 组件承担（hud.tscn），主菜单同一套——hud 不再自带 _apply_safe_area。
 
 
 # --- 视觉主题（深色玻璃拟态 + 金色强调，代码生成免维护 .tres） ---
@@ -523,24 +501,24 @@ func _bar_fill(c: Color) -> StyleBoxFlat:
 ## 只换视觉层——图标/遮罩子节点全部鼠标穿透，不挡按钮命中。
 func _setup_icon_buttons() -> void:
 	HotwTheme.style_circle_button(%AttackBtn)
-	HotwTheme.add_icon(%AttackBtn, ICON_ATTACK, 30.0)
+	HotwTheme.add_icon(%AttackBtn, ICON_ATTACK, 40.0)
 	var skill_btns: Array = [%DashBtn, %HeavyBtn, %BoltBtn, %HealBtn, %EmpowerBtn]
 	var skill_icons: Array = [ICON_DASH, ICON_HEAVY, ICON_BOLT, ICON_HEAL, ICON_EMPOWER]
 	for i in skill_btns.size():
 		var btn: Button = skill_btns[i]
 		HotwTheme.style_circle_button(btn)
-		var icon := HotwTheme.add_icon(btn, skill_icons[i], 18.0)
+		var icon := HotwTheme.add_icon(btn, skill_icons[i], 26.0)
 		var cd_parts := HotwTheme.add_cd_overlay(btn)
 		HotwTheme.add_badge(btn, str(int(skill_cds[i]["mp"])))
 		skill_cds[i]["icon"] = icon
 		skill_cds[i]["overlay"] = cd_parts["overlay"]
 		skill_cds[i]["cd_label"] = cd_parts["cd"]
-	# 右上功能钮：圆形小图标钮（生态/图鉴/商店），暂停保留 ‖ 字形
+	# 右下功能钮列：圆形小图标钮（生态/图鉴/商店），暂停保留 ‖ 字形
 	for pair: Array in [[%BtnEco, ICON_ECO], [%BtnCodex, ICON_CODEX], [%BtnShop, ICON_SHOP]]:
 		var btn: Button = pair[0]
 		HotwTheme.style_circle_button(btn)
 		btn.text = ""
-		HotwTheme.add_icon(btn, pair[1], 9.0)
+		HotwTheme.add_icon(btn, pair[1], 22.0)
 	HotwTheme.style_circle_button(%PauseBtn)
 	# 暂停面板/商店/三选一的图标走 Button.icon（文字说明保留，图标辅助扫读）
 	%ResumeBtn.icon = preload("res://assets/na/hud/arrow.png")
@@ -571,14 +549,14 @@ func _setup_stats_row() -> void:
 	stats_label.reparent(row)
 	# 血条前的心形：TopLeft 左移让位，图标绝对定位贴条头；
 	# NA heart 五帧条带（80×16）按血量比例换帧（0=空心 … 4=满心）
-	parent.offset_left += 24.0
+	parent.offset_left += 30.0
 	var heart := TextureRect.new()
 	heart.texture = _heart_frame(4)
-	heart.position = Vector2(10, 13)
-	heart.custom_minimum_size = Vector2(22, 22)
+	heart.position = Vector2(11, 12)
+	heart.custom_minimum_size = Vector2(26, 26)
 	heart.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	heart.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	heart.size = Vector2(22, 22)
+	heart.size = Vector2(26, 26)
 	heart.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.get_parent().add_child(heart)
 	_place_below_modal_layers(heart)
@@ -737,7 +715,7 @@ func _refresh_skill_bar() -> void:
 				if cd_label.text != want_text:
 					cd_label.text = want_text
 				cd_label.add_theme_font_size_override("font_size",
-						22 if left > 0.05 else 14)
+						26 if left > 0.05 else 16)
 				cd_label.visible = want_text != ""
 			if overlay != null:
 				overlay.visible = left > 0.05 or hint != ""

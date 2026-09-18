@@ -35,9 +35,9 @@ anchor_right = 0.5
 offset_left = -320.0
 offset_top = 196.0
 offset_right = 320.0
-offset_bottom = 226.0
+offset_bottom = 230.0
 theme_override_colors/font_color = Color(0.7, 0.8, 0.7, 0.9)
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 20
 text = "Heart Of The World —— 会呼吸、会演化的荒野"
 horizontal_alignment = 1
 
@@ -47,36 +47,40 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -140.0
-offset_top = -420.0
-offset_right = 140.0
-offset_bottom = -110.0
+offset_left = -160.0
+offset_top = -440.0
+offset_right = 160.0
+offset_bottom = -96.0
 theme_override_constants/separation = 14
 
 [node name="StartBtn" type="Button" parent="MenuBox"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(280, 60)
-theme_override_font_sizes/font_size = 20
+custom_minimum_size = Vector2(320, 64)
+theme_override_font_sizes/font_size = 22
 text = "开始冒险"
 
 [node name="NewBtn" type="Button" parent="MenuBox"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(280, 56)
+custom_minimum_size = Vector2(320, 60)
+theme_override_font_sizes/font_size = 20
 text = "新的冒险"
 
 [node name="ArchiveBtn" type="Button" parent="MenuBox"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(280, 56)
+custom_minimum_size = Vector2(320, 60)
+theme_override_font_sizes/font_size = 20
 text = "冒险档案"
 
 [node name="SettingsBtn" type="Button" parent="MenuBox"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(280, 56)
+custom_minimum_size = Vector2(320, 60)
+theme_override_font_sizes/font_size = 20
 text = "设置"
 
 [node name="QuitBtn" type="Button" parent="MenuBox"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(280, 56)
+custom_minimum_size = Vector2(320, 60)
+theme_override_font_sizes/font_size = 20
 text = "退出"
 
 [node name="Version" type="Label" parent="."]
@@ -101,8 +105,9 @@ anchor_right = 0.5
 offset_left = -200.0
 offset_top = 250.0
 offset_right = 200.0
-offset_bottom = 280.0
+offset_bottom = 284.0
 theme_override_colors/font_color = Color(1, 0.9, 0.6, 1)
+theme_override_font_sizes/font_size = 20
 modulate = Color(1, 1, 1, 0)
 horizontal_alignment = 1
 
@@ -121,7 +126,7 @@ anchor_bottom = 1.0
 color = Color(0, 0, 0, 0.55)
 
 [node name="NewPanel" type="PanelContainer" parent="NewGameConfirm"]
-custom_minimum_size = Vector2(440, 200)
+custom_minimum_size = Vector2(480, 224)
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
@@ -140,6 +145,7 @@ theme_override_constants/margin_bottom = 14
 theme_override_constants/separation = 10
 
 [node name="Label" type="Label" parent="NewGameConfirm/NewPanel/Margin/VB"]
+theme_override_font_sizes/font_size = 18
 text = "开始新的冒险将清空当前进度
 （等级、金币、装备、强化、图鉴与世界演化）。
 设置会保留，此操作不可撤销。"
@@ -151,12 +157,12 @@ theme_override_constants/separation = 16
 
 [node name="NewCancel" type="Button" parent="NewGameConfirm/NewPanel/Margin/VB/HB"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(96, 40)
+custom_minimum_size = Vector2(140, 56)
 text = "取消"
 
 [node name="NewConfirmBtn" type="Button" parent="NewGameConfirm/NewPanel/Margin/VB/HB"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(120, 40)
+custom_minimum_size = Vector2(180, 56)
 text = "开始新冒险"
 
 [node name="ArchiveLayer" type="Control" parent="."]
@@ -194,7 +200,7 @@ theme_override_constants/separation = 12
 
 [node name="Title" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB"]
 theme_override_colors/font_color = Color(1, 0.9, 0.6, 1)
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 22
 text = "冒险档案"
 horizontal_alignment = 1
 
@@ -263,7 +269,7 @@ text = "尚未保存"
 [node name="AutoHint" type="Label" parent="ArchiveLayer/ArchivePanel/Margin/VB"]
 unique_name_in_owner = true
 theme_override_colors/font_color = Color(1, 1, 1, 0.35)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 14
 text = "冒险进度自动保存，也可手动立即保存"
 horizontal_alignment = 1
 
@@ -273,12 +279,12 @@ theme_override_constants/separation = 16
 
 [node name="ArchiveSave" type="Button" parent="ArchiveLayer/ArchivePanel/Margin/VB/HB"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(140, 40)
+custom_minimum_size = Vector2(160, 56)
 text = "立即保存"
 
 [node name="ArchiveClose" type="Button" parent="ArchiveLayer/ArchivePanel/Margin/VB/HB"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(120, 40)
+custom_minimum_size = Vector2(160, 56)
 text = "关闭"
 
 [node name="SettingsLayer" type="Control" parent="."]
@@ -308,5 +314,5 @@ grow_vertical = 2
 
 [node name="SettingsClose" type="Button" parent="SettingsLayer/SettingsBox"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(120, 40)
+custom_minimum_size = Vector2(160, 56)
 text = "关闭"

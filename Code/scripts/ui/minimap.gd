@@ -111,6 +111,10 @@ func _draw() -> void:
 	if player != null and player.visible:
 		draw_circle(offset + (player.global_position - world.position) * s, 3.5, Color.WHITE)
 
+	# 金色细描边圈出面板轮廓：开局迷雾几乎全黑、底图未送达时，
+	# 纯黑矩形贴在暗色地形上认不出"这是小地图"——描边是常驻的面板证据
+	draw_rect(Rect2(Vector2.ZERO, size), Color(1.0, 0.85, 0.45, 0.4), false, 2.0)
+
 
 ## 迷雾纹理：200×200，未探索黑不透明 / 已探索全透明
 func _build_fog_texture() -> ImageTexture:
