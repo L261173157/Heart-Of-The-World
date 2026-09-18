@@ -326,6 +326,10 @@ const CAMP_HEAL_RADIUS := 420.0
 const CAMP_HEAL_FRAC_PER_SEC := 0.03
 var _camp_heal_accum := 0.0
 var _in_camp := false
+## 进屋过场（借鉴③）：遮罩层与传送防重入标记
+var _transition_layer: CanvasLayer
+var _veil: ColorRect
+var _teleporting := false
 
 
 func _setup_camp() -> void:
@@ -346,6 +350,126 @@ func _setup_camp() -> void:
 	merchant.interact_fn = func(_id: String, _kind: String, _giver: String) -> Dictionary:
 		return {"kind": "shop", "text": "风尘仆仆的猎人——看看营地补给吗？"}
 	_landmark_root.add_child(merchant)
+	# 借鉴③：房屋可进——门前 Area2D 传送门 + 淡入淡出过场 → 世界内嵌室内口袋
+	_add_house_door(spawn + Vector2(-310, -8), 0)
+	_add_house_door(spawn + Vector2(215, -137), 1)
+	_build_interior(0)
+	_build_interior(1)
+	# 过场遮罩（Transition 借鉴：ColorRect 淡入淡出；CanvasLayer 顶层盖 HUD 之下）
+	_transition_layer = CanvasLayer.new()
+	_transition_layer.layer = 90
+	var veil := ColorRect.new()
+	veil.color = Color(0, 0, 0, 0)
+	veil.set_anchors_preset(Control.PRESET_FULL_RECT)
+	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_transition_layer.add_child(veil)
+	add_child(_transition_layer)
+	_veil = veil
+
+
+## 门前传送门（Zelda 式踩上即进；淡入期间防重触发）
+func _add_house_door(pos: Vector2, pocket_idx: int) -> void:
+	var area := Area2D.new()
+	area.position = pos
+	area.collision_layer = 0
+	area.collision_mask = 1
+	area.monitorable = false
+	var shape := CollisionShape2D.new()
+	var circle := CircleShape2D.new()
+	circle.radius = 42.0
+	shape.shape = circle
+	area.add_child(shape)
+	area.body_entered.connect(func(body: Node2D) -> void:
+		if body.is_in_group("player"):
+			_fade_teleport(body, ObstacleField.interior_pocket(pocket_idx) + Vector2(0, -50)))
+	add_child(area)
+
+
+## 淡入淡出传送（官方示例包 Transition 的同构实现：遮罩→移人→吸附相机→揭幕）
+func _fade_teleport(player: Node2D, target: Vector2) -> void:
+	if _teleporting:
+		return
+	_teleporting = true
+	var tween := create_tween()
+	tween.tween_property(_veil, "color:a", 1.0, 0.22)
+	tween.tween_callback(func() -> void:
+		player.global_position = target
+		var cam := player.get_node_or_null("Camera2D")
+		if cam != null and cam.has_method("snap_to_player"):
+			cam.call("snap_to_player"))
+	tween.tween_interval(0.08)
+	tween.tween_property(_veil, "color:a", 0.0, 0.3)
+	tween.tween_callback(func() -> void: _teleporting = false)
+
+
+## 室内口袋房间（借鉴③）：地板块平铺 + 墙环（StaticBody+视觉）+ 床 + 出口门
+const INTERIOR_ROOM := Vector2(320, 256)
+
+func _build_interior(idx: int) -> void:
+	var center: Vector2 = ObstacleField.interior_pocket(idx)
+	var room := Node2D.new()
+	room.position = center
+	# 地板：32px 地板块 region 平铺（texture_repeat）
+	var floor_sp := Sprite2D.new()
+	floor_sp.texture = load("res://assets/na/structures/interior_floor.png")
+	floor_sp.centered = false
+	floor_sp.position = -INTERIOR_ROOM / 2.0
+	floor_sp.region_enabled = true
+	floor_sp.region_rect = Rect2(Vector2.ZERO, INTERIOR_ROOM)
+	floor_sp.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	floor_sp.z_index = -2
+	room.add_child(floor_sp)
+	# 墙环：StaticBody 四边 + 暗色九宫格视觉条
+	var body := StaticBody2D.new()
+	body.collision_layer = 1
+	body.collision_mask = 0
+	var t := INTERIOR_ROOM / 2.0
+	for side: Array in [
+			[Vector2(0, -t.y), Vector2(INTERIOR_ROOM.x, 32)],
+			[Vector2(0, t.y), Vector2(INTERIOR_ROOM.x, 32)],
+			[Vector2(-t.x, 0), Vector2(32, INTERIOR_ROOM.y)],
+			[Vector2(t.x, 0), Vector2(32, INTERIOR_ROOM.y)]]:
+		var shape := CollisionShape2D.new()
+		var rect := RectangleShape2D.new()
+		rect.size = side[1]
+		shape.shape = rect
+		shape.position = side[0]
+		body.add_child(shape)
+		var wall := Sprite2D.new()
+		wall.texture = load("res://assets/na/ui/np_dark.png")
+		wall.position = side[0]
+		wall.centered = false
+		wall.region_enabled = true
+		wall.region_rect = Rect2(Vector2.ZERO, Vector2(side[1]) / 2.0)
+		wall.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+		wall.scale = Vector2(2, 2)
+		wall.z_index = -1
+		wall.position -= Vector2(side[1]) / 2.0
+		room.add_child(wall)
+	room.add_child(body)
+	# 家具：床（左上角）
+	var bed := Sprite2D.new()
+	bed.texture = load("res://assets/na/structures/bed.png")
+	bed.position = Vector2(-t.x + 76, -t.y + 64)
+	room.add_child(bed)
+	# 出口门（南墙缺口）：传送回营地该房屋门前
+	var door := Area2D.new()
+	door.position = Vector2(0, t.y - 40)
+	door.collision_layer = 0
+	door.collision_mask = 1
+	door.monitorable = false
+	var dshape := CollisionShape2D.new()
+	var dcircle := CircleShape2D.new()
+	dcircle.radius = 34.0
+	dshape.shape = dcircle
+	door.add_child(dshape)
+	var camp := WorldConfig.spawn_pos()
+	var back: Vector2 = camp + (Vector2(-310, -8) if idx == 0 else Vector2(215, -137)) + Vector2(0, 90)
+	door.body_entered.connect(func(b: Node2D) -> void:
+		if b.is_in_group("player"):
+			_fade_teleport(b, back))
+	room.add_child(door)
+	add_child(room)
 
 
 func _add_structure(stamp: String, pos: Vector2, body_size: Vector2, thin := false) -> void:
@@ -746,20 +870,37 @@ class LandmarkNPC extends Node2D:
 	func _process(delta: float) -> void:
 		_t += delta
 		# 待机踱步：走一小段→停一会儿→折返（贴地标小范围活动，不参与碰撞）
+		var player := get_tree().get_first_node_in_group("player") as Node2D
+		if player != null and global_position.distance_to(player.global_position) <= 220.0:
+			# 玩家靠近：转向玩家（四方向帧，纵向不再侧身）
+			var to_p := player.global_position - global_position
+			_face_dir(to_p, false)
+			return
 		if _pause > 0.0:
 			_pause -= delta
 			if _pause <= 0.0:
 				_walk_dir = 1.0 if _t * 0.37 - floor(_t * 0.37) < 0.5 else -1.0
 		elif _walk_dir != 0.0:
 			position.x += _walk_dir * 18.0 * delta
-			_visual.flip_h = _walk_dir < 0.0
-			if _visual.animation != &"walk":
-				_visual.play(&"walk")
+			_face_dir(Vector2(_walk_dir, 0), true)
 			if absf(position.x - _home.x) > 14.0:
 				_walk_dir = 0.0
 				_pause = 2.0 + fmod(_t, 3.0)
-				_visual.play(&"idle")
+				_face_dir(Vector2(_walk_dir, 0), false)
 		queue_redraw()
+
+	## 朝向表现：水平→右向帧+flip；纵向→up/down 帧（美术 v5 借鉴②）
+	func _face_dir(dir: Vector2, walking: bool) -> void:
+		var base := "walk" if walking else "idle"
+		var frames: SpriteFrames = _visual.sprite_frames
+		if frames == null:
+			return
+		if absf(dir.y) > absf(dir.x) and frames.has_animation(base + "_up"):
+			_visual.flip_h = false
+			_visual.play(base + ("_up" if dir.y < 0.0 else "_down"))
+		else:
+			_visual.flip_h = dir.x < 0.0
+			_visual.play(base)
 
 	func _draw() -> void:
 		# 脚下光环保留地标微光色，与地标圆环同色系（精灵本体在上）

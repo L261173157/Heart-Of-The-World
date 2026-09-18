@@ -262,11 +262,14 @@ func _setup_dialogue_bubble() -> void:
 	_place_below_modal_layers(_dialogue_panel)
 
 	var bubble := NinePatchRect.new()
-	bubble.texture = preload("res://assets/na/hud/dialogue-bubble.png")
-	bubble.patch_margin_left = 14
-	bubble.patch_margin_top = 14
-	bubble.patch_margin_right = 14
-	bubble.patch_margin_bottom = 14
+	# 美术 v5 借鉴①：官方九宫格 np_6 暗蓝灰框（16px×4 放大保像素，边距带 20）
+	var np_img: Image = load("res://assets/na/ui/np_panel.png").get_image()
+	np_img.resize(64, 64, Image.INTERPOLATE_NEAREST)
+	bubble.texture = ImageTexture.create_from_image(np_img)
+	bubble.patch_margin_left = 20
+	bubble.patch_margin_top = 20
+	bubble.patch_margin_right = 20
+	bubble.patch_margin_bottom = 20
 	bubble.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dialogue_panel.add_child(bubble)

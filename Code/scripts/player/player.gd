@@ -355,6 +355,13 @@ func _update_anim(delta := 0.0) -> void:
 		want = "walk"
 	if not visual.sprite_frames.has_animation(want):
 		want = "idle"
+	# 四方向（美术 v5 借鉴②）：纵向移动/站定时用 up/down 帧（NA 官方表列 0/1），
+	# 横向保持右向帧 + flip_h 老路径——attack 系无方向分段，纵向出招仍走侧向
+	if want == "walk" or want == "idle":
+		if absf(facing.y) > absf(facing.x):
+			var suffix := "_up" if facing.y < 0.0 else "_down"
+			if visual.sprite_frames.has_animation(want + suffix):
+				want += suffix
 	# 仅循环动画需要"停了就重播"；非循环（attack 系/die）播完停在末帧，
 	# 重启会闪回首帧（出招姿势），linger 收招段正是要停在读招帧上
 	if visual.animation != want or (visual.sprite_frames.get_animation_loop(want) and not visual.is_playing()):

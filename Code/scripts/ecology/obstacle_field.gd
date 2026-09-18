@@ -19,6 +19,26 @@ const CHUNK_CELLS := 16
 const PATCH_CLEAR := 600.0
 ## 出生点净空半径（新手安全区的视觉保底）
 const SPAWN_CLEAR := 1200.0
+## 室内口袋（美术 v5 借鉴③：房屋可进——世界内嵌传送不切场景）：
+## 出生点正南深处的两间小屋（相对 spawn 偏移），抑制障碍与液体，
+## 房间墙/地板/家具由 game_world 表现层搭建
+const INTERIOR_POCKETS := [Vector2(6000.0, 520000.0), Vector2(11000.0, 520000.0)]
+const INTERIOR_CLEAR := 700.0
+
+
+## 第 idx 间室内小屋的世界坐标（种子派生，确定性）
+static func interior_pocket(idx: int) -> Vector2:
+	_ensure()
+	return BiomeMap.spawn_pos() + INTERIOR_POCKETS[clampi(idx, 0, INTERIOR_POCKETS.size() - 1)]
+
+
+## 点位是否落在任一室内口袋净空内（sample_cell/liquid 共用的抑制判定）
+static func _in_interior_pocket(pos: Vector2) -> bool:
+	var spawn := BiomeMap.spawn_pos()
+	for off: Vector2 in INTERIOR_POCKETS:
+		if pos.distance_squared_to(spawn + off) < INTERIOR_CLEAR * INTERIOR_CLEAR:
+			return true
+	return false
 
 ## 障碍类型表：碰撞半径（px）/ 是否高大（y-sort 树冠遮挡 + 阴影投射）
 ## 半径 < CELL：格间留缝，自由格 2 格宽（64px）必然可过 20px 直径的怪/玩家
@@ -201,9 +221,11 @@ static func sample_cell(cell: Vector2i) -> Dictionary:
 		"inner":
 			return {}
 	var center := (Vector2(cell) + Vector2(0.5, 0.5)) * CELL
-	# 抑制区：出生点 / 斑块中心净空（先于一切配方——保底优先）
+	# 抑制区：出生点 / 室内口袋 / 斑块中心净空（先于一切配方——保底优先）
 	if center.distance_squared_to(BiomeMap.spawn_pos()) < SPAWN_CLEAR * SPAWN_CLEAR:
 		return {}
+	if _in_interior_pocket(center):
+		return {}  # 室内口袋净空（进屋玩法的结构性保底）
 	var patch_id := BiomeMap.region_id_at(center)
 	var patch_center: Variant = _center_by_id.get(patch_id, null)
 	if patch_center != null \
@@ -388,6 +410,8 @@ static func liquid_kind_in(terrain: String, pos: Vector2, patch_id: String,
 	if rule.is_empty():
 		return ""
 	if pos.distance_squared_to(BiomeMap.spawn_pos()) < SPAWN_CLEAR * SPAWN_CLEAR:
+		return ""
+	if _in_interior_pocket(pos):
 		return ""
 	var patch_center: Variant = _center_by_id.get(patch_id, null)
 	if patch_center != null \

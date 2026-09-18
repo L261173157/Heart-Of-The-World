@@ -9,14 +9,17 @@ const GOLD := Color(1.0, 0.85, 0.45)
 
 ## 深色玻璃主题：PanelContainer 深底金边、Button 三态 + 字色。
 ## 与 HUD 原 _apply_theme 生成的完全同款，抽出来给主菜单复用。
+## 美术 v5 借鉴①：面板底色调向 NA 官方九宫格 np_6 的暗蓝灰（纹理九宫格在
+## 4.7 的 StyleBoxTexture 边距 API 缺失，改用同色系 StyleBoxFlat；对话气泡
+## 则直接用九宫格件——见 hud._setup_dialogue_bubble）
 static func glass_theme() -> Theme:
 	var theme := Theme.new()
 	var panel := StyleBoxFlat.new()
-	panel.bg_color = Color(0.07, 0.09, 0.11, 0.88)
-	panel.border_color = Color(GOLD.r, GOLD.g, GOLD.b, 0.35)
-	panel.set_border_width_all(1)
-	panel.set_corner_radius_all(8)
-	panel.set_content_margin_all(6)
+	panel.bg_color = Color(0.09, 0.11, 0.16, 0.92)
+	panel.border_color = Color(0.32, 0.36, 0.45, 0.9)
+	panel.set_border_width_all(2)
+	panel.set_corner_radius_all(4)
+	panel.set_content_margin_all(8)
 	theme.set_stylebox("panel", "PanelContainer", panel)
 
 	var btn := StyleBoxFlat.new()

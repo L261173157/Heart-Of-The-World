@@ -22,34 +22,34 @@ const FPS := 6.0
 ##   fps / loop 覆盖全局默认（特效用 15fps 非循环）
 const CREATURES := {
 	"ninja": {
-		"sheet": "na_ninja.png", "col": 3, "flop": false,
+		"sheet": "na_ninja.png", "col": 3, "flop": false, "dirs": true,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3], "attack": [4], "die": [6]},
 	},
 	## 三忍皮肤（美术 v5）：黑忍/白忍与蓝忍同布局（4列×7行，col3=朝右）
 	"ninja_dark": {
-		"sheet": "na_ninja_dark.png", "col": 3, "flop": false,
+		"sheet": "na_ninja_dark.png", "col": 3, "flop": false, "dirs": true,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3], "attack": [4], "die": [6]},
 	},
 	"ninja_white": {
-		"sheet": "na_ninja_white.png", "col": 3, "flop": false,
+		"sheet": "na_ninja_white.png", "col": 3, "flop": false, "dirs": true,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3], "attack": [4], "die": [6]},
 	},
 	# --- 地标 NPC（美术 v5 M-B）：NA characters 表，与英雄同布局（64×112，col3=朝右） ---
 	"npc_hunter": {
-		"sheet": "res://assets/na/characters/8.png", "col": 3, "flop": false,
+		"sheet": "res://assets/na/characters/8.png", "col": 3, "flop": false, "dirs": true,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
 	},
 	"npc_scholar": {
-		"sheet": "res://assets/na/characters/4.png", "col": 3, "flop": false,
+		"sheet": "res://assets/na/characters/4.png", "col": 3, "flop": false, "dirs": true,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
 	},
 	"npc_keeper": {
-		"sheet": "res://assets/na/characters/7.png", "col": 3, "flop": false,
+		"sheet": "res://assets/na/characters/7.png", "col": 3, "flop": false, "dirs": true,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
 	},
 	## 营地行商（出生营地商店 NPC）
 	"npc_merchant": {
-		"sheet": "res://assets/na/characters/6.png", "col": 3, "flop": false,
+		"sheet": "res://assets/na/characters/6.png", "col": 3, "flop": false, "dirs": true,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
 	},
 	## 打击特效（Ninja Adventure fx 表：16px 单行条带）
@@ -190,7 +190,30 @@ func _init() -> void:
 		var anim_fps: float = cfg.get("fps", FPS)
 		var anim_loop: bool = cfg.get("loop", true)
 		var strip: bool = cfg.get("strip", false)
+		# 四方向模式（美术 v5 借鉴②，官方 sprite_character 同构）：角色表按列
+		# 切 idle/walk 的 down/up/left 变体（列 0/1/2）+ 无后缀右向经典集（列 3），
+		# 消费端纵向移动不再侧身 flip
+		var dir_cols: Array = [[3, ""]] if not bool(cfg.get("dirs", false)) \
+				else [[0, "down"], [1, "up"], [2, "left"], [3, ""]]
+		for dir_cfg: Array in dir_cols:
+			var dir_col := int(dir_cfg[0])
+			var suffix: String = dir_cfg[1]
+			if strip:
+				break  # 条带模式无方向概念，走下方通用循环
+			for base: String in ["idle", "walk"]:
+				var anim_name: String = base if suffix == "" else base + "_" + suffix
+				if not cfg["anim"].has(base) or frames.has_animation(anim_name):
+					continue
+				frames.add_animation(anim_name)
+				frames.set_animation_speed(anim_name, anim_fps)
+				frames.set_animation_loop(anim_name, anim_loop)
+				for row: int in cfg["anim"][base]:
+					var frame_img := img.get_region(
+						Rect2i(dir_col * CELL, row * CELL, CELL, CELL))
+					frames.add_frame(anim_name, ImageTexture.create_from_image(frame_img))
 		for anim_name: String in cfg["anim"]:
+			if anim_name == "idle" or anim_name == "walk":
+				continue  # 已在方向循环处理
 			frames.add_animation(anim_name)
 			frames.set_animation_speed(anim_name, anim_fps)
 			frames.set_animation_loop(anim_name, anim_loop)

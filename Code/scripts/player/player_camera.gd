@@ -27,6 +27,14 @@ func _ready() -> void:
 	)
 
 
+## 传送后吸附（美术 v5 借鉴③：进屋/出屋瞬移）——跟随点直接对齐玩家，
+## 避免 50 万 px 级跨距被平滑器拉成长镜头
+func snap_to_player() -> void:
+	var player := get_parent() as Node2D
+	if player != null:
+		_follow = player.global_position
+
+
 func _process(delta: float) -> void:
 	var player := get_parent() as Node2D
 	if player == null:

@@ -82,7 +82,12 @@ func _ready() -> void:
 	if player != null:
 		var pos_arg := OS.get_environment("HOTW_SHOT_POS")
 		var dungeon_arg := OS.get_environment("HOTW_SHOT_DUNGEON")
-		if dungeon_arg != "":
+		var interior_arg := OS.get_environment("HOTW_SHOT_INTERIOR")
+		if interior_arg != "":
+			# 室内口袋取证：运行时按种子自取（0/1 号房）
+			player.global_position = ObstacleField.interior_pocket(
+				clampi(interior_arg.to_int(), 0, 1)) + Vector2(0, -40)
+		elif dungeon_arg != "":
 			# Boss 城塞取证：运行时按当前世界种子自取城塞中心（固定坐标会过期，
 			# 本模式永远指向真城塞；索引 0=hill 1=lava）
 			var dgs := ObstacleField.dungeons()

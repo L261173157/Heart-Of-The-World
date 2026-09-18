@@ -104,3 +104,17 @@ generate_creatures/slice_spritesheets_v2/build_ai_strips/generate_world_map）�
   未来「进房屋室内」（Interior tileset）的现成参考件。
 - **不借鉴**：fog（shader alpha 位图方案弱于我们的迷雾系统）、camera_grid（复古
   分格相机与连续相机路线不同）、behavior/damage/destroyable（我们对应系统更完整）。
+
+## 11. 三借鉴件落地（2026-09-17 第二批）
+
+- **①九宫格 UI**：theme 件入库 `assets/na/ui/`（np_dialogue/np_panel/np_archive/np_dark+字体）。
+  消费：对话气泡底板= np_panel 暗蓝灰（16px×4 放大、边距带 20，NinePatchRect）；
+  glass_theme 面板调色向 np_6 同系（StyleBoxTexture 九宫格边距 API 在 4.7 缺失，
+  弃用改同色系平样式——暗底保白字对比度）。np_dark 用作室内墙视觉。
+- **②四方向渲染**：slicer 增 `dirs` 模式（idle/walk 的 down/up/left 变体，官方
+  sprite_character 同构），三忍+4 NPC 已切；玩家纵向移动/站定用 up/down 帧，
+  横向保持右向+flip 老路径；NPC 玩家靠近时转向玩家。
+- **③房屋可进**：门前 Area2D 传送门（Zelda 式踩上即进）→ 淡入淡出过场
+  （CanvasLayer 90 黑幕 0.22s/0.3s，相机 snap_to_player 防长镜头滑移）→ 世界内嵌
+  室内口袋（ObstacleField.INTERIOR_POCKETS 出生点正南 52 万 px ×2 间，障碍/液体
+  双抑制）＝木地板平铺+墙环 StaticBody+床+南门回程传送。截图 HOTW_SHOT_INTERIOR=N。
