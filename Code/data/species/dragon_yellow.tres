@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_drg"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/dragon/dragon_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_drg")
+species_name = "火龙"
+tint = Color(0.95, 0.7, 0.25, 1)
+frames_override = ExtResource("2_frames")
+ai_archetype = "ranged"
+habitats = Array[String](["lava"])
+base_strength = 6.5
+base_agility = 5.0
+base_intellect = 3.0
+intellect_growth = 0.03
+lifespan_min = 400
+lifespan_max = 700
+maturity_age = 60
+breeding_rate = 0.008
+expansion_threshold = 8
+xp_base = 24
+detect_radius = 300.0
+attack_range = 250.0
+attack_cooldown = 2.4
+flee_hp_ratio = 0.1
+defense_reduction = 0.15
+poise = 0.3
+prey = Array[String](["石像鬼"])
+element = "fire"
+migrate_count = 1

@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_ber"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/bear/bear_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_ber")
+species_name = "雪熊"
+tint = Color(0.85, 0.82, 0.78, 1)
+frames_override = ExtResource("2_frames")
+ai_archetype = "charger"
+habitats = Array[String](["snow"])
+base_strength = 6.5
+base_agility = 4.0
+strength_growth = 0.07
+lifespan_min = 340
+lifespan_max = 620
+maturity_age = 50
+breeding_rate = 0.010
+expansion_threshold = 7
+migrate_count = 1
+corpse_duration = 30
+xp_base = 20
+xp_per_age = 0.1
+detect_radius = 240.0
+attack_range = 44.0
+attack_cooldown = 2.0
+flee_hp_ratio = 0.0
+defense_reduction = 0.15
+poise = 0.4
+prey = Array[String](["冰史莱姆", "幽灵"])

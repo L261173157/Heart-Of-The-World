@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_rcn"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/raccoon/raccoon_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_rcn")
+species_name = "浣熊"
+tint = Color(0.7, 0.6, 0.5, 1)
+frames_override = ExtResource("2_frames")
+ambient = true
+ai_archetype = "melee_swarm"
+habitats = Array[String](["forest"])
+base_strength = 1.5
+base_agility = 7.0
+lifespan_min = 200
+lifespan_max = 400
+maturity_age = 25
+breeding_rate = 0.025
+expansion_threshold = 8
+migrate_count = 1
+corpse_duration = 20
+xp_base = 4
+xp_per_age = 0.05
+detect_radius = 120.0
+attack_range = 24.0
+attack_cooldown = 1.5
+flee_hp_ratio = 0.9
+prey = Array[String](["萌芽怪"])

@@ -1,7 +1,7 @@
 [gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_0vtn4"]
-[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/stag_beetle/stag_beetle_frames.tres" id="2_frames"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/boss_samurai/boss_samurai_frames.tres" id="2_frames"]
 
 [resource]
 script = ExtResource("1_0vtn4")
@@ -33,3 +33,4 @@ boss_respawn_ticks = 360
 boss_size_scale = 2.2
 element = "fire"
 assist_radius = 200.0
+visual_scale = 0.33

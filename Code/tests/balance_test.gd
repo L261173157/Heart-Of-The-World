@@ -78,6 +78,10 @@ func _check_species(terrain: String, band: Dictionary, species: SpeciesData) -> 
 	var hits: int = CombatBandMath.hits_to_kill(inst, p.physical_attack())
 	var attackers := CombatBandMath.attackers_of(species)
 	var die_hits: float = CombatBandMath.hits_to_die(inst, p.max_hp(), attackers)
+	# 被动生物（美术 v5 完整包动物：只逃不战）承伤带豁免——它们本就不该构成
+	# 压力源；击杀带照常（作为猎物须可被顺刀解决）
+	if species.ambient:
+		die_hits = 999.0
 	# 重甲物种（护甲 ≥ 0.3）按专属重甲带校验（终区高压守卫：更长战斗、走位/技能换效率）
 	var is_heavy := species.defense_reduction >= CombatBandMath.HEAVY_DEF
 	var kill_band: Array = band["kill_heavy"] if is_heavy else band["kill"]

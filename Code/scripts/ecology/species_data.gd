@@ -13,6 +13,12 @@ extends Resource
 ## 表现层用：帧动画覆盖（共用表现场景但形象不同的种族，如冰晶史莱姆→蓝色红史莱姆帧；
 ## 空 = 用场景默认 SpriteFrames）。纯表现数据，模拟层不读
 @export var frames_override: SpriteFrames
+## 视觉缩放补偿（美术 v5 完整包）：大画幅精灵（Boss 48-50px 条带）用它对齐
+## 16px 基准的屏幕体型；1.0 = 原生 16px 表
+@export var visual_scale := 1.0
+## 被动生物（美术 v5 完整包动物）：永不主动攻击玩家，玩家靠近即逃；
+## 是猎物基底与生态氛围（承伤带在 balance_test 豁免，击杀带照常）
+@export var ambient := false
 
 ## AI 原型（表现层据此选择行为分支，纯数据标记）：
 ## melee_swarm 群体围攻 / charger 蓄力冲锋 / splitter 接触分裂 /

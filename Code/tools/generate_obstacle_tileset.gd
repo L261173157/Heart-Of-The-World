@@ -34,7 +34,8 @@ const DERIVE := {
 	"crystal": {"src": Rect2(160, 160, 32, 32), "hue": 0.83, "sat": 0.55, "val": 1.1},
 	"bones": {"src": Rect2(160, 160, 32, 32), "sat": 0.25, "val": 1.2},
 	"water": {"transparent": true},
-	"castle": {"src": Rect2(32, 88, 32, 32)},
+	"castle": {"src": Rect2(0, 0, 32, 32),
+		"src_img": "res://assets/creatures/sheets/na_dungeon_tileset.png"},  # 完整包 TilesetDungeon 专用墙砖
 }
 ## 高大障碍的排序基线（y_sort_origin，格底部附近）——走到树后会被树冠遮挡
 const TALL_SORT_ORIGIN := 14
@@ -59,13 +60,14 @@ func _init() -> void:
 
 ## 障碍图集：逐 kind 从 na_tileset 取源矩形 → 调色/放大 → 拼入 3×3 图集
 func _build_atlas_image() -> Image:
-	var src_tex: Image = load(SRC).get_image()
 	var atlas := Image.create(CELL * 3, CELL * 4, false, Image.FORMAT_RGBA8)
 	for i in KINDS.size():
 		var kind: String = KINDS[i]
 		var spec: Dictionary = DERIVE[kind]
 		if bool(spec.get("transparent", false)):
 			continue  # 透明瓦（深水）：只占图集位不画内容
+		# src_img：该 kind 的独立源图（castle 用完整包 TilesetDungeon），缺省 na_tileset
+		var src_tex: Image = load(String(spec.get("src_img", SRC))).get_image()
 		var rect: Rect2 = spec["src"]
 		var cell_img: Image = src_tex.get_region(Rect2i(Vector2i(rect.position), Vector2i(rect.size)))
 		cell_img = _recolor(cell_img, spec)

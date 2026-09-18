@@ -58,11 +58,11 @@ const TERRAIN_THEMES := {
 	"lava": preload("res://assets/na/audio/musics/theme-13.ogg"),
 	"menu": preload("res://assets/na/audio/musics/theme-10.ogg"),
 	## 城塞内腔（美术 v5 M-B）：进出城塞切曲，出腔回当前群系曲
-	"dungeon": preload("res://assets/na/audio/musics/theme-7.ogg"),
+	"dungeon": preload("res://assets/na/audio/musics/fullpack_dungeon.ogg"),
 	## Boss 临场（美术 v5 M-C 全量）：活体 Boss 进入追踪圈切战斗曲
-	"boss": preload("res://assets/na/audio/musics/theme-16.ogg"),
+	"boss": preload("res://assets/na/audio/musics/fullpack_fight.ogg"),
 	## 出生营地（美术 v5 M-C）：安全区休整曲
-	"camp": preload("res://assets/na/audio/musics/theme-8.ogg"),
+	"camp": preload("res://assets/na/audio/musics/fullpack_camp.ogg"),
 }
 
 var _channels: Array[AudioStreamPlayer] = []

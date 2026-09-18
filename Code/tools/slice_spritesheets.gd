@@ -34,23 +34,45 @@ const CREATURES := {
 		"sheet": "na_ninja_white.png", "col": 3, "flop": false, "dirs": true,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3], "attack": [4], "die": [6]},
 	},
-	# --- 地标 NPC（美术 v5 M-B）：NA characters 表，与英雄同布局（64×112，col3=朝右） ---
+	# --- 地标/营地 NPC（美术 v5 完整包：命名角色，与英雄同布局 64×112） ---
 	"npc_hunter": {
-		"sheet": "res://assets/na/characters/8.png", "col": 3, "flop": false, "dirs": true,
+		"sheet": "na_ch_hunter.png", "col": 3, "flop": false, "dirs": true,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
 	},
 	"npc_scholar": {
-		"sheet": "res://assets/na/characters/4.png", "col": 3, "flop": false, "dirs": true,
+		"sheet": "na_ch_inspector.png", "col": 3, "flop": false, "dirs": true,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
 	},
 	"npc_keeper": {
-		"sheet": "res://assets/na/characters/7.png", "col": 3, "flop": false, "dirs": true,
+		"sheet": "na_ch_sorcerer.png", "col": 3, "flop": false, "dirs": true,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
 	},
-	## 营地行商（出生营地商店 NPC）
+	## 营地行商（出生营地商店 NPC，完整包 Villager）
 	"npc_merchant": {
-		"sheet": "res://assets/na/characters/6.png", "col": 3, "flop": false, "dirs": true,
+		"sheet": "na_ch_villager.png", "col": 3, "flop": false, "dirs": true,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
+	},
+	# --- Boss 专属形象（美术 v5 完整包 48-50px 横条带；按动画独立源 + cell 格宽） ---
+	## 锹形虫王 → 大武士（GiantBlueSamurai，48px×12 帧）
+	"boss_samurai": {
+		"cell": 48,
+		"anim": {
+			"idle": {"sheet": "res://assets/creatures/sheets/boss_samurai_idle.png"},
+			"walk": {"sheet": "res://assets/creatures/sheets/boss_samurai_walk.png"},
+			"hurt": {"sheet": "res://assets/creatures/sheets/boss_samurai_hit.png"},
+		},
+	},
+	# --- 营地动画件（完整包 Animated）：水车 3 帧/桨叶 2 帧/旗帜 4 帧 ---
+	"camp_watermill": {"cell": 34, "anim": {"idle": {"sheet": "res://assets/na/bg/frames_watermill_a.png"}}},
+	"camp_propeller": {"cell": 64, "anim": {"idle": {"sheet": "res://assets/creatures/sheets/na_mill_propeller.png"}}},
+	"camp_flag": {"sheet": "res://assets/na/bg/frames/flag.png", "strip": true, "fps": 4.0, "anim": {"play": [0, 1, 2, 3]}},
+	## 龟王 → 火焰魔王（GiantFlam，50px 条带；无走路帧=idle 兼任）
+	"boss_flam": {
+		"cell": 50,
+		"anim": {
+			"idle": {"sheet": "res://assets/creatures/sheets/boss_flam_idle.png"},
+			"hurt": {"sheet": "res://assets/creatures/sheets/boss_flam_hit.png"},
+		},
 	},
 	## 打击特效（Ninja Adventure fx 表：16px 单行条带）
 	"fx_slash": {
@@ -178,18 +200,29 @@ const CREATURES := {
 		"sheet": "na_sea_turtle.png", "col": 3, "flop": false,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3]},
 	},
+	# --- 物种扩容（美术 v5 完整包 Monster/Animal）---
+	"bear": {"sheet": "na_bear.png", "col": 3, "flop": false, "anim": {"idle": [0], "walk": [0, 1, 2, 3]}},
+	"cyclope": {"sheet": "na_cyclope.png", "col": 3, "flop": false, "anim": {"idle": [0], "walk": [0, 1, 2, 3]}},
+	"eye": {"sheet": "na_eye.png", "col": 3, "flop": false, "anim": {"idle": [0], "walk": [0, 1, 2, 3]}},
+	"dragon": {"sheet": "na_dragon.png", "col": 3, "flop": false, "anim": {"idle": [0], "walk": [0, 1, 2, 3]}},
+	"raccoon": {"sheet": "na_raccoon.png", "col": 3, "flop": false, "anim": {"idle": [0], "walk": [0, 1, 2, 3]}},
+	## 动物侧视 2 帧表（32×16）：条带模式切两格
+	"chicken": {"sheet": "na_chicken.png", "strip": true, "fps": 5.0, "anim": {"idle": [0], "walk": [0, 1]}},
+	"parrot": {"sheet": "na_parrot.png", "strip": true, "fps": 8.0, "anim": {"idle": [0], "walk": [0, 1]}},
 }
 
 
 func _init() -> void:
 	for creature: String in CREATURES:
 		var cfg: Dictionary = CREATURES[creature]
-		var img := _load_baked(cfg)
+		var img: Image = _load_baked(cfg) if cfg.has("sheet") else null
 		var frames := SpriteFrames.new()
 		frames.remove_animation("default")
 		var anim_fps: float = cfg.get("fps", FPS)
 		var anim_loop: bool = cfg.get("loop", true)
 		var strip: bool = cfg.get("strip", false)
+		# Boss 模式（动画规格为 Dictionary）：idle 等也走独立条带分支
+		var boss_mode: bool = typeof(cfg["anim"].get("idle", {})) == TYPE_DICTIONARY
 		# 四方向模式（美术 v5 借鉴②，官方 sprite_character 同构）：角色表按列
 		# 切 idle/walk 的 down/up/left 变体（列 0/1/2）+ 无后缀右向经典集（列 3），
 		# 消费端纵向移动不再侧身 flip
@@ -198,8 +231,8 @@ func _init() -> void:
 		for dir_cfg: Array in dir_cols:
 			var dir_col := int(dir_cfg[0])
 			var suffix: String = dir_cfg[1]
-			if strip:
-				break  # 条带模式无方向概念，走下方通用循环
+			if strip or boss_mode:
+				break  # 条带/Boss 模式无方向概念，走下方通用循环
 			for base: String in ["idle", "walk"]:
 				var anim_name: String = base if suffix == "" else base + "_" + suffix
 				if not cfg["anim"].has(base) or frames.has_animation(anim_name):
@@ -212,14 +245,24 @@ func _init() -> void:
 						Rect2i(dir_col * CELL, row * CELL, CELL, CELL))
 					frames.add_frame(anim_name, ImageTexture.create_from_image(frame_img))
 		for anim_name: String in cfg["anim"]:
-			if anim_name == "idle" or anim_name == "walk":
-				continue  # 已在方向循环处理
+			if (anim_name == "idle" or anim_name == "walk") and not boss_mode and not strip:
+				continue  # 已在方向循环处理（条带/Boss 模式在此处理）
 			frames.add_animation(anim_name)
 			frames.set_animation_speed(anim_name, anim_fps)
 			frames.set_animation_loop(anim_name, anim_loop)
+			# Boss 模式（美术 v5 完整包）：动画规格为 Dictionary 时按独立条带源
+			# 切帧（cell 取条带高度，帧数=宽/高自动），不再走本表网格
+			var spec: Variant = cfg["anim"][anim_name]
+			if typeof(spec) == TYPE_DICTIONARY:
+				var bimg := Image.load_from_file(ProjectSettings.globalize_path(spec["sheet"]))
+				var bcell := int(cfg.get("cell", bimg.get_height()))
+				for k in int(bimg.get_width() / bcell):
+					var bf := bimg.get_region(Rect2i(k * bcell, 0, bcell, bcell))
+					frames.add_frame(anim_name, ImageTexture.create_from_image(bf))
+				continue
 			# strip 模式 "auto"：按条带实际宽度枚举全部 16px 格
 			# （Array == String 在 GDScript 是运行时错误，先 typeof 再比较）
-			var rows: Variant = cfg["anim"][anim_name]
+			var rows: Variant = spec
 			if typeof(rows) == TYPE_STRING and rows == "auto":
 				var auto_rows: Array = []
 				for k in int(img.get_width() / CELL):

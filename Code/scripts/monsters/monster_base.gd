@@ -250,7 +250,8 @@ func _get_player() -> Node2D:
 
 ## 体型表现（分裂子代缩小）；子类可扩展（如红史莱姆的果冻脉动在此基础上叠加）
 func _apply_size_visual() -> void:
-	visual.scale = sprite_base_scale * maxf(0.45, inst.size_scale)
+	# visual_scale：物种级画幅补偿（完整包 Boss 48-50px 条带 ×0.33 对齐 16px 基准）
+	visual.scale = sprite_base_scale * maxf(0.45, inst.size_scale) * inst.species.visual_scale
 
 
 func _physics_process(delta: float) -> void:
@@ -533,6 +534,10 @@ func _speed_mult() -> float:
 
 ## 残血逃跑判定（<=0 的物种永不逃跑，如狂暴/守卫型）
 func _wants_flee(player: Node2D) -> bool:
+	# 被动生物：玩家近身即逃（无论血量）
+	if inst.species.ambient and player != null and player.visible \
+			and global_position.distance_to(player.global_position) < 260.0:
+		return true
 	var ratio: float = inst.species.flee_hp_ratio
 	if ratio <= 0.0 or player == null or not player.visible:
 		return false
@@ -618,7 +623,8 @@ func _patrol(delta: float, player: Node2D) -> void:
 	if _enrage_timer > 0.0:
 		detect *= ENRAGE_DETECT_MULT
 	if player != null and player.visible \
-			and global_position.distance_to(player.global_position) < detect:
+			and global_position.distance_to(player.global_position) < detect \
+			and not inst.species.ambient:  # 被动生物永不主动开战（只逃）
 		state = S_CHASE
 		_hunt_mode = false
 		return

@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_cyc"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/cyclope/cyclope_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_cyc")
+species_name = "独眼巨人"
+tint = Color(0.75, 0.6, 0.5, 1)
+frames_override = ExtResource("2_frames")
+ai_archetype = "soldier"
+habitats = Array[String](["hill"])
+base_strength = 5.5
+base_agility = 3.5
+strength_growth = 0.06
+lifespan_min = 300
+lifespan_max = 560
+maturity_age = 45
+breeding_rate = 0.012
+expansion_threshold = 7
+migrate_count = 2
+corpse_duration = 25
+xp_base = 16
+xp_per_age = 0.09
+detect_radius = 220.0
+attack_range = 34.0
+attack_cooldown = 1.0
+flee_hp_ratio = 0.1
+defense_reduction = 0.2
+poise = 0.3
+prey = Array[String](["松鼠"])

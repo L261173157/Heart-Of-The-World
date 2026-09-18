@@ -12,3 +12,4 @@ expansion_threshold = 8
 poise = 0.05
 assist_radius = 260.0
 migrate_count = 2
+prey = Array[String](["鸡"])

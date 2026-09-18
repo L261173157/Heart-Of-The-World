@@ -30,6 +30,14 @@ const MONSTER_SCENES := {
 	"火鸟": preload("res://scenes/monsters/spider.tscn"),
 	"绿龟": preload("res://scenes/monsters/boar.tscn"),
 	"树人": preload("res://scenes/monsters/boar.tscn"),
+	# 物种扩容（美术 v5 完整包）：4 战斗怪 + 3 被动动物
+	"雪熊": preload("res://scenes/monsters/boar.tscn"),
+	"独眼巨人": preload("res://scenes/monsters/ant.tscn"),
+	"眼魔": preload("res://scenes/monsters/spider.tscn"),
+	"火龙": preload("res://scenes/monsters/spider.tscn"),
+	"浣熊": preload("res://scenes/monsters/goblin.tscn"),
+	"鸡": preload("res://scenes/monsters/goblin.tscn"),
+	"鹦鹉": preload("res://scenes/monsters/goblin.tscn"),
 }
 
 ## M0 初始种群与六区域布局的唯一数据源已抽至 WorldConfig（纯数据类，
@@ -350,6 +358,13 @@ func _setup_camp() -> void:
 	merchant.interact_fn = func(_id: String, _kind: String, _giver: String) -> Dictionary:
 		return {"kind": "shop", "text": "风尘仆仆的猎人——看看营地补给吗？"}
 	_landmark_root.add_child(merchant)
+	# 营地动画件（完整包 Animated）：水车 + 旋转桨叶 + 旗帜
+	_add_animated_prop("res://assets/creatures/frames/camp_watermill/camp_watermill_frames.tres",
+			spawn + Vector2(-150, -230), 2.6)
+	_add_animated_prop("res://assets/creatures/frames/camp_propeller/camp_propeller_frames.tres",
+			spawn + Vector2(-150, -262), 2.6)
+	_add_animated_prop("res://assets/creatures/frames/camp_flag/camp_flag_frames.tres",
+			spawn + Vector2(-4, -262), 2.6)
 	# 借鉴③：房屋可进——门前 Area2D 传送门 + 淡入淡出过场 → 世界内嵌室内口袋
 	_add_house_door(spawn + Vector2(-310, -8), 0)
 	_add_house_door(spawn + Vector2(215, -137), 1)
@@ -470,6 +485,20 @@ func _build_interior(idx: int) -> void:
 			_fade_teleport(b, back))
 	room.add_child(door)
 	add_child(room)
+
+
+## 营地动画件（完整包 Animated 背景）：AnimatedSprite2D 循环播放，底部对齐落点
+func _add_animated_prop(frames_path: String, pos: Vector2, scale := 2.0) -> void:
+	var node := Node2D.new()
+	node.position = pos
+	var sp := AnimatedSprite2D.new()
+	sp.sprite_frames = load(frames_path)
+	sp.scale = Vector2(scale, scale)
+	var frames: SpriteFrames = sp.sprite_frames
+	if frames != null and frames.get_animation_names().size() > 0:
+		sp.play(frames.get_animation_names()[0])
+	node.add_child(sp)
+	add_child(node)
 
 
 func _add_structure(stamp: String, pos: Vector2, body_size: Vector2, thin := false) -> void:
@@ -830,7 +859,7 @@ class LandmarkNPC extends Node2D:
 		"merchant": preload("res://assets/creatures/frames/npc_merchant/npc_merchant_frames.tres"),
 	}
 	## 立绘编号（faceset 同源表号；0 = 无立绘兜底）
-	const FACESETS := {"石环": 8, "荒废遗迹": 4, "精灵泉": 7, "merchant": 6}
+	const FACESETS := {"石环": 101, "荒废遗迹": 102, "精灵泉": 103, "merchant": 104}
 	var landmark_id := ""
 	var giver := ""
 	var quest_kind := ""

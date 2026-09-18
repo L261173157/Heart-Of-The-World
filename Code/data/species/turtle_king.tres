@@ -1,7 +1,7 @@
 [gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_rca8i"]
-[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/sea_turtle/sea_turtle_frames.tres" id="2_frames"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/boss_flam/boss_flam_frames.tres" id="2_frames"]
 
 [resource]
 script = ExtResource("1_rca8i")
@@ -33,3 +33,4 @@ is_boss = true
 boss_respawn_ticks = 480
 boss_size_scale = 2.2
 element = "fire"
+visual_scale = 0.32
