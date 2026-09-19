@@ -75,13 +75,17 @@ func _ready() -> void:
 	# v7 物品：首获材料（指路卖钱出口）+ 低血有补给（快捷槽救急）
 	EventBus.item_gained.connect(_on_item_gained)
 	EventBus.player_hp_changed.connect(_on_hp_for_item_hint)
-	EventBus.player_died.connect(func() -> void:
-		_hint("died", "你死了，但生态不会停：它们仍在繁衍、迁徙、衰老")
-	)
+	# player_died 用方法引用（与上方定时器同因）：lambda 捕获 self 不受
+	# "对象释放自动断连"保护，回菜单后下一局世界的死亡信号会悬空调用本节点
+	EventBus.player_died.connect(_on_player_died)
 	# 生态事件：只观察真实信号（模拟层事件 → 播报）
 	if WorldSim.sim != null:
 		WorldSim.sim.instance_spawned.connect(_on_spawned)
 		WorldSim.sim.instance_migrated.connect(_on_migrated)
+
+
+func _on_player_died() -> void:
+	_hint("died", "你死了，但生态不会停：它们仍在繁衍、迁徙、衰老")
 
 
 func _on_item_gained(item_id: String, _count: int, _total: int) -> void:

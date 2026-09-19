@@ -279,6 +279,8 @@ var _dialogue_no: TextureButton
 var _dialogue_quest: Dictionary = {}
 var _dialogue_kind := ""
 var _dialogue_timer := 0.0
+## 对话发起 NPC 的世界位置（走开自动关气泡用；INF = 载荷未带位置不判距）
+var _dialogue_origin := Vector2.INF
 ## NA 心形五帧（美术 v5 UI 主题化）：条带 80×16，帧 0-4 = 空→满
 const HEART_STRIP := preload("res://assets/na/hud/heart.png")
 var _heart_icon: TextureRect
@@ -295,6 +297,9 @@ func _heart_frame(idx: int) -> AtlasTexture:
 	return _heart_cache[clampi(idx, 0, 4)]
 const DIALOGUE_INFO_SECONDS := 3.5
 const DIALOGUE_OFFER_SECONDS := 12.0
+## 离开发起 NPC 超过此距离自动收气泡：对话期间攻击键=确认/冲刺=关闭，
+## 玩家已走远时旧委托还挂屏会误接单（NPC 交互半径 96px，180px 留走位余量）
+const DIALOGUE_WALKAWAY_RADIUS := 180.0
 
 
 func _setup_dialogue_bubble() -> void:
@@ -392,6 +397,8 @@ func _open_dialogue(payload: Dictionary) -> void:
 	# NA 语音短音（美术 v5 音频全量）：NPC 开口随机一条，说话感
 	SfxManager.play("voice%d" % (1 + randi() % 4))
 	_dialogue_kind = str(payload.get("kind", ""))
+	var origin: Variant = payload.get("origin", Vector2.INF)
+	_dialogue_origin = origin if origin is Vector2 else Vector2.INF
 	_dialogue_quest = payload.get("quest", {}) if _dialogue_kind == "quest" else {}
 	_dialogue_name.text = str(payload.get("giver", ""))
 	_dialogue_text.text = str(payload.get("text", ""))
@@ -421,6 +428,7 @@ func _close_dialogue() -> void:
 	_dialogue_panel.visible = false
 	_dialogue_quest = {}
 	_dialogue_kind = ""
+	_dialogue_origin = Vector2.INF
 	GameState.dialogue_open = false
 
 
@@ -432,6 +440,13 @@ func _exit_tree() -> void:
 func _process_dialogue(delta: float) -> void:
 	if not _dialogue_panel.visible:
 		return
+	# 中途走开自动关闭（距离见 DIALOGUE_WALKAWAY_RADIUS 注释）
+	if _dialogue_origin != Vector2.INF:
+		var player := get_tree().get_first_node_in_group("player") as Node2D
+		if player == null or player.global_position.distance_to(_dialogue_origin) \
+				> DIALOGUE_WALKAWAY_RADIUS:
+			_close_dialogue()
+			return
 	_dialogue_timer -= delta
 	if _dialogue_timer <= 0.0:
 		_close_dialogue()
@@ -1107,6 +1122,10 @@ func _setup_shop_tabs() -> void:
 	tab_sell.name = "收购"
 	tabs.add_child(tab_sell)
 	for id: String in EconomyMath.ITEM_SELL:
+		# 钥匙不进收购页（凭证非商品）：金钥匙仅收集委托可得，误卖整叠会锁死
+		# 城塞宝箱闭环（ITEM_SELL 表保留钥匙 id 以过 knows_item 存档消毒认证）
+		if ItemCatalog.kind_of(id) == "key":
+			continue
 		var b := Button.new()
 		b.custom_minimum_size = Vector2(0, 52)
 		b.icon = ItemCatalog.icon_of(id)
@@ -1258,6 +1277,8 @@ func _refresh_inventory() -> void:
 	var ids: Array[String] = []
 	ids.append_array(ItemCatalog.ids_of_kind("consumable"))
 	ids.append_array(ItemCatalog.ids_of_kind("material"))
+	# 钥匙也入列：凭证类物品必须有常驻 UI 可查持有量（此前拾取 toast 之外无处可看）
+	ids.append_array(ItemCatalog.ids_of_kind("key"))
 	var shown := 0
 	for id: String in ids:
 		var n := GameState.count_item(id)
@@ -1276,11 +1297,14 @@ func _refresh_inventory() -> void:
 
 
 ## 物品格子点击：消耗品 → 经 item_use_requested 交 player 应用（满血拦截也在那）；
-## 材料 → 文案播报（面板是暂停态，_toast 计时冻结可从容读）
+## 钥匙 → 播报用途（凭证不可用不可售）；材料 → 文案播报（面板是暂停态，_toast 计时冻结可从容读）
 func _on_inv_cell(id: String) -> void:
 	if ItemCatalog.is_consumable(id):
 		EventBus.item_use_requested.emit(id)
 		_refresh_inventory()  # player 同步扣减，立刻反映数量
+	elif ItemCatalog.kind_of(id) == "key":
+		_toast("%s：城塞宝箱凭证（%s）" % [ItemCatalog.name_of(id),
+			"击败精英怪有几率掉落" if id == "silver-key" else "完成收集委托获得"])
 	else:
 		_toast("%s：%s（%d 金/个）" % [ItemCatalog.name_of(id), ItemCatalog.desc_of(id),
 			EconomyMath.item_sell_price(id)])

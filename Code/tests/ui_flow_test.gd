@@ -232,9 +232,16 @@ func _test_world_death_respawn() -> void:
 	hud._toggle_shop()
 	_check(not hud._inv_layer.visible and not get_tree().paused
 			and hud.shop_panel.visible, "商店打开时自动收起物品栏并恢复运行")
+	# 补给页 = ITEM_BUY 全表；收购页 = ITEM_SELL 除钥匙（2026-09-20 审计修复⑥：
+	# 城塞凭证不可卖——金钥匙仅收集委托可得，误卖整叠会锁死 lava 城塞闭环）
+	var sellable := 0
+	for id: String in EconomyMath.ITEM_SELL:
+		if ItemCatalog.kind_of(id) != "key":
+			sellable += 1
 	_check(hud._supply_btns.size() == EconomyMath.ITEM_BUY.size()
-			and hud._sell_btns.size() == EconomyMath.ITEM_SELL.size(),
-			"商店补给/收购商品与经济表同源（%d/%d）" % [hud._supply_btns.size(), hud._sell_btns.size()])
+			and hud._sell_btns.size() == sellable,
+			"商店补给/收购商品与经济表同源（钥匙凭证不售，%d/%d）" % [
+				hud._supply_btns.size(), hud._sell_btns.size()])
 	hud._toggle_shop()
 	GameState.inventory = {}
 

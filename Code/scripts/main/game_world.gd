@@ -257,9 +257,20 @@ func _mount_stream_layers(streamer: ChunkStreamer) -> void:
 	_layer_physics_selfcheck.call_deferred()
 
 
-## 延迟挂载自检：2s 后对障碍层已铺格做点查询（物理修复的回归哨兵，常态保留）
+## 延迟挂载自检：2s 后对障碍层已铺格做点查询（物理修复的回归哨兵，常态保留）。
+## 子 Timer 而非 create_timer+await：SceneTree 定时器随树存活，2s 窗口内回主
+## 菜单会在已释放的本节点上恢复协程（freed instance 报错）；子节点定时器随
+## 世界一起释放，方法引用连接自动断开
 func _layer_physics_selfcheck() -> void:
-	await get_tree().create_timer(2.0).timeout
+	var timer := Timer.new()
+	timer.wait_time = 2.0
+	timer.one_shot = true
+	timer.timeout.connect(_layer_selfcheck_tick)
+	add_child(timer)
+	timer.start()
+
+
+func _layer_selfcheck_tick() -> void:
 	var layer: TileMapLayer = null
 	for c in get_children():
 		if c is ObstacleTileLayer:
@@ -558,6 +569,11 @@ const DUNGEON_ZONE_HALF := Vector2(6.0 * 32.0 + 16.0, 4.0 * 32.0 + 16.0)
 ## 宝箱刷新半径（走进城塞才生成实体）
 const CHEST_STREAM_RADIUS := 1400.0
 var _chests := {}  # patch_id → DungeonChest
+## 已开标记（patch_id → true）：Boss 死亡窗口内开过的箱，流式离场（>1400px
+## 节点回收）后重进不得重置成未开——否则走远回来可反复开箱刷奖励；Boss 复活
+## 时清除（下一轮可再开）。会话级状态不进存档（与节点 taken 旧语义同生命周期，
+## 只是活过流式回收）
+var _chest_taken := {}
 var _in_dungeon := false
 var _dungeon_announced := {}
 ## 城塞表缓存（ObstacleField.dungeons 每次调用新分配数组+逐城 duplicate；
@@ -589,18 +605,25 @@ func _update_dungeons() -> void:
 			chest.position = center + Vector2(0, -110)
 			chest.boss_name = boss_name
 			chest.key_id = EconomyMath.DUNGEON_KEYS.get(dg["terrain"], "")
+			chest.notify_taken = _mark_chest_taken.bind(patch_id)
 			_landmark_root.add_child(chest)
 			_chests[patch_id] = chest
 		elif not near and _chests.has(patch_id):
 			_chests[patch_id].queue_free()
 			_chests.erase(patch_id)
 		if _chests.has(patch_id):
-			var boss_dead: bool = _sim != null \
-					and _sim.boss_respawn_timers.get(boss_name, 0) > 0
+			# boss_name 查空（地形没配 Boss）视为无主宝箱直接解锁，防永久锁死
+			var boss_dead: bool = boss_name == "" \
+					or (_sim != null and _sim.boss_respawn_timers.get(boss_name, 0) > 0)
 			var chest_node: DungeonChest = _chests[patch_id]
 			chest_node.locked = not boss_dead
 			if not boss_dead:
-				chest_node.taken = false  # Boss 复活 → 宝箱重置（下一轮可再开）
+				_chest_taken.erase(patch_id)  # Boss 复活 → 宝箱重置（下一轮可再开）
+			chest_node.taken = _chest_taken.has(patch_id)
+
+
+func _mark_chest_taken(patch_id: String) -> void:
+	_chest_taken[patch_id] = true
 
 
 ## 进出城塞（内腔矩形）：地牢 BGM 与首发现播报
@@ -693,6 +716,8 @@ class DungeonChest extends Node2D:
 	var key_id := ""
 	var locked := true
 	var taken := false
+	## 开箱回调（game_world 绑定，记录进 _chest_taken 活过流式回收）
+	var notify_taken: Callable
 	var _sprite: Sprite2D
 	var _key_hint: Sprite2D
 
@@ -732,6 +757,8 @@ class DungeonChest extends Node2D:
 				"完成收集委托获得" if key_id == EconomyMath.KEY_GOLD else "击败精英怪有几率掉落"])
 			return
 		taken = true
+		if notify_taken.is_valid():
+			notify_taken.call()
 		var gold: int = EconomyMath.bounty_gold(8, GameState.stats.level)
 		GameState.add_gold(gold)
 		# 双件物品奖励（hash 确定性，无 RNG）：补给 1 件 + 稀有材料 1 件
@@ -1053,6 +1080,8 @@ class LandmarkNPC extends Node2D:
 			var offered: Dictionary = interact_fn.call(landmark_id, quest_kind, giver)
 			offered["giver"] = giver
 			offered["faceset"] = FACESETS.get(kind, 0)
+			# 对话现场位置：HUD 据此在玩家走开时收气泡（不改道攻击/冲刺键）
+			offered["origin"] = global_position
 			EventBus.npc_dialogue.emit(offered)
 
 
@@ -1107,9 +1136,27 @@ func _commit_region(region_id: String) -> void:
 		# 读档续玩的首个区域提交：只静默接回区域 BGM，不播报/不放换区音/
 		# 不打威胁警告（威胁警告留给之后真正的跨区再入）
 		_skip_first_region_announce = false
-		SfxManager.play_music(region.terrain)
+		# 先同步一次特殊区判定再定首曲：出生点常在营地内，直接播群系曲会被
+		# 0.25s 后首个 _refresh_music 纠正成营地曲——每次进世界双重淡入淡出
+		var player := get_tree().get_first_node_in_group("player") as Node2D
+		if player != null:
+			_in_camp = player.global_position.distance_to(
+					WorldConfig.spawn_pos()) <= CAMP_HEAL_RADIUS
+			_process_dungeon_zone(player)
+		if _in_camp:
+			_music_mode = "camp"
+			SfxManager.play_music("camp")
+		elif _in_dungeon:
+			_music_mode = "dungeon"
+			SfxManager.play_music("dungeon")
+		else:
+			SfxManager.play_music(region.terrain)
 		return
 	EventBus.player_entered_region.emit(region.id, region.display_name)
+	# 群系曲只在无特殊区模式时切：Boss 临场/城塞/营地中进行跨区不得抢占战斗曲，
+	# 脱离特殊区时 _refresh_music 会按当前区域接回群系曲（切曲权威在本调度器）
+	if _music_mode == "":
+		SfxManager.play_music(region.terrain)
 	if region.threat >= 2.2 and not _warned_regions.has(region.id):
 		_warned_regions[region.id] = true
 		EventBus.region_threat_warning.emit(region.threat)

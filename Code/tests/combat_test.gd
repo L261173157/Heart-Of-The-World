@@ -779,6 +779,7 @@ func _step() -> void:
 			return
 		if not _items_verified:
 			_verify_items()
+			_verify_audit_regressions()
 		return
 	# 复活窗口不推进断言段：技能施放类断言会被 _is_dead 静默拦截
 	# （营地怪群围攻下死亡瞬间的 0.x 秒空窗，判定口径与技能无关）
@@ -1029,6 +1030,94 @@ func _verify_items() -> void:
 		_check(msg != "" and GameState.quests["active"].is_empty(), "任务行点击可放弃（%s）" % msg)
 	else:
 		_check(false, "第二单 collect 委托未生成（放弃用例跳过）")
+
+
+## 审计回归（2026-09-20 修复①②③）：collect 结算守卫 / 宝箱流式重开守卫 /
+## Boss 临场音乐优先级不被跨区抢占——全部同步断言，不占测试时序预算
+func _verify_audit_regressions() -> void:
+	# ① collect 结算守卫：库存不足时 _complete 不销单/不计数/不发奖
+	#（旧实现先销单后扣料，扣料失败=任务没了、完成数已加、奖励没发）
+	var qm := get_tree().get_first_node_in_group("quest_manager")
+	if qm != null:
+		var off: Dictionary = qm.offer("lm_collect_test", "collect", "草药师")
+		if off["kind"] == "quest":
+			var q: Dictionary = off["quest"]
+			var item_id: String = q["item"]
+			GameState.inventory.erase(item_id)  # 卖光材料（等价气泡窗口内售出）
+			qm.accept(q)
+			var gold_before := GameState.gold
+			var keys_before := GameState.count_item("gold-key")
+			qm._complete(q)
+			var still_active := false
+			for aq: Dictionary in GameState.quests["active"]:
+				if aq["id"] == q["id"]:
+					still_active = true
+			_check(still_active and GameState.gold == gold_before
+					and GameState.count_item("gold-key") == keys_before
+					and int(GameState.quests["completed"].get("lm_collect_test", 0)) == 0,
+					"collect 库存不足：不销单不计数不发奖")
+			# 材料补足 → 经 item_gained 信号正常结算
+			GameState.add_item(item_id, int(q["need"]) * 2)
+			var settled := true
+			for aq: Dictionary in GameState.quests["active"]:
+				if aq["id"] == q["id"]:
+					settled = false
+			_check(settled and GameState.count_item(item_id) == int(q["need"]),
+					"补货后 collect 经拾取信号正常结算（剩 need 件）")
+			GameState.quests["completed"].erase("lm_collect_test")
+		else:
+			_check(false, "结算守卫用例：collect 委托未生成")
+	# ② 宝箱流式重开守卫：开箱 → 走远节点回收 → 重进重建仍是已开；Boss 复活重置
+	if _world._dungeon_list().size() > 0:
+		var dg: Dictionary = _world._dungeon_list()[0]
+		var pid: String = dg["patch_id"]
+		var boss_name: String = WorldConfig.TERRAIN_BOSSES.get(dg["terrain"], "")
+		if boss_name != "":
+			_sim.boss_respawn_timers[boss_name] = 999.0  # 伪造 Boss 死亡窗口
+			_player.global_position = dg["center"]
+			_world._update_dungeons()
+			var chest = _world._chests.get(pid)
+			if chest != null:
+				chest.key_id = ""  # 测试免消耗真钥匙
+				chest.interact()
+				_check(_world._chest_taken.has(pid), "开箱写入已开标记")
+				_player.global_position = dg["center"] + Vector2(9999.0, 9999.0)
+				_world._update_dungeons()
+				var gone: bool = not _world._chests.has(pid)
+				_player.global_position = dg["center"]
+				_world._update_dungeons()
+				var chest2 = _world._chests.get(pid)
+				_check(gone and chest2 != null and chest2.taken,
+						"流式离场重进后宝箱保持已开（不可重复开刷奖励）")
+				_sim.boss_respawn_timers[boss_name] = 0.0  # Boss 复活
+				_world._update_dungeons()
+				_check(not _world._chest_taken.has(pid) and _world._chests[pid].locked,
+						"Boss 复活重置宝箱（下一轮可再开）")
+				_sim.boss_respawn_timers.erase(boss_name)
+			else:
+				_check(false, "玩家就位后城塞宝箱生成")
+	# ③ 音乐优先级：Boss 临场中跨区不被群系曲抢占（旧实现换区监听在
+	# SfxManager 侧无条件切群系曲，且 _music_mode 未变不纠回）
+	var other_region := ""
+	for rid: String in _sim.regions.keys():
+		if rid != _world._current_region_id:
+			other_region = rid
+			break
+	if other_region != "":
+		_world._boss_tracked_id = 999999
+		_world._music_mode = ""
+		_world._refresh_music()
+		_check(SfxManager._music_name == "boss", "Boss 临场切入战斗曲")
+		var prev_skip: bool = _world._skip_first_region_announce
+		_world._skip_first_region_announce = false
+		_world._commit_region(other_region)
+		_check(SfxManager._music_name == "boss" and _world._music_mode == "boss",
+				"Boss 临场中跨区：战斗曲不被群系曲抢占")
+		_world._boss_tracked_id = -1
+		_world._refresh_music()
+		_check(SfxManager._music_name != "boss" and _world._music_mode != "boss",
+				"脱离 Boss 圈战斗曲回落（群系/城塞曲）")
+		_world._skip_first_region_announce = prev_skip
 
 
 func _finish() -> void:

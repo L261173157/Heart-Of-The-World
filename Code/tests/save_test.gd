@@ -17,6 +17,7 @@ func _ready() -> void:
 	_test_lifespan()
 	_test_ecology_snapshot()
 	_test_world_v5()
+	_test_quests_and_settings()
 	_test_corrupted_file()
 	# 收尾清档，不把测试数据留给真实游戏
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(GameState.SAVE_PATH))
@@ -413,6 +414,75 @@ func _test_ecology_snapshot() -> void:
 	var reset_data: Dictionary = JSON.parse_string(reset_file.get_as_text())
 	reset_file.close()
 	_check(not reset_data.has("ecology"), "重置世界后存档不再携带生态快照")
+
+
+## 任务进度（v5+）与设置白名单的读档消毒（审计 2026-09-20 补盲区）：
+## quests 往返/坏条目丢弃/物种更名迁移/进度超钳；settings 非法值不覆写、
+## 音量钳制、未知键不入档；未来版本号档容错读取
+func _test_quests_and_settings() -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(GameState.SAVE_PATH))
+	# 1) 正常往返（任务进行中 + 完成数 + 设置全键）
+	GameState.quests = {"active": [{
+		"id": "q_lm_x_0", "landmark_id": "lm_x", "giver": "营地猎人", "kind": "hunt",
+		"species": "妖鬼", "progress": 2, "need": 5, "title": "狩猎：击杀 妖鬼 ×5",
+		"gold": 80, "xp": 40,
+	}], "completed": {"lm_x": 3}}
+	GameState.settings = {"volume": 0.6, "music_volume": 0.4, "sfx_volume": 0.9,
+		"screen_shake": false, "damage_numbers": false, "auto_aim": true,
+		"hero_skin": "white", "lantern_shadows": false, "show_fps": true}
+	GameState.save_now()
+	GameState.quests = {"active": [], "completed": {}}
+	GameState.settings = {"volume": 0.8, "auto_aim": false, "hero_skin": "blue"}
+	GameState._load()
+	_check(GameState.quests["active"].size() == 1
+			and GameState.quests["active"][0]["species"] == "妖鬼"
+			and int(GameState.quests["active"][0]["progress"]) == 2
+			and int(GameState.quests["completed"].get("lm_x", 0)) == 3,
+			"任务进度读档往返（进行中条目+完成数）")
+	_check(bool(GameState.settings.get("auto_aim", false))
+			and str(GameState.settings.get("hero_skin", "")) == "white"
+			and not bool(GameState.settings.get("lantern_shadows", true))
+			and absf(float(GameState.settings.get("music_volume", 0.0)) - 0.4) < 0.001,
+			"设置全键读档往返（含 auto_aim/提灯阴影/分路音量）")
+	# 2) quests 坏档消毒：非字典/缺 id/坏 need/缺 kind·title（HUD 消费必读键）丢弃；
+	#    物种随美术 v5 更名迁移；进度超钳
+	var file := FileAccess.open(GameState.SAVE_PATH, FileAccess.WRITE)
+	file.store_string(JSON.stringify({
+		"version": 6, "level": 2,
+		"quests": {
+			"active": [42, {"need": 3}, {"id": 7, "need": 2}, {"id": "q_c", "need": 2},
+				{"id": "q_a", "kind": "hunt", "title": "狩猎：击杀 獾王 ×4",
+				 "landmark_id": "lm_a", "need": 4, "progress": 99, "species": "獾王"},
+				{"id": "q_b", "kind": "ransack", "title": "捣毁巢穴 ×2",
+				 "landmark_id": "lm_b", "need": 2, "progress": 1}],
+			"completed": {"lm_ok": 2, "lm_bad": "x", "lm_neg": -1},
+		},
+		"settings": {"hero_skin": "rainbow", "auto_aim": "yes", "volume": 3.0,
+			"screen_shake": "off", "unknown_key": true},
+	}))
+	file.close()
+	GameState._load()
+	_check(GameState.quests["active"].size() == 2,
+			"任务坏条目丢弃（保留 %d/2：非字典/缺id/坏need/缺kind·title）" % GameState.quests["active"].size())
+	var qa: Dictionary = GameState.quests["active"][0]
+	_check(qa["id"] == "q_a" and qa["species"] == "锹形虫王" and int(qa["progress"]) == 4,
+			"任务物种更名迁移（獾王→锹形虫王）+ 进度超钳到 need")
+	_check(int(GameState.quests["completed"].get("lm_ok", 0)) == 2
+			and int(GameState.quests["completed"].get("lm_neg", -1)) == 0
+			and not GameState.quests["completed"].has("lm_bad"),
+			"完成数消毒（坏类型丢弃/负数归零）")
+	_check(str(GameState.settings.get("hero_skin", "")) == "white"
+			and absf(float(GameState.settings.get("volume", 0.0)) - 1.0) < 0.001
+			and not GameState.settings.has("unknown_key"),
+			"设置白名单：非法值不覆写现有值/音量钳 1.0/未知键不入内存")
+	# 3) 未来版本档：版本号超前只警告不拒读（字段按默认兜底）
+	file = FileAccess.open(GameState.SAVE_PATH, FileAccess.WRITE)
+	file.store_string(JSON.stringify({"version": 99, "level": 4, "gold": 12}))
+	file.close()
+	GameState.stats.level = 1
+	GameState.gold = 0
+	GameState._load()
+	_check(GameState.stats.level == 4 and GameState.gold == 12, "未来版本档容错读取（v99）")
 
 
 func _test_corrupted_file() -> void:

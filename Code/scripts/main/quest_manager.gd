@@ -23,11 +23,15 @@ func _ready() -> void:
 	EventBus.landmark_discovered.connect(_on_discover)
 	# collect（P1）：进度 = 当前持有数（接单前的存量同样计入）
 	EventBus.item_gained.connect(_on_item_gained)
-	# 对话气泡按"是"接单（HUD 发出，气泡自己关闭）
-	EventBus.dialogue_confirmed.connect(func(quest: Dictionary) -> void:
-		var text: String = accept(quest)
-		EventBus.hint_requested.emit("📋 " + quest.get("giver", "") + "：" + text))
+	# 对话气泡按"是"接单（HUD 发出，气泡自己关闭）。方法引用连接：lambda 捕获
+	# self 不受"对象释放自动断连"保护，二周目世界的确认信号会悬空调用已释放的本节点
+	EventBus.dialogue_confirmed.connect(_on_dialogue_confirmed)
 	_push_hud()
+
+
+func _on_dialogue_confirmed(quest: Dictionary) -> void:
+	var text: String = accept(quest)
+	EventBus.hint_requested.emit("📋 " + quest.get("giver", "") + "：" + text)
 
 
 ## NPC 交互入口（美术 v5 对话化）：返回「结构化委托单」由 HUD 对话气泡展示，
@@ -56,7 +60,12 @@ func accept(quest: Dictionary) -> String:
 		if q["id"] == quest.get("id", ""):
 			return "%s：任务进行中——%s" % [quest.get("giver", ""), q["title"]]
 	data["active"].append(quest)
-	# collect 边界：接单时背包存量已达标 → 立即结算（悬赏是收购要约，货够即成）
+	# collect 边界：offer 生成到玩家确认隔最长 12s 气泡窗口，期间可能把材料
+	# 卖到低于 need——接单时按当前持有重算进度，旧快照虚标达标会误触结算
+	if quest.get("kind", "") == "collect":
+		quest["progress"] = mini(GameState.count_item(str(quest.get("item", ""))),
+				int(quest.get("need", 1)))
+	# 存量达标 → 立即结算（悬赏是收购要约，货够即成）
 	if int(quest.get("progress", 0)) >= int(quest.get("need", 1)):
 		_complete(quest)
 	else:
@@ -198,12 +207,15 @@ func _progress_match(predicate: Callable) -> void:
 
 func _complete(quest: Dictionary) -> void:
 	var data: Dictionary = GameState.quests
+	# collect 先扣材料再销单：库存意外不足（接单后卖掉等边角）时不销单不计数，
+	# 进度回落到当前持有等再攒——先销单后扣料的旧顺序在扣料失败时任务已没了、
+	# 完成数已加、奖励没发（与"不结算不销单"的注释语义相反）
+	if quest["kind"] == "collect" and not GameState.remove_item(quest["item"], int(quest["need"])):
+		quest["progress"] = mini(GameState.count_item(str(quest["item"])), int(quest["need"]))
+		return
 	data["active"].erase(quest)
 	data["completed"][quest["landmark_id"]] = \
 			int(data["completed"].get(quest["landmark_id"], 0)) + 1
-	# collect 结算先扣材料（存量可能正好=need；卖掉后进度回退不会再进这里）
-	if quest["kind"] == "collect" and not GameState.remove_item(quest["item"], int(quest["need"])):
-		return  # 库存意外不足（跨存档边角）：不结算不销单，等材料再攒
 	GameState.add_gold(quest["gold"])
 	GameState.add_xp(quest["xp"])
 	# 物品奖励（P1）：collect 固定附金钥匙（lava 城塞的钥匙闭环）；其余任务

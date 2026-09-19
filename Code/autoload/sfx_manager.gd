@@ -116,12 +116,12 @@ func _ready() -> void:
 	# 世界事件（灭绝/复苏/入侵潮/Boss 降临）不配音：此前复用换区 chime，
 	# 三个 Boss 相继重生会连响三声同款音效、且与真实换区音无法区分语义——
 	# 事件的反馈通道是 toast 播报，声音留给"真的换了张地图"
+	# 换区只播提示音：切曲权威在 game_world 的音乐优先级调度
+	# （活Boss临场>城塞内>营地>群系，_refresh_music）——此处若无条件切群系曲，
+	# Boss 战中跨区时战斗曲被抢占且模式未变调度器不会纠回
 	EventBus.player_entered_region.connect(
-		func(region_id: String, _name: String) -> void:
+		func(_region_id: String, _name: String) -> void:
 			play("region")
-			# 区域 id → 地形（TERRAIN_THEMES 键控）；查不到回退平原曲不硬崩
-			var region: SimRegion = WorldSim.sim.get_region(region_id) if WorldSim.sim != null else null
-			play_music(region.terrain if region != null else "plains")
 	)
 	# leveled_up 挂在 CharacterStats 上：reset_all() 后经 stats_rebuilt 重连。
 	# reset_all 现为就地重置（对象身份不变），连接前查重防叠连（否则升级音效叠播）

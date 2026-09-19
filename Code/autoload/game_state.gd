@@ -61,8 +61,8 @@ var player_snapshot: Variant = null
 ## pass 是移动端 GPU 大项，真机卡顿可关——开发计划预案内降级路径）、帧率显示
 ## （默认关，真机性能定位用）
 var settings: Dictionary = {"volume": 0.8, "music_volume": 1.0, "sfx_volume": 1.0,
-	"screen_shake": true, "damage_numbers": true, "hero_skin": "blue",
-	"lantern_shadows": true, "show_fps": false}
+	"screen_shake": true, "damage_numbers": true, "auto_aim": false,
+	"hero_skin": "blue", "lantern_shadows": true, "show_fps": false}
 ## 本局击杀数（死亡信息/统计用）
 var session_kills: int = 0
 ## NPC 对话气泡开合标记（运行态，不存档）：player 侧据此把攻击键路由为
@@ -739,8 +739,10 @@ func _load() -> void:
 			# 写成 "false"（truthy 字符串）直接覆写会让开关行为反直觉
 			match key:
 				"volume", "music_volume", "sfx_volume":
+					# 回退值经 get 取：内存 settings 可能缺键（如部分赋值后读档），
+					# 直接 settings[key] 索引会在键缺失时中断整个 _load
 					settings[key] = clampf(_safe_float(saved_settings[key],
-						settings[key]), 0.0, 1.0)
+						float(settings.get(key, 1.0))), 0.0, 1.0)
 				"screen_shake", "damage_numbers", "auto_aim", "lantern_shadows", "show_fps":
 					if typeof(saved_settings[key]) == TYPE_BOOL:
 						settings[key] = saved_settings[key]
@@ -783,11 +785,20 @@ func _load() -> void:
 				if typeof(q) != TYPE_DICTIONARY:
 					continue
 				var qd: Dictionary = q
-				if typeof(qd.get("id", "")) != TYPE_STRING or typeof(qd.get("need", 0)) not in [TYPE_INT, TYPE_FLOAT]:
+				# id 判型默认值须用 null：默认 "" 也是 String，缺 id 的坏条目
+				# 会溜过类型门留在任务栏，HUD 读 title/kind 即崩。合法任务
+				#（_gen_quest 产出）必有 id/kind/title，缺任一即丢弃
+				if typeof(qd.get("id", null)) != TYPE_STRING or str(qd.get("id")) == "" \
+						or typeof(qd.get("need", 0)) not in [TYPE_INT, TYPE_FLOAT] \
+						or typeof(qd.get("kind", null)) != TYPE_STRING \
+						or typeof(qd.get("title", null)) != TYPE_STRING:
 					continue
 				# 旧档任务的目标物种随美术 v5 更名一并迁移（查无的已删物种任务
-				# 保留但永不达成——任务栏可手动放弃，不做读档时静默删任务）
-				if typeof(qd.get("species", "")) == TYPE_STRING:
+				# 保留但永不达成——任务栏可手动放弃，不做读档时静默删任务）。
+				# 物种键仅狩猎任务携带：捣巢/探索/收集任务无此键，get 默认须用
+				# null 判型（默认 "" 也是 String，旧写法会对无键任务取 qd["species"]
+				# 崩溃，中断 _load——其后的物品栏/地标/保存时间全部丢失）
+				if typeof(qd.get("species", null)) == TYPE_STRING:
 					qd["species"] = SpeciesCatalog.migrate_name(qd["species"])
 				qd["progress"] = clampi(int(qd.get("progress", 0)), 0, int(qd["need"]))
 				quests["active"].append(qd)

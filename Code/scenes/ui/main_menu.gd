@@ -34,7 +34,9 @@ func _ready() -> void:
 	# iOS 刘海/圆角：菜单根整体收进安全区。Bg 随之缩进后，边带露出的是
 	# project.godot 的 default_clear_color（已设为同色），视觉无缝
 	SafeAreaRoot.apply_to(self)
-	get_viewport().size_changed.connect(func() -> void: SafeAreaRoot.apply_to(self))
+	# 方法引用连接：菜单释放时自动断连（lambda 悬连会在视口尺寸变化时
+	# 对已释放菜单悬空调用）
+	get_viewport().size_changed.connect(_on_viewport_resized)
 	# 主菜单 BGM（进世界后由区域检测换成区域曲）
 	SfxManager.play_music("menu")
 	# 复位触屏输入残留：按住摇杆时退出世界（节点释放收不到 release 事件），
@@ -60,6 +62,10 @@ func _ready() -> void:
 	%NewBtn.visible = has_progress
 	%NewGameConfirm.visible = false
 	%ArchiveLayer.visible = false
+
+
+func _on_viewport_resized() -> void:
+	SafeAreaRoot.apply_to(self)
 
 
 ## 视觉：与游戏内 HUD 同款深色玻璃金边主题；菜单按钮图形化（图标+文字），

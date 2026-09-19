@@ -153,12 +153,17 @@ func _ready() -> void:
 	attack_hitbox.body_entered.connect(_on_attack_body_entered)
 	# 延迟到所有节点 ready 之后再推初值，保证 HUD 已连接信号
 	_push_hud.call_deferred()
-	# 升级白闪光（美术 v5 fx 全量）：世界层特效走 fx_requested 通道
-	GameState.stats.leveled_up.connect(func(_level: int, _levels: int) -> void:
-		EventBus.fx_requested.emit("flash", global_position, 1.5))
+	# 升级白闪光（美术 v5 fx 全量）：世界层特效走 fx_requested 通道。方法引用
+	# 连接：stats 常驻 autoload 而 player 随世界释放，lambda 不随对象释放断连，
+	# 下一局世界的升级信号会悬空调用已释放的本节点
+	GameState.stats.leveled_up.connect(_on_leveled_up_fx)
 	# v7 消耗品：HUD 快捷槽/物品栏发 item_use_requested，效果应用在本节点
 	# （生命/精力的权威持有者，满血满蓝拦截与治疗技能同口径）
 	EventBus.item_use_requested.connect(use_item)
+
+
+func _on_leveled_up_fx(_level: int, _levels: int) -> void:
+	EventBus.fx_requested.emit("flash", global_position, 1.5)
 
 
 ## 头顶定位标记（zoom1 广角下绿衣忍者在草地背景中可寻性不足，视觉分析实证；

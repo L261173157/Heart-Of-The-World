@@ -23,23 +23,34 @@ const ACHIEVEMENTS := {
 
 func _ready() -> void:
 	EventBus.monster_killed_by_player.connect(_on_kill)
-	# 灭绝/复苏走结构化信号（world_event_watcher 与播报文案解耦后改文案不断链）
-	EventBus.species_extinct.connect(func(_species: String) -> void: unlock("witness_extinct"))
-	EventBus.species_recovered.connect(func(_species: String) -> void: unlock("witness_revive"))
+	# 灭绝/复苏走结构化信号（world_event_watcher 与播报文案解耦后改文案不断链）。
+	# 方法引用连接：lambda 捕获 self 不随对象释放断连，回菜单后下一局世界的
+	# 生态信号会悬空调用已释放的本节点（世界子节点连长命信号的统一纪律）
+	EventBus.species_extinct.connect(_on_species_extinct)
+	EventBus.species_recovered.connect(_on_species_recovered)
 	EventBus.day_phase_changed.connect(_on_day_phase)
 	# 夜间读档时 resume_clock 的入夜信号早于本节点挂载；若不补记，玩家从
 	# 存档中的夜晚活到黎明也不会解锁“夜行者”，同一段生存挑战因读档被吞掉。
 	if WorldSim.is_night:
 		set_meta("night_started", true)
-	GameState.stats.leveled_up.connect(
-		func(level: int, _levels: int) -> void:
-			if level >= 5:
-				unlock("level5")
-			if level >= 10:
-				unlock("level10")
-	)
+	GameState.stats.leveled_up.connect(_on_leveled_up)
 	# 商店购买没有专用信号，借升级通知的时机检查强化等级
 	GameState.stats.changed.connect(_check_shop_achievement)
+
+
+func _on_species_extinct(_species: String) -> void:
+	unlock("witness_extinct")
+
+
+func _on_species_recovered(_species: String) -> void:
+	unlock("witness_revive")
+
+
+func _on_leveled_up(level: int, _levels: int) -> void:
+	if level >= 5:
+		unlock("level5")
+	if level >= 10:
+		unlock("level10")
 
 
 func unlock(id: String) -> void:
