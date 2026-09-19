@@ -40,6 +40,11 @@ const NAV_DIRECT_DIST := 2600.0
 ## 重设导航目标的最小位移：目标挪动小于此值不触发重算路径（每帧 set 目标
 ## 会让 NavigationServer 每帧全量重算路径，30 只活跃怪会吃满帧预算）
 const NAV_RETARGET_STEP := 64.0
+## 导航取路节流窗（真机性能优化二轮 2026-09-19）：导航网格随玩家流式增删，
+## 代理缓存路径被持续打废——每次 get_next_path_position 都可能触发对
+## 5.7 万格大导航图的同步重算（实测 M4 单次 ~0.8ms）。近圈怪按 0.1s 节流
+## 取路、其间复用上次期望速度（RVO 每帧照常喂）；远档怪干脆不走导航
+const NAV_QUERY_INTERVAL_MS := 100
 
 ## --- LOD 远档节流（真机性能优化 2026-09-19）---
 ## 斑块级流式下玩家周边常驻 40~90 只表现节点、同屏可见不足 10 只；屏外个体
@@ -51,6 +56,25 @@ const NAV_RETARGET_STEP := 64.0
 const LOD_FAR_DIST := 900.0
 const LOD_STEP := 6
 var _lod_skip := 0
+## 当前处于远档（_far_tick 主导）：_nav_velocity_toward 走免导航直线分支。
+## 远档个体屏外不可见，绕障精度无意义；导航查询是怪物侧最大单项成本
+var _far_mode := false
+## 近档导航查询节流缓存（毫秒时间戳 + 期望速度 + 目标锚）
+var _navq_ms := 0
+var _navq_velocity := Vector2.INF
+var _navq_target := Vector2.INF
+var _navq_speed := -1.0
+
+## 性能剖析累计器（perf_probe 消费；开销两次 ticks_usec，可常开）：
+## 近圈 _physics_process / 远档 _far_tick / 动画映射 / 导航取路 各自累计毫秒与调用数
+static var prof_phys_ms := 0.0
+static var prof_phys_n := 0
+static var prof_far_ms := 0.0
+static var prof_far_n := 0
+static var prof_anim_ms := 0.0
+static var prof_anim_n := 0
+static var prof_nav_ms := 0.0
+static var prof_nav_n := 0
 
 ## 导航代理（世界 v5）：追击/逃跑/迁徙/巡逻的绕障路径 + RVO 同族群体避让
 ## （蚂蚁群散开包围取代物理推挤长龙）。移动经 velocity 协议：
@@ -298,6 +322,7 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		return
 
+	var _t0 := Time.get_ticks_usec()
 	var player := _get_player()
 	# LOD 远档：屏外常规状态（巡逻含巡猎/追击/迁徙）10Hz 降频处理；
 	# 攻击/逃跑/子类扩展状态（>=10）与近圈个体逐位走原路径
@@ -308,10 +333,22 @@ func _physics_process(delta: float) -> void:
 		_lod_skip = (_lod_skip + 1) % LOD_STEP
 		if _lod_skip != 0:
 			return
+		var _tf := Time.get_ticks_usec()
+		_far_mode = true
 		_far_tick(delta * LOD_STEP, player)
+		_far_mode = false
+		prof_far_ms += (Time.get_ticks_usec() - _tf) * 0.001
+		prof_far_n += 1
 		return
 	_lod_skip = 0
+	var _tn := Time.get_ticks_usec()
+	_near_tick(delta, player)
+	prof_phys_ms += (Time.get_ticks_usec() - _tn) * 0.001
+	prof_phys_n += 1
 
+
+## 近圈全量路径（原 _physics_process 主体，抽出仅为剖析计时）
+func _near_tick(delta: float, player: Node2D) -> void:
 	_attack_cd = maxf(0.0, _attack_cd - delta)
 	_aggro_lock = maxf(0.0, _aggro_lock - delta)
 	_enrage_timer = maxf(0.0, _enrage_timer - delta)
@@ -431,10 +468,24 @@ func _on_nav_velocity(safe_velocity: Vector2) -> void:
 ## 朝目标移动的期望速度：近距走 NavigationAgent 路径（绕障），超远/无网格
 ## 直线兜底。目标重设按 NAV_RETARGET_STEP 节流（见常量注释）
 func _nav_velocity_toward(target: Vector2, speed: float) -> Vector2:
+	var _tv := Time.get_ticks_usec()
 	var direct := (target - global_position).normalized() * speed
-	if _nav == null or global_position.distance_to(target) > NAV_DIRECT_DIST:
+	# 远档免导航（真机性能优化二轮）：屏外个体直线逼近，绕障交给滑行；
+	# 恢复近圈后 retarget 守卫与路径失效重查会自动接回导航
+	if _far_mode or _nav == null or global_position.distance_to(target) > NAV_DIRECT_DIST:
 		_nav_target = Vector2.INF
+		prof_nav_ms += (Time.get_ticks_usec() - _tv) * 0.001
+		prof_nav_n += 1
 		return direct
+	# 近档取路节流：0.1s 内同目标同速度直接复用上次期望速度——导航网格
+	# 流式增删会让缓存路径反复打废，节流把同步重算压到 10Hz/只
+	var now_ms := Time.get_ticks_msec()
+	if _navq_velocity != Vector2.INF and now_ms - _navq_ms < NAV_QUERY_INTERVAL_MS \
+			and absf(_navq_speed - speed) < 0.01 \
+			and _navq_target.distance_squared_to(target) < 64.0 * 64.0:
+		prof_nav_ms += (Time.get_ticks_usec() - _tv) * 0.001
+		prof_nav_n += 1
+		return _navq_velocity
 	# 卡死看门狗（所有导航状态共用）：1s 内位移不足期望 15% 判定贴边卡死，
 	# 强制重铺路径并持续 0.45s 横向蹭步脱困（追击怪贴障碍边物理卡死的兜底——
 	# combat 掩体用例曾实测绕至 83px 处滞留到超时；正常移动不触发）
@@ -454,9 +505,18 @@ func _nav_velocity_toward(target: Vector2, speed: float) -> Vector2:
 		_nav_target = target
 		_nav.target_position = target
 	var next := _nav.get_next_path_position()
+	var result: Vector2
 	if next.distance_squared_to(global_position) < 4.0:
-		return direct
-	return (next - global_position).normalized() * speed
+		result = direct
+	else:
+		result = (next - global_position).normalized() * speed
+	_navq_ms = now_ms
+	_navq_velocity = result
+	_navq_target = target
+	_navq_speed = speed
+	prof_nav_ms += (Time.get_ticks_usec() - _tv) * 0.001
+	prof_nav_n += 1
+	return result
 
 
 ## 与目标的视线（原生射线查询，_physics_process 上下文调用）：只检测障碍墙层
@@ -490,6 +550,7 @@ func _has_los(target_pos: Vector2) -> bool:
 ## 其余按速度切 walk/idle。子类扩展状态（冲锋/蓄力/硬直）多数可由速度自然覆盖。
 ## 行走时叠加轻微上下浮动（帧动画之外的第二层动感）
 func _update_anim() -> void:
+	var _ta := Time.get_ticks_usec()
 	if visual == null:
 		return
 	var want := "idle"
@@ -505,6 +566,8 @@ func _update_anim() -> void:
 	if visual.animation != want or not visual.is_playing():
 		visual.play(want)
 	visual.offset.y = sin(_anim_time * 13.0) * 0.9 if want == "walk" else 0.0
+	prof_anim_ms += (Time.get_ticks_usec() - _ta) * 0.001
+	prof_anim_n += 1
 
 
 ## 挤压回弹（预备-过冲打击感）：朝 amount 比例压 0.5×dur 秒再弹回基础体型。

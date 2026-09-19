@@ -664,7 +664,8 @@ func _process(delta: float) -> void:
 		_refresh_skill_bar()
 	_process_dialogue(delta)
 	_update_smooth_bars(delta)
-	# 帧率显示（4Hz）：Engine 的 FPS 统计本身是滚动均值，快刷无意义
+	# 帧率显示（4Hz）：FPS + 每帧绘制调用数（定位 GPU/CPU 侧用——真机卡顿
+	# 时 DC 高而 FPS 低指向 GPU，DC 低而 FPS 低指向 CPU）
 	_fps_accum += delta
 	if _fps_accum >= 0.25:
 		_fps_accum = 0.0
@@ -672,7 +673,8 @@ func _process(delta: float) -> void:
 		if _fps_label.visible != want_visible:
 			_fps_label.visible = want_visible
 		if want_visible:
-			_fps_label.text = "%d FPS" % Engine.get_frames_per_second()
+			_fps_label.text = "%d FPS · DC %d" % [Engine.get_frames_per_second(),
+				Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)]
 
 
 ## 底部居中帧率小字（默认隐藏；joystick 在左下、技能钮在右下，中间空）

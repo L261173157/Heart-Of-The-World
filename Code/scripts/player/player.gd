@@ -969,6 +969,19 @@ func _damage_obstacle_ray() -> void:
 	rq.exclude = [get_rid()]
 	var hit := get_world_2d().direct_space_state.intersect_ray(rq)
 	if hit.is_empty():
+		# 流式铺设竞态兜底（真机性能优化二轮）：新入窗障碍格的逻辑数据先于
+		# 碰撞体分帧铺设到位，射线会落空——按真源 ObstacleField 复查刀锋扫过
+		# 的格，避免刚出现的岩石"打不着"；探测点仍在射线段上，reach 语义不变
+		for reach in [30.0, 42.0]:
+			var probe := Vector2i(
+					floori((global_position + facing * reach).x / 32.0),
+					floori((global_position + facing * reach).y / 32.0))
+			var s := ObstacleField.sample_cell(probe)
+			if not s.is_empty() and ObstacleField.DESTRUCTIBLE.has(s["kind"]):
+				var k := ObstacleField.damage_cell(probe)
+				if k != "":
+					_on_obstacle_destroyed(probe, k)
+				return
 		return
 	var collider: Object = hit["collider"]
 	var is_obstacle := (collider is TileMapLayer) \

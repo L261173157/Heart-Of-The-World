@@ -25,6 +25,11 @@ var _accum := 0.0
 ## （EcologySim.camp_pos，与巢穴/种群据点同址），换世界（sim 身份变化）时清空
 var _camp_cache_sim: EcologySim = null
 var _camp_cache: Dictionary = {}
+## 聚合结果缓存（真机性能优化二轮）：880 实例分组统计从 4Hz 降到 1Hz——
+## 战略地图层不需要更快，玩家/怪物实时点仍 4Hz
+var _camp_groups_cache: Dictionary = {}
+var _camp_groups_sim: EcologySim = null
+var _camp_groups_ms := 0
 
 
 func _ready() -> void:
@@ -75,17 +80,25 @@ func _draw() -> void:
 	# 族群营地怪群点：把模拟层活体按「区域|物种」聚合到所属营地据点画色点
 	# （据点制语义：怪属于地图营地，个体实时点只覆盖玩家 2400px——全图底图
 	# 只画局部节点会让玩家误读为"全世界没怪"）。只画已探索迷雾格内的营地，
-	# 未探索区域不显示保住开荒未知感；营地被清剿/物种灭绝时聚合数为 0 自然熄灭
+	# 未探索区域不显示保住开荒未知感；营地被清剿/物种灭绝时聚合数为 0 自然熄灭。
+	# 分组统计 880 实例按 1s 缓存（重绘仍 4Hz，实时玩家/怪物点不缓存）
 	if _camp_cache_sim != WorldSim.sim:
 		_camp_cache_sim = WorldSim.sim
 		_camp_cache.clear()
-	var camp_groups: Dictionary = {}
-	for inst: MonsterInstance in WorldSim.sim.instances.values():
-		if not inst.is_alive:
-			continue
-		var gkey := "%s|%s" % [inst.region_id, inst.species.species_name]
-		camp_groups[gkey] = int(camp_groups.get(gkey, 0)) + 1
-	for gkey: String in camp_groups:
+		_camp_groups_sim = null
+	if _camp_groups_sim != WorldSim.sim:
+		_camp_groups_sim = WorldSim.sim
+		_camp_groups_cache = {}
+	if Time.get_ticks_msec() - _camp_groups_ms >= 1000 or _camp_groups_cache.is_empty():
+		_camp_groups_ms = Time.get_ticks_msec()
+		var fresh: Dictionary = {}
+		for inst: MonsterInstance in WorldSim.sim.instances.values():
+			if not inst.is_alive:
+				continue
+			var gkey := "%s|%s" % [inst.region_id, inst.species.species_name]
+			fresh[gkey] = int(fresh.get(gkey, 0)) + 1
+		_camp_groups_cache = fresh
+	for gkey: String in _camp_groups_cache:
 		var camp: Dictionary = _camp_cache.get(gkey, {})
 		if camp.is_empty():
 			var camp_region: SimRegion = WorldSim.sim.regions.get(gkey.get_slice("|", 0))

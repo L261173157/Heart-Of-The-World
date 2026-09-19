@@ -28,8 +28,10 @@ func _init() -> void:
 var _bodies := {}
 ## 分帧铺格（真机性能优化 2026-09-19）：chunk_ready 同帧铺满森林块
 ## ~80 格（瓦片写入 + 80 次节点创建）×跨界多块是移动尖峰主源之一。
-## 格子入队按预算分帧铺入，body 等本块形状全齐才挂树进物理
-const LAY_BUDGET := 64
+## 格子入队按预算分帧铺入，body 等本块形状全齐才挂树进物理。
+## 64→160/帧（真机性能优化二轮）：收窄"逻辑格已到、碰撞体未铺"的竞态窗
+## （森林块 ~85 格一帧铺完），攻击侧另有射线落空回退查真源兜底
+const LAY_BUDGET := 160
 var _lay_queue: Array[Dictionary] = []  # [{origin, cell, atlas, r}]
 ## origin → {body, shapes, remaining}（铺设中；remaining 归零转 _bodies）
 var _laying := {}

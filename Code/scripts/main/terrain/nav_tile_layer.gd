@@ -1,16 +1,18 @@
 ## 导航专用瓦片层（世界 v5）：不渲染（瓦片全透明）、无碰撞，只向
 ## NavigationServer2D 提供可走格导航多边形——整层合并为单导航区域，天然没有
 ## 分块 Region 的边界缝合问题；相邻可走格共享边缘顶点，层内导航图连通。
-## 窗口半径 WINDOW_CHUNKS = 7 块（3584px，扣除半块余量仍 ≥ 怪物流式回收半径
+## 窗口半径 WINDOW_CHUNKS = 6 块（3072px，扣除半块余量仍 ≥ 怪物流式回收半径
 ## 2800px）——所有活跃怪物脚下恒有导航网格。格子同源 ObstacleField 派生
 ## （含单格死点填充，见 nav_blocked_chunk），与可见障碍层无双源漂移。
-## 铺格按帧预算节流（跨界一次最多补 15 块，全铺会顶帧；导航晚到无害——
+## 铺格按帧预算节流（跨界一次最多补 13 块，全铺会顶帧；导航晚到无害——
 ## 覆盖前的怪走直线，进窗后自动走导航）。
+## 7→6（真机性能优化二轮 2026-09-19）：单 NavigationRegion 图规模 -25%
+## （225→169 块）——流式增删打废全部代理缓存路径时的同步重算更便宜
 class_name NavTileLayer
 extends TileMapLayer
 
 const NAV_TILESET := preload("res://data/nav_tileset.tres")
-const WINDOW_CHUNKS := 7
+const WINDOW_CHUNKS := 6
 ## 每帧最多补铺的地形块数（跨界瞬间欠 15 块，~5 帧铺满）
 const FILL_BUDGET := 3
 const CHUNK_PX := 512
