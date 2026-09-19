@@ -19,6 +19,9 @@ const CHUNK_PX := 512
 var _filled := {}
 ## 待铺队列（近者先）
 var _pending: Array[Vector2i] = []
+## 待清队列（出窗块分帧清除——跨界帧同帧清 15 块×256 格 = 3840 次
+## erase_cell 是移动尖峰，与铺入同预算节流；真机性能优化 2026-09-19）
+var _clearing: Array[Vector2i] = []
 var _center_chunk := Vector2i(1073741823, 1073741823)
 
 
@@ -54,9 +57,14 @@ func _process(_delta: float) -> void:
 		var chunk: Vector2i = _pending.pop_front()
 		_fill_chunk(chunk)
 		budget -= 1
+	# 出窗清除同走分帧预算（跨界帧全清 3840 格曾是尖峰）
+	var clear_budget := FILL_BUDGET
+	while clear_budget > 0 and not _clearing.is_empty():
+		_clear_chunk(_clearing.pop_front())
+		clear_budget -= 1
 
 
-## 重建窗口：进窗缺口入队（按距玩家排序），出窗块整块清除
+## 重建窗口：进窗缺口入队（按距玩家排序），出窗块转待清队列分帧清除
 func _replan_window(center: Vector2i) -> void:
 	_pending.clear()
 	var r := WINDOW_CHUNKS
@@ -69,13 +77,15 @@ func _replan_window(center: Vector2i) -> void:
 		return _chunk_dist2(a, center) < _chunk_dist2(b, center))
 	for chunk: Vector2i in _filled.keys():
 		if absi(chunk.x - center.x) > r or absi(chunk.y - center.y) > r:
-			_clear_chunk(chunk)
 			_filled.erase(chunk)
+			_clearing.append(chunk)
 
 
 func _fill_chunk(chunk: Vector2i) -> void:
 	if _filled.has(chunk):
 		return
+	# 边界抖动路径：块在待清队列里又回到进窗——撤销清除保住已铺格
+	_clearing.erase(chunk)
 	var origin := chunk * CHUNK_PX
 	var blocked := ObstacleField.nav_blocked_chunk(origin)
 	var base := Vector2i(origin.x >> 5, origin.y >> 5)

@@ -14,6 +14,8 @@ func _ready() -> void:
 	%ShakeCheck.button_pressed = bool(GameState.settings.get("screen_shake", true))
 	%DmgNumCheck.button_pressed = bool(GameState.settings.get("damage_numbers", true))
 	%AutoAimCheck.button_pressed = bool(GameState.settings.get("auto_aim", false))
+	%LanternCheck.button_pressed = bool(GameState.settings.get("lantern_shadows", true))
+	%FpsCheck.button_pressed = bool(GameState.settings.get("show_fps", false))
 	_refresh_skin_btn()
 	%VolumeSlider.value_changed.connect(
 		func(v: float) -> void: GameState.set_setting("volume", v))
@@ -27,6 +29,10 @@ func _ready() -> void:
 		func(on: bool) -> void: GameState.set_setting("damage_numbers", on))
 	%AutoAimCheck.toggled.connect(
 		func(on: bool) -> void: GameState.set_setting("auto_aim", on))
+	%LanternCheck.toggled.connect(
+		func(on: bool) -> void: GameState.set_setting("lantern_shadows", on))
+	%FpsCheck.toggled.connect(
+		func(on: bool) -> void: GameState.set_setting("show_fps", on))
 	%SkinBtn.pressed.connect(_cycle_skin)
 
 

@@ -7,22 +7,25 @@ extends Node2D
 const FLOAT_AMP := 3.0
 const FLOAT_SPEED := 3.0
 const BASE_Y := -56.0
+## 浮动重绘节流：3px 缓浮 30Hz 足够顺滑；60Hz 重绘+每次两组多边形分配
+## 是白付的常驻成本（真机性能优化 2026-09-19）
+const REDRAW_INTERVAL := 1.0 / 30.0
 
 var _time := 0.0
+var _accum := 0.0
 
 
 func _ready() -> void:
 	z_index = 20
-	_redraw()
+	queue_redraw()
 
 
 func _process(delta: float) -> void:
 	_time += delta
-	_redraw()
-
-
-func _redraw() -> void:
-	queue_redraw()
+	_accum += delta
+	if _accum >= REDRAW_INTERVAL:
+		_accum = 0.0
+		queue_redraw()
 
 
 func _draw() -> void:

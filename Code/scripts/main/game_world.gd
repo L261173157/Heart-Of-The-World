@@ -62,6 +62,10 @@ const STREAM_RADIUS := 2400.0
 const STREAM_DESPAWN := 2800.0
 ## 流式维护轮询间隔（待生成实例扫描 + 出界节点回收 + 巢穴进出）
 const STREAM_INTERVAL := 0.5
+## 近旁扫描节流（地标标记/营地回血/城塞进出，真机性能优化 2026-09-19）：
+## 这些判定对 0.25s 粒度无感（回血本身 1s 一跳、城塞内腔 6 格宽），不必每帧跑
+const SCAN_INTERVAL := 0.25
+var _scan_accum := 0.0
 ## 顿帧期间的全局时间尺度（真实时间不受影响，恢复定时器忽略 time_scale）
 const HIT_STOP_SCALE := 0.05
 # --- 世界 v5 探索层 ---
@@ -311,7 +315,14 @@ func _process(delta: float) -> void:
 		_stream_primed = true
 		_stream_pass()
 		_update_dungeons()
-	_update_landmark_markers()
+	_scan_accum += delta
+	if _scan_accum >= SCAN_INTERVAL:
+		# 近旁扫描统一 4Hz：地标全表(~145 个)/营地/城塞每帧轮询是真机
+		# 常驻负载，0.25s 粒度对这些判定无感（回血 1s 一跳、标记进出 1400px）
+		var scan_delta := _scan_accum
+		_scan_accum = 0.0
+		_update_landmark_markers()
+		_process_camp(scan_delta)
 	_fog_accum += delta
 	if _fog_accum >= FOG_REVEAL_INTERVAL:
 		_fog_accum = 0.0
@@ -324,7 +335,6 @@ func _process(delta: float) -> void:
 			var rid := _region_candidate_id
 			_region_candidate_id = ""
 			_commit_region(rid)
-	_process_camp(delta)
 
 
 # --- 出生营地（美术 v5 M-B）：NA 建筑群 + 行商 + 安全区缓回血 ---
@@ -550,6 +560,15 @@ const CHEST_STREAM_RADIUS := 1400.0
 var _chests := {}  # patch_id → DungeonChest
 var _in_dungeon := false
 var _dungeon_announced := {}
+## 城塞表缓存（ObstacleField.dungeons 每次调用新分配数组+逐城 duplicate；
+## 表本身按种子确定性、装配后不变，缓存后零分配读取）
+var _dungeons_cache: Array = []
+
+
+func _dungeon_list() -> Array:
+	if _dungeons_cache.is_empty():
+		_dungeons_cache = ObstacleField.dungeons()
+	return _dungeons_cache
 ## 首轮流式未完成前不播 Boss 重生（世界装配期 instance_spawned 全量重放，
 ## 初始 Boss 不是"重生"；0.5s 首轮 _stream_pass 后置位）
 var _stream_primed := false
@@ -560,7 +579,7 @@ func _update_dungeons() -> void:
 	var player := get_tree().get_first_node_in_group("player") as Node2D
 	if player == null:
 		return
-	for dg: Dictionary in ObstacleField.dungeons():
+	for dg: Dictionary in _dungeon_list():
 		var patch_id: String = dg["patch_id"]
 		var center: Vector2 = dg["center"]
 		var near: bool = player.global_position.distance_to(center) <= CHEST_STREAM_RADIUS
@@ -588,7 +607,7 @@ func _update_dungeons() -> void:
 func _process_dungeon_zone(player: Node) -> void:
 	var pos: Vector2 = player.global_position
 	var inside := false
-	for dg: Dictionary in ObstacleField.dungeons():
+	for dg: Dictionary in _dungeon_list():
 		var center: Vector2 = dg["center"]
 		if absf(pos.x - center.x) <= DUNGEON_ZONE_HALF.x \
 				and absf(pos.y - center.y) <= DUNGEON_ZONE_HALF.y:
@@ -632,17 +651,35 @@ class FxLayer extends Node2D:
 		z_index = 50  # 顶层（血条/飘字之上不遮 HUD——HUD 是 CanvasLayer）
 		EventBus.fx_requested.connect(_spawn)
 
+	## kind → 回收桶（真机性能优化 2026-09-19）：每次事件 new AnimatedSprite2D
+	## + 播完 free 在 AOE/连杀时同帧多个是战斗尖峰；改池化——播完 stop+隐藏
+	## 留树回桶，复用时重定位重播（桶按需增长不收缩，与飘字池同思路）
+	var _pool := {}
+
 	func _spawn(kind: String, pos: Vector2, fx_scale: float) -> void:
 		var frames: SpriteFrames = TABLE.get(kind)
 		if frames == null:
 			return
-		var fx := AnimatedSprite2D.new()
-		fx.sprite_frames = frames
+		if not _pool.has(kind):
+			_pool[kind] = []
+		var bucket: Array = _pool[kind]
+		var fx: AnimatedSprite2D
+		if bucket.is_empty():
+			fx = AnimatedSprite2D.new()
+			fx.sprite_frames = frames
+			fx.animation_finished.connect(_recycle.bind(kind, fx))
+			add_child(fx)  # 常驻树中，回收只隐藏不摘树
+		else:
+			fx = bucket.pop_back()
 		fx.position = pos
 		fx.scale = Vector2.ONE * clampf(fx_scale, 0.5, 3.0)
-		add_child(fx)
+		fx.visible = true
 		fx.play(&"play")
-		fx.animation_finished.connect(fx.queue_free)
+
+	func _recycle(kind: String, fx: AnimatedSprite2D) -> void:
+		fx.stop()
+		fx.visible = false
+		(_pool[kind] as Array).append(fx)
 
 
 ## 城塞宝箱（v7 P1 钥匙模式）：Boss 被讨伐期间（重生倒计时进行中）解封，
@@ -991,7 +1028,8 @@ class LandmarkNPC extends Node2D:
 				_walk_dir = 0.0
 				_pause = 2.0 + fmod(_t, 3.0)
 				_face_dir(Vector2(_walk_dir, 0), false)
-		queue_redraw()
+		# _draw 只画一枚恒定光圈（位置变化走 transform，无需重绘命令）——
+		# 每帧 queue_redraw 是纯浪费，已去除（真机性能优化 2026-09-19）
 
 	## 朝向表现：水平→右向帧+flip；纵向→up/down 帧（美术 v5 借鉴②）
 	func _face_dir(dir: Vector2, walking: bool) -> void:

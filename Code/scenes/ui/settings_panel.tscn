@@ -93,6 +93,26 @@ text = "自动瞄准"
 [node name="AutoAimCheck" type="CheckButton" parent="Margin/VB/AimRow"]
 unique_name_in_owner = true
 
+[node name="LanternRow" type="HBoxContainer" parent="Margin/VB"]
+
+[node name="Label" type="Label" parent="Margin/VB/LanternRow"]
+custom_minimum_size = Vector2(120, 0)
+theme_override_font_sizes/font_size = 18
+text = "提灯阴影"
+
+[node name="LanternCheck" type="CheckButton" parent="Margin/VB/LanternRow"]
+unique_name_in_owner = true
+
+[node name="FpsRow" type="HBoxContainer" parent="Margin/VB"]
+
+[node name="Label" type="Label" parent="Margin/VB/FpsRow"]
+custom_minimum_size = Vector2(120, 0)
+theme_override_font_sizes/font_size = 18
+text = "帧率显示"
+
+[node name="FpsCheck" type="CheckButton" parent="Margin/VB/FpsRow"]
+unique_name_in_owner = true
+
 [node name="SkinRow" type="HBoxContainer" parent="Margin/VB"]
 
 [node name="Label" type="Label" parent="Margin/VB/SkinRow"]

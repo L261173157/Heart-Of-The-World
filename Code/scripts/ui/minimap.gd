@@ -10,7 +10,13 @@ extends Control
 const REDRAW_INTERVAL := 0.25
 ## 运行时生成的总览底图（world_overview_ready 送达前为 null——画占位深色）
 var _map_texture: ImageTexture = null
-## 迷雾纹理与增量重建脏标记（fog_version 变化才重建 200×200 纹理）
+## 迷雾纹理：常驻 Image + 增量更新（揭示只增不减；fog_version 变化时只把
+## GameState.fog_dirty 的新揭示格写透明并 update 纹理。曾经每版本全量
+## 40000 像素 set_pixel 重建，跑图期间 ~2 次/s 是移动尖峰——真机性能优化
+## 2026-09-19。首次（读档后）按 explored 全量建一次）
+const FOG_BLACK := Color(0.02, 0.03, 0.04, 1.0)
+const FOG_CLEAR := Color(0, 0, 0, 0)
+var _fog_image: Image = null
 var _fog_texture: ImageTexture = null
 var _fog_version_drawn := -1
 
@@ -54,10 +60,8 @@ func _draw() -> void:
 	var offset := (size - world.size * s) * 0.5
 	if _map_texture != null:
 		draw_texture_rect(_map_texture, Rect2(offset, world.size * s), false)
-	# 战争迷雾：未探索格盖黑（200×200 位图 → 一像素一格；按版本增量重建）
-	if GameState.fog_version != _fog_version_drawn:
-		_fog_version_drawn = GameState.fog_version
-		_fog_texture = _build_fog_texture()
+	# 战争迷雾：未探索格盖黑（200×200 位图 → 一像素一格；按版本增量更新）
+	_sync_fog_texture()
 	if _fog_texture != null:
 		draw_texture_rect(_fog_texture, Rect2(offset, world.size * s), false)
 	# 已发现地标图标（类型色点；未发现不显示——保住未知感）
@@ -116,12 +120,26 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color(1.0, 0.85, 0.45, 0.4), false, 2.0)
 
 
-## 迷雾纹理：200×200，未探索黑不透明 / 已探索全透明
-func _build_fog_texture() -> ImageTexture:
-	var img := Image.create(GameState.FOG_GRID, GameState.FOG_GRID, false, Image.FORMAT_RGBA8)
-	var black := Color(0.02, 0.03, 0.04, 1.0)
-	var clear := Color(0, 0, 0, 0)
-	for y in GameState.FOG_GRID:
-		for x in GameState.FOG_GRID:
-			img.set_pixel(x, y, black if not GameState.fog_is_explored(x, y) else clear)
-	return ImageTexture.create_from_image(img)
+## 迷雾纹理增量维护：首次按 explored 全量建图（读档/换世界后也走这里），
+## 之后版本变化只把脏格写透明并整图 update 上传（160KB，远小于全量重建）
+func _sync_fog_texture() -> void:
+	if _fog_texture == null:
+		_fog_image = Image.create(GameState.FOG_GRID, GameState.FOG_GRID,
+				false, Image.FORMAT_RGBA8)
+		for y in GameState.FOG_GRID:
+			for x in GameState.FOG_GRID:
+				_fog_image.set_pixel(x, y,
+						FOG_BLACK if not GameState.fog_is_explored(x, y) else FOG_CLEAR)
+		_fog_texture = ImageTexture.create_from_image(_fog_image)
+		GameState.fog_dirty.clear()
+		_fog_version_drawn = GameState.fog_version
+		return
+	if GameState.fog_version == _fog_version_drawn:
+		return
+	_fog_version_drawn = GameState.fog_version
+	if GameState.fog_dirty.is_empty():
+		return
+	for cell: Vector2i in GameState.fog_dirty:
+		_fog_image.set_pixel(cell.x, cell.y, FOG_CLEAR)
+	GameState.fog_dirty.clear()
+	_fog_texture.update(_fog_image)

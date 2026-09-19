@@ -22,6 +22,9 @@ const FOG_GRID := 200
 var explored := PackedByteArray()
 ## 迷雾改动计数（小地图纹理增量重建的脏标记；_test 也可复位）
 var fog_version := 0
+## 新揭示格列表（小地图增量更新消费后清空——揭示只增不减，跑图期间
+## 全量 4 万像素重建是移动尖峰，改为只写脏格；真机性能优化 2026-09-19）
+var fog_dirty: Array[Vector2i] = []
 ## 已发现地标 id 列表（lm_{patch}_{k}，确定性 id 随种子稳定）
 var discovered_landmarks: Array[String] = []
 ## 已摧毁障碍格（"x,y" 字符串列表；game_world 装配时灌回 ObstacleField）
@@ -54,9 +57,12 @@ var ecology_snapshot: Variant = null
 var player_snapshot: Variant = null
 ## 设置（主菜单/暂停菜单写入）：三条音量滑条（Master 总音量 / Music 音乐 / SFX 音效，
 ## 后两者默认 1.0——旧档无键走默认，响度与单总线时代完全一致）、震屏、伤害数字、
-## 自动瞄准、三忍外观（blue/dark/white，美术 v5）
+## 自动瞄准、三忍外观（blue/dark/white，美术 v5）、提灯阴影（默认开；夜间阴影
+## pass 是移动端 GPU 大项，真机卡顿可关——开发计划预案内降级路径）、帧率显示
+## （默认关，真机性能定位用）
 var settings: Dictionary = {"volume": 0.8, "music_volume": 1.0, "sfx_volume": 1.0,
-	"screen_shake": true, "damage_numbers": true, "hero_skin": "blue"}
+	"screen_shake": true, "damage_numbers": true, "hero_skin": "blue",
+	"lantern_shadows": true, "show_fps": false}
 ## 本局击杀数（死亡信息/统计用）
 var session_kills: int = 0
 ## NPC 对话气泡开合标记（运行态，不存档）：player 侧据此把攻击键路由为
@@ -67,6 +73,13 @@ var dialogue_open := false
 var last_save_unix: float = 0.0
 
 var _save_timer := 0.0
+## 生态大快照降频（真机性能优化 2026-09-19）：自动防抖档每 2s 一次
+## to_dict(~880 实例深拷贝)是战斗期主线程尖峰；序列化按 6s 节流，跳过时
+## 复用上次快照缓存——存档文件任何时刻都带 ecology 键（丢键=静默重置世界）。
+## 手动保存/退后台/测试与首次保存恒走全量（参数 include_ecology）
+const ECOLOGY_SAVE_INTERVAL := 6.0
+var _ecology_saved_at := 0.0
+var _ecology_cache: Variant = null
 ## 寿命警告已触发过的阈值（避免重复播报；读档按剩余寿命重建）
 var _lifespan_warned: Array = []
 
@@ -127,7 +140,7 @@ func _process(delta: float) -> void:
 	if _save_timer > 0.0:
 		_save_timer -= delta
 		if _save_timer <= 0.0:
-			save_now()
+			save_now(false)  # 自动防抖档：生态序列化按 ECOLOGY_SAVE_INTERVAL 降频
 
 
 ## iOS 退后台必须立即落盘（进程随时可能被系统杀死）
@@ -369,7 +382,10 @@ func fog_reveal_cell(gx: int, gy: int) -> void:
 	if explored.is_empty():
 		explored.resize(FOG_GRID * 25)
 	var row := gy * 25 + (gx >> 3)
-	explored[row] = explored[row] | (1 << (gx & 7))
+	var bit := 1 << (gx & 7)
+	if explored[row] & bit == 0:
+		explored[row] = explored[row] | bit
+		fog_dirty.append(Vector2i(gx, gy))
 
 
 ## 世界坐标 → 迷雾格坐标
@@ -407,12 +423,15 @@ func reset_all() -> void:
 	session_kills = 0
 	ecology_snapshot = null
 	player_snapshot = null
+	_ecology_cache = null
+	_ecology_saved_at = 0.0
 	_lifespan_warned.clear()
 	# 世界 v5：新的冒险 = 全新世界——重掷种子并同步 BiomeMap（此后的菜单预览/
 	# 世界装配读到的都是新世界），探索进度归零
 	world_seed = randi()
 	BiomeMap.configure(world_seed)
 	explored = PackedByteArray()
+	fog_dirty.clear()
 	discovered_landmarks = []
 	destroyed_cells = []
 	quests = {"active": [], "completed": {}}
@@ -457,8 +476,10 @@ func _queue_save() -> void:
 
 
 ## 立即落盘（公开：防抖到时/退后台/回主菜单自动调用，也是
-## 主菜单"冒险档案"与暂停菜单"保存进度"手动保存的入口）
-func save_now() -> void:
+## 主菜单"冒险档案"与暂停菜单"保存进度"手动保存的入口）。
+## include_ecology=false 为自动防抖档：生态快照按 ECOLOGY_SAVE_INTERVAL
+## 降频序列化，跳过时复用缓存——文件仍带（可能早至 6s 的）ecology 键
+func save_now(include_ecology := true) -> void:
 	_save_timer = 0.0
 	if not save_enabled:
 		return
@@ -497,14 +518,24 @@ func save_now() -> void:
 	# 生态世界快照：世界运行中取实时 sim；菜单期间（sim 已被 game_world 卸载）
 	# 回退到最近一次快照缓存（读档暂存 / 退出世界时 game_world 存入）。
 	# 若在此直接丢键，菜单里改任何设置（如音量滑条触发的防抖落盘）都会把存档
-	# 原子替换为无 ecology 的版本——玩家没按"重置世界"，演化中的世界却静默丢失
+	# 原子替换为无 ecology 的版本——玩家没按"重置世界"，演化中的世界却静默丢失。
+	# 自动防抖档降频：未到 ECOLOGY_SAVE_INTERVAL 时跳过 to_dict 深拷贝，
+	# 复用上次序列化结果（文件仍带 ecology，内容早至 6s——生态 tick=1s，
+	# 极端丢档上限 ≈5 tick 的演化，可忽略）
 	var ecology: Variant = null
 	if WorldSim.sim != null:
-		ecology = WorldSim.sim.to_dict()
-		# 世界时钟随快照入档（昼夜相位/游戏天数）：生态连续而昼夜断裂的话，
-		# "读档回清晨"等于时间回溯（寿命按游戏天推进，可反复读档免老化）
-		(ecology as Dictionary)["day_time"] = WorldSim.day_time
-		(ecology as Dictionary)["game_day"] = WorldSim.game_day
+		var now := Time.get_unix_time_from_system()
+		if not include_ecology and _ecology_cache != null \
+				and now - _ecology_saved_at < ECOLOGY_SAVE_INTERVAL:
+			ecology = _ecology_cache
+		else:
+			ecology = WorldSim.sim.to_dict()
+			# 世界时钟随快照入档（昼夜相位/游戏天数）：生态连续而昼夜断裂的话，
+			# "读档回清晨"等于时间回溯（寿命按游戏天推进，可反复读档免老化）
+			(ecology as Dictionary)["day_time"] = WorldSim.day_time
+			(ecology as Dictionary)["game_day"] = WorldSim.game_day
+			_ecology_cache = ecology
+			_ecology_saved_at = now
 	elif typeof(ecology_snapshot) == TYPE_DICTIONARY:
 		ecology = ecology_snapshot
 	if ecology != null:
@@ -710,7 +741,7 @@ func _load() -> void:
 				"volume", "music_volume", "sfx_volume":
 					settings[key] = clampf(_safe_float(saved_settings[key],
 						settings[key]), 0.0, 1.0)
-				"screen_shake", "damage_numbers", "auto_aim":
+				"screen_shake", "damage_numbers", "auto_aim", "lantern_shadows", "show_fps":
 					if typeof(saved_settings[key]) == TYPE_BOOL:
 						settings[key] = saved_settings[key]
 				"hero_skin":
@@ -723,10 +754,14 @@ func _load() -> void:
 		ecology_snapshot = saved_ecology
 	else:
 		ecology_snapshot = null
+	# 换档后旧世界的降频缓存必须作废（新世界首个自动保存走全量）
+	_ecology_cache = null
+	_ecology_saved_at = 0.0
 	player_snapshot = _sanitize_player_snapshot(data.get("player", null))
 	# 探索进度（v4+）：坏值静默回退"全未探索/零发现"——迷雾只是表现，不值得坏档
 	var saved_fog: Variant = data.get("explored", "")
 	explored = PackedByteArray()
+	fog_dirty.clear()
 	if typeof(saved_fog) == TYPE_STRING and saved_fog != "":
 		var decoded := Marshalls.base64_to_raw(saved_fog)
 		if decoded.size() == FOG_GRID * 25:

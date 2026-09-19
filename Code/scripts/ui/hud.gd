@@ -106,6 +106,10 @@ var _quick_btn: Button
 var _quick_icon: TextureRect
 var _quick_badge: Label
 var _quick_id := ""
+## 帧率显示（真机性能优化 2026-09-19 附赠）：settings.show_fps 控制，
+## 4Hz 刷新（Engine.get_frames_per_second 本身是均值，快刷无意义）
+var _fps_label: Label
+var _fps_accum := 0.0
 
 # --- 触控按钮图标（NA CC0 像素素材，与怪物/道具同风格源） ---
 const ICON_ATTACK := preload("res://assets/na/weapons/sword.png")
@@ -149,6 +153,7 @@ func _ready() -> void:
 	EventBus.player_entered_region.connect(_on_region_entered)
 	EventBus.sim_tick_completed.connect(_on_sim_tick)
 	EventBus.hint_requested.connect(func(text: String) -> void: _toast(text))
+	_setup_fps_label()
 
 	%BtnStrength.pressed.connect(func(): GameState.allocate("strength"))
 	%BtnAgility.pressed.connect(func(): GameState.allocate("agility"))
@@ -659,21 +664,59 @@ func _process(delta: float) -> void:
 		_refresh_skill_bar()
 	_process_dialogue(delta)
 	_update_smooth_bars(delta)
+	# 帧率显示（4Hz）：Engine 的 FPS 统计本身是滚动均值，快刷无意义
+	_fps_accum += delta
+	if _fps_accum >= 0.25:
+		_fps_accum = 0.0
+		var want_visible := bool(GameState.settings.get("show_fps", false))
+		if _fps_label.visible != want_visible:
+			_fps_label.visible = want_visible
+		if want_visible:
+			_fps_label.text = "%d FPS" % Engine.get_frames_per_second()
 
 
-## 三条平滑逼近 + 血条白色残影的慢速追随
+## 底部居中帧率小字（默认隐藏；joystick 在左下、技能钮在右下，中间空）
+func _setup_fps_label() -> void:
+	_fps_label = Label.new()
+	_fps_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_fps_label.offset_left = -46.0
+	_fps_label.offset_right = 46.0
+	_fps_label.offset_top = -34.0
+	_fps_label.offset_bottom = -12.0
+	_fps_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_fps_label.add_theme_font_size_override("font_size", 16)
+	_fps_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.7, 0.85))
+	_fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fps_label.visible = false
+	add_child(_fps_label)
+
+
+## 三条平滑逼近 + 血条白色残影的慢速追随。
+## 收敛阈值 0.1%：lerp 尾部每帧都在微量变值，会让 ProgressBar 永久每帧
+## 重绘不止；收敛后吸附到目标值即停（真机性能优化 2026-09-19）
 func _update_smooth_bars(delta: float) -> void:
 	var t := 1.0 - exp(-BAR_SMOOTH * delta)
-	hp_bar.value = lerpf(hp_bar.value, _hp_target, t)
-	mp_bar.value = lerpf(mp_bar.value, _mp_target, t)
-	xp_bar.value = lerpf(xp_bar.value, _xp_target, t)
+	_snap_lerp(hp_bar, _hp_target, t)
+	_snap_lerp(mp_bar, _mp_target, t)
+	_snap_lerp(xp_bar, _xp_target, t)
 	if _hp_ghost > _hp_target:
 		_hp_ghost_hold = maxf(0.0, _hp_ghost_hold - delta)
 		if _hp_ghost_hold <= 0.0:
 			_hp_ghost = maxf(_hp_target, _hp_ghost - _hp_max_cache * GHOST_DRAIN_FRAC * delta)
 	if _hp_ghost_bar != null:
-		_hp_ghost_bar.max_value = _hp_max_cache
-		_hp_ghost_bar.value = _hp_ghost
+		if not is_equal_approx(_hp_ghost_bar.max_value, _hp_max_cache):
+			_hp_ghost_bar.max_value = _hp_max_cache
+		if not is_equal_approx(_hp_ghost_bar.value, _hp_ghost):
+			_hp_ghost_bar.value = _hp_ghost
+
+
+## 平滑逼近一个 ProgressBar，近目标吸附、值未变不赋（赋值触发重绘）
+func _snap_lerp(bar: ProgressBar, target: float, t: float) -> void:
+	var v := lerpf(bar.value, target, t)
+	if absf(v - target) <= maxf(1.0, bar.max_value) * 0.001:
+		v = target
+	if not is_equal_approx(v, bar.value):
+		bar.value = v
 
 
 ## 键盘开关生态面板（Tab）/ 图鉴（C）/ 商店（B）/ 物品栏（I）/ 暂停（ESC）；触屏走按钮
@@ -768,8 +811,11 @@ func _refresh_skill_bar() -> void:
 				var want_text: String = text if left > 0.05 else hint
 				if cd_label.text != want_text:
 					cd_label.text = want_text
-				cd_label.add_theme_font_size_override("font_size",
-						26 if left > 0.05 else 16)
+				# 字号覆盖只在 26↔16 档位切换时调：每次调用都会重建主题覆盖
+				# 并排队重绘，每帧×5 槽是纯浪费（真机性能优化 2026-09-19）
+				var size_want := 26 if left > 0.05 else 16
+				if cd_label.get_theme_font_size("font_size") != size_want:
+					cd_label.add_theme_font_size_override("font_size", size_want)
 				cd_label.visible = want_text != ""
 			if overlay != null:
 				overlay.visible = left > 0.05 or hint != ""

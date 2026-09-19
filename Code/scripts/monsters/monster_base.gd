@@ -41,6 +41,17 @@ const NAV_DIRECT_DIST := 2600.0
 ## 会让 NavigationServer 每帧全量重算路径，30 只活跃怪会吃满帧预算）
 const NAV_RETARGET_STEP := 64.0
 
+## --- LOD 远档节流（真机性能优化 2026-09-19）---
+## 斑块级流式下玩家周边常驻 40~90 只表现节点、同屏可见不足 10 只；屏外个体
+## 降为每 LOD_STEP 物理帧集中处理一档（60Hz→10Hz，delta 等比放大），状态机
+## 与计时器语义不变。900px 阈值 > 全物种侦测圈（表内最大 320）×2：侦测/攻击/
+## 逃跑等近身机制在远档不可达；巡猎接近同速积分，遭遇节奏不变。
+## 移动改 move_and_collide+法线滑行，绕过 RVO 求解与 move_and_slide 窄相——
+## 屏外个体无需群体避让与精确碰撞，沿墙滑走即可
+const LOD_FAR_DIST := 900.0
+const LOD_STEP := 6
+var _lod_skip := 0
+
 ## 导航代理（世界 v5）：追击/逃跑/迁徙/巡逻的绕障路径 + RVO 同族群体避让
 ## （蚂蚁群散开包围取代物理推挤长龙）。移动经 velocity 协议：
 ## set_velocity(期望) → velocity_computed(安全速度) → move_and_slide
@@ -287,6 +298,20 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		return
 
+	var player := _get_player()
+	# LOD 远档：屏外常规状态（巡逻含巡猎/追击/迁徙）10Hz 降频处理；
+	# 攻击/逃跑/子类扩展状态（>=10）与近圈个体逐位走原路径
+	if state != S_ATTACK and state != S_FLEE and state < 10 \
+			and player != null and player.visible \
+			and global_position.distance_squared_to(player.global_position) \
+					>= LOD_FAR_DIST * LOD_FAR_DIST:
+		_lod_skip = (_lod_skip + 1) % LOD_STEP
+		if _lod_skip != 0:
+			return
+		_far_tick(delta * LOD_STEP, player)
+		return
+	_lod_skip = 0
+
 	_attack_cd = maxf(0.0, _attack_cd - delta)
 	_aggro_lock = maxf(0.0, _aggro_lock - delta)
 	_enrage_timer = maxf(0.0, _enrage_timer - delta)
@@ -307,7 +332,6 @@ func _physics_process(delta: float) -> void:
 		_melee_windup = 0.0
 		if state != S_CORPSE:
 			set_tint(_restore_tint())
-	var player := _get_player()
 
 	if _enrage_timer <= 0.0 and _wants_flee(player) \
 			and (state == S_PATROL or state == S_CHASE or state == S_ATTACK):
@@ -342,6 +366,42 @@ func _physics_process(delta: float) -> void:
 	else:
 		move_and_slide()
 		_post_move_and_anim(delta)
+
+
+## LOD 远档集中处理（每 LOD_STEP 物理帧一次，delta 已等比放大）：计时器与
+## 状态机照常推进；跳过逃跑判定（900px 外恒不触发）与前摇收尾（远档不持有
+## 前摇）；动画/翻转/bob 不更新（_update_anim 在近圈恢复时自同步）
+func _far_tick(delta: float, player: Node2D) -> void:
+	_attack_cd = maxf(0.0, _attack_cd - delta)
+	_aggro_lock = maxf(0.0, _aggro_lock - delta)
+	_enrage_timer = maxf(0.0, _enrage_timer - delta)
+	var max_now := inst.max_hp()
+	if max_now > _max_hp_ref:
+		current_hp = minf(current_hp + (max_now - _max_hp_ref), max_now)
+		_max_hp_ref = max_now
+		if _hp_bar != null:
+			_hp_bar.notify_change()
+		_sync_hp_mirror()
+	match state:
+		S_PATROL:
+			_patrol(delta, player)
+		S_CHASE:
+			_chase_tick(delta, player)
+		S_MIGRATING:
+			_migrate_tick()
+	velocity += _knockback
+	_knockback = _knockback.move_toward(Vector2.ZERO, KNOCKBACK_DECAY * delta)
+	_far_move(velocity * delta)
+
+
+## 远档移动：move_and_collide + 法线滑行（两段）——撞障碍沿墙滑走，
+## 无 RVO、无 move_and_slide 窄相。步长 ~4px（巡猎速 ×0.1s）无穿透风险
+func _far_move(motion: Vector2) -> void:
+	for i in 2:
+		var collision := move_and_collide(motion)
+		if collision == null:
+			return
+		motion = motion.slide(collision.get_normal())
 
 
 ## 移动后处理（move_and_slide 之后）：当帧碰撞钩子 + 朝向 + 帧动画。
@@ -401,17 +461,28 @@ func _nav_velocity_toward(target: Vector2, speed: float) -> Vector2:
 
 ## 与目标的视线（原生射线查询，_physics_process 上下文调用）：只检测障碍墙层
 ## （layer 1 树/岩）——挡弹道的才算掩体，怪群与巢穴不遮视线。终点向回撤 28px：
-## 玩家碰撞体也在 layer 1，射线打进目标本体会把"看得见"永远误判成"被挡"
+## 玩家碰撞体也在 layer 1，射线打进目标本体会把"看得见"永远误判成"被挡"。
+## 结果 0.1s 缓存（真机性能优化 2026-09-19）：远程型接敌期每物理帧一条射线，
+## 缓存粒度远小于吐息冷却，掩体走位博弈响应延迟 ≤0.1s 无感
+var _los_cache_ms := 0
+var _los_cache_val := false
+
+
 func _has_los(target_pos: Vector2) -> bool:
+	var now := Time.get_ticks_msec()
+	if now - _los_cache_ms < 100:
+		return _los_cache_val
 	var offset := target_pos - global_position
 	var length := offset.length()
 	if length < 60.0:
-		return true  # 贴脸无需视线
+		return true  # 贴脸无需视线（不缓存：真值与位置强绑定）
 	var to := global_position + offset.normalized() * (length - 28.0)
 	var query := PhysicsRayQueryParameters2D.create(global_position, to, 1)
 	query.exclude = [get_rid()]
 	var hit := get_world_2d().direct_space_state.intersect_ray(query)
-	return hit.is_empty()
+	_los_cache_ms = now
+	_los_cache_val = hit.is_empty()
+	return _los_cache_val
 
 
 ## 状态机 → 帧动画的统一映射（纯表现，不影响逻辑判定）：

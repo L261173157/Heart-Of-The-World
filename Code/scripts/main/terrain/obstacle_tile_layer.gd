@@ -26,6 +26,14 @@ func _init() -> void:
 
 ## 块坐标（px）→ {body: StaticBody2D, shapes: {cell: CollisionShape2D}}
 var _bodies := {}
+## 分帧铺格（真机性能优化 2026-09-19）：chunk_ready 同帧铺满森林块
+## ~80 格（瓦片写入 + 80 次节点创建）×跨界多块是移动尖峰主源之一。
+## 格子入队按预算分帧铺入，body 等本块形状全齐才挂树进物理
+const LAY_BUDGET := 64
+var _lay_queue: Array[Dictionary] = []  # [{origin, cell, atlas, r}]
+## origin → {body, shapes, remaining}（铺设中；remaining 归零转 _bodies）
+var _laying := {}
+
 
 func _ready() -> void:
 	y_sort_enabled = true
@@ -34,6 +42,30 @@ func _ready() -> void:
 		streamer.chunk_ready.connect(_on_chunk_ready)
 		streamer.chunk_freed.connect(_on_chunk_freed)
 	EventBus.obstacle_destroyed.connect(_on_obstacle_destroyed)
+
+
+func _process(_delta: float) -> void:
+	var budget := LAY_BUDGET
+	while budget > 0 and not _lay_queue.is_empty():
+		var item: Dictionary = _lay_queue.pop_front()
+		var origin: Vector2i = item["origin"]
+		var entry: Dictionary = _laying.get(origin, {})
+		if entry.is_empty():
+			continue  # 排队期间块已出窗被释放
+		set_cell(item["cell"], 0, item["atlas"], 0)
+		var shape := CollisionShape2D.new()
+		var circle := CircleShape2D.new()
+		circle.radius = float(item["r"])
+		shape.shape = circle
+		shape.position = (Vector2(item["cell"]) + Vector2(0.5, 0.5)) * ObstacleField.CELL
+		(entry["body"] as StaticBody2D).add_child(shape)
+		(entry["shapes"] as Dictionary)[item["cell"]] = shape
+		entry["remaining"] = int(entry["remaining"]) - 1
+		if entry["remaining"] == 0:
+			add_child(entry["body"])
+			_bodies[origin] = {"body": entry["body"], "shapes": entry["shapes"]}
+			_laying.erase(origin)
+		budget -= 1
 
 
 ## 静态碰撞体工厂：圆形形状按类型半径（KIND_INFO.r），墙层 layer 1
@@ -48,13 +80,14 @@ static func _make_obstacle_body() -> StaticBody2D:
 ## 障碍被玩家摧毁：擦格 + 碎屑演出（同格重铺时 destroyed 覆盖层已挡住）
 func _on_obstacle_destroyed(cell: Vector2i, pos: Vector2, kind: String) -> void:
 	erase_cell(cell)
-	# 同步移除该格碰撞形状（body 常驻，形状按格摘除）
-	for entry: Dictionary in _bodies.values():
-		var shapes: Dictionary = entry["shapes"]
-		if shapes.has(cell):
-			var shape: Node = shapes[cell]
-			shape.queue_free()
-			shapes.erase(cell)
+	# 同步移除该格碰撞形状（body 常驻，形状按格摘除；分帧铺设期间形状在 _laying）
+	for registry: Dictionary in [_bodies, _laying]:
+		for entry: Dictionary in registry.values():
+			var shapes: Dictionary = entry["shapes"]
+			if shapes.has(cell):
+				var shape: Node = shapes[cell]
+				shape.queue_free()
+				shapes.erase(cell)
 	var debris := DebrisBurst.new()
 	debris.position = pos
 	debris.kind = kind
@@ -92,23 +125,20 @@ class DebrisBurst extends Node2D:
 
 
 func _on_chunk_ready(origin: Vector2i) -> void:
+	if _bodies.has(origin) or _laying.has(origin):
+		return
 	var cells: Array = ObstacleField.cells_of_chunk(origin)
-	for c: Dictionary in cells:
-		set_cell(c["cell"], 0, ObstacleField.KIND_ATLAS[c["kind"]], 0)
-	# 碰撞体（每块一个 body，形状按格）：见类注——不依赖瓦片物理
 	var body := _make_obstacle_body()
-	var shapes := {}
+	if cells.is_empty():
+		add_child(body)
+		_bodies[origin] = {"body": body, "shapes": {}}
+		return
+	# 碰撞体（每块一个 body，形状按格）：见类注——不依赖瓦片物理。
+	# 铺格入队分帧（LAY_BUDGET），本块形状全齐才把 body 挂树
+	_laying[origin] = {"body": body, "shapes": {}, "remaining": cells.size()}
 	for c: Dictionary in cells:
-		var cell: Vector2i = c["cell"]
-		var shape := CollisionShape2D.new()
-		var circle := CircleShape2D.new()
-		circle.radius = float(c["r"])
-		shape.shape = circle
-		shape.position = (Vector2(cell) + Vector2(0.5, 0.5)) * ObstacleField.CELL
-		body.add_child(shape)
-		shapes[cell] = shape
-	add_child(body)
-	_bodies[origin] = {"body": body, "shapes": shapes}
+		_lay_queue.append({"origin": origin, "cell": c["cell"],
+			"atlas": ObstacleField.KIND_ATLAS[c["kind"]], "r": c["r"]})
 
 
 func _on_chunk_freed(origin: Vector2i) -> void:
@@ -120,3 +150,8 @@ func _on_chunk_freed(origin: Vector2i) -> void:
 	if not entry.is_empty():
 		(entry["body"] as Node).queue_free()
 		_bodies.erase(origin)
+	# 铺设中即被回收：body 直接释放，队列残留格子消费时按 _laying 缺失跳过
+	var laying: Dictionary = _laying.get(origin, {})
+	if not laying.is_empty():
+		(laying["body"] as Node).queue_free()
+		_laying.erase(origin)

@@ -57,6 +57,9 @@ func _process(delta: float) -> void:
 	if _terrain_accum >= TERRAIN_POLL:
 		_terrain_accum = 0.0
 		_terrain = BiomeMap.terrain_at(player.global_position)
+		# 提灯阴影设置（默认开）：夜间阴影 pass（光半径内全部遮挡多边形栅格化）
+		# 是移动端 GPU 大项，真机卡顿可在设置里关掉保光圈（开发计划预案内降级）
+		_light.shadow_enabled = bool(GameState.settings.get("lantern_shadows", true))
 	# 夜色（连续曲线，逐帧驱动免信号时序问题）+ 群系底色插值
 	var target: Color = BIOME_TINT.get(_terrain, Color.WHITE)
 	_tint_current = _tint_current.lerp(target, minf(delta * 2.0, 1.0))

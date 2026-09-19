@@ -14,8 +14,11 @@ const KEEP_RADIUS := 2
 const EVICT_RADIUS := 3
 ## 同时存在的块数上限（LRU 兜底；窗口满额 25 + 换块过渡冗余）
 const MAX_CHUNKS := 36
-## 每帧上屏的块数（纹理创建在主线程，限流防掉帧）
-const APPLY_PER_FRAME := 2
+## 每帧上屏的块数（纹理创建在主线程，限流防掉帧）。
+## 2→1（真机性能优化 2026-09-19）：每块 512²RGBA8 = 1MB 纹理上传，跨界帧
+## 连上 2 块（2MB GPU 上传）+ 障碍/装饰连锁是移动尖峰；1 块/帧下 5 块窗口
+## 5 帧铺满，步行跨界间隔 ~3.2s 完全无感
+const APPLY_PER_FRAME := 1
 
 signal chunk_ready(origin: Vector2i)
 signal chunk_freed(origin: Vector2i)

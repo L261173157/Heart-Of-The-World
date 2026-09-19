@@ -345,6 +345,28 @@ func _physics_process(delta: float) -> void:
 ##     （两条独立节拍打架 = 提线木偶感）；非 walk 态平滑归零，不再瞬间 snap
 ##   ③ 起停反馈——起步蹬地挤压+立即一粒尘、停步落定下压（挤压手法与怪物侧一致）
 ##   ④ 冲刺动作语言——walk 提速 + 朝水平分量前倾（纵向冲刺不歪头），结束平滑回正
+## 四方向帧可用性缓存（真机性能优化 2026-09-19）：走路/站定期每物理帧
+## 两次后缀拼接 + has_animation 查询是常驻小开销；按 SpriteFrames 实例缓存
+## （换肤/换帧表时引用变化自动重建）
+var _dir_anim_cache_frames: SpriteFrames
+var _dir_anim_cache := {}
+
+
+func _dir_anims() -> Dictionary:
+	var frames: SpriteFrames = visual.sprite_frames
+	if frames == null:
+		return {}
+	if frames != _dir_anim_cache_frames:
+		_dir_anim_cache_frames = frames
+		_dir_anim_cache = {
+			"walk": {"up": frames.has_animation("walk_up"),
+				"down": frames.has_animation("walk_down")},
+			"idle": {"up": frames.has_animation("idle_up"),
+				"down": frames.has_animation("idle_down")},
+		}
+	return _dir_anim_cache
+
+
 func _update_anim(delta := 0.0) -> void:
 	if visual == null or visual.sprite_frames == null:
 		return
@@ -369,9 +391,9 @@ func _update_anim(delta := 0.0) -> void:
 	# 横向保持右向帧 + flip_h 老路径——attack 系无方向分段，纵向出招仍走侧向
 	if want == "walk" or want == "idle":
 		if absf(facing.y) > absf(facing.x):
-			var suffix := "_up" if facing.y < 0.0 else "_down"
-			if visual.sprite_frames.has_animation(want + suffix):
-				want += suffix
+			var key := "up" if facing.y < 0.0 else "down"
+			if _dir_anims()[want][key]:
+				want += "_" + key
 	# 仅循环动画需要"停了就重播"；非循环（attack 系/die）播完停在末帧，
 	# 重启会闪回首帧（出招姿势），linger 收招段正是要停在读招帧上
 	if visual.animation != want or (visual.sprite_frames.get_animation_loop(want) and not visual.is_playing()):
