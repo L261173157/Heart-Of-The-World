@@ -33,6 +33,9 @@ var _rows: Array = []
 func _ready() -> void:
 	GameState.save_enabled = false
 	GameState.ecology_snapshot = null
+	# 游戏锁 60 帧（run/max_fps），探针解除限制以测真实余量（帧率上限本身
+	# 也是性能口径的一部分——锁帧前真机实测 80~120）
+	Engine.max_fps = 0
 	var f := FileAccess.open(OUT_CSV, FileAccess.WRITE)
 	if f != null:
 		f.store_line("t,fps,proc_ms,phys_ms,draws,objects,monsters")
