@@ -650,20 +650,18 @@ func _slice_ts(creature: String, cfg: Dictionary) -> void:
 	var uw := max_x - min_x
 	var uh := max_y - min_y
 	var target_h: int = int(cfg.get("h", int(round(float(uh) / 6.0))))
-	# 整数倍抽取（像素块均匀的关键）：总除数 d=round(uh/target)，2× 预放大素材
-	# 偏向偶数 d；union 窗左上对齐 + 右下扩边到 d 的倍数（扩的是透明边距），
-	# 之后每帧一步 NEAREST 整除缩放——非整数混采会产生大小不一的像素行，
-	# 「像素又密又糊」的观感即由此来（2026-09-20 用户实测反馈）
-	var d: int = clampi(round(float(uh) / float(target_h)), 1, 12)
+	# 两步缩放（2026-09-20 三轮手感反馈定稿）：①÷p 精确还原原生（TS 全家
+	#   2× 预放大，游程检测；块对块整除、零混采）②整数 k「众数滤波」抽取——
+	#   每输出像素取 k×k 块内出现最多的不透明色，描边与色块完整留存，
+	#   远好于点采样（点采样随机丢弃细描边=「糊」的来源）
 	var p := _block_period((strips[strips.keys()[0]]["img"] as Image))
-	if p >= 2 and d % 2 == 1:
-		d += 1 if absf(float(uh) / float(d + 1) - float(target_h)) <= absf(float(uh) / float(d - 1) - float(target_h)) else -1
-	d = maxi(d, 1)
-	min_x -= min_x % d
-	min_y -= min_y % d
-	uw = maxi(d, (uw + d - 1) / d * d)
-	uh = maxi(d, (uh + d - 1) / d * d)
-	target_h = uh / d
+	p = maxi(p, 1)
+	min_x -= min_x % p
+	min_y -= min_y % p
+	uw = maxi(p, (uw + p - 1) / p * p)
+	uh = maxi(p, (uh + p - 1) / p * p)
+	var n_h: int = uh / p
+	var k: int = clampi(round(float(n_h) / float(target_h)), 1, 8)
 	var frames := SpriteFrames.new()
 	frames.remove_animation("default")
 	var base_fps: Variant = cfg.get("fps", FPS)
@@ -680,10 +678,13 @@ func _slice_ts(creature: String, cfg: Dictionary) -> void:
 			fps = float(base_fps)
 		frames.set_animation_speed(anim, fps)
 		frames.set_animation_loop(anim, base_loop and not noloop.has(anim))
-		for k in range(s2["from"], s2["to"], s2["step"]):
+		for fi in range(s2["from"], s2["to"], s2["step"]):
 			var frame_img: Image = (s2["img"] as Image).get_region(
-				Rect2i(k * cell.x + min_x, min_y, uw, uh))
-			frame_img.resize(uw / d, uh / d, Image.INTERPOLATE_NEAREST)
+				Rect2i(fi * cell.x + min_x, min_y, uw, uh))
+			if p > 1:
+				frame_img.resize(uw / p, uh / p, Image.INTERPOLATE_NEAREST)
+			frame_img = _align_mul(frame_img, k)
+			frame_img = _mode_decimate(frame_img, k)
 			if not bake.is_empty():
 				_ts_bake(frame_img, bake)
 			frames.add_frame(anim, ImageTexture.create_from_image(frame_img))
@@ -693,6 +694,50 @@ func _slice_ts(creature: String, cfg: Dictionary) -> void:
 	var err := ResourceSaver.save(frames, path, ResourceSaver.FLAG_BUNDLE_RESOURCES)
 	print("%-18s %2d 组动画 %s" % [creature, frames.get_animation_names().size(),
 		"OK" if err == OK else "失败:%d" % err])
+
+
+## 右/下扩透明边到 k 的倍数（众数抽取要求整除；新增的是透明无视觉影响）
+func _align_mul(img: Image, k: int) -> Image:
+	if k <= 1:
+		return img
+	var w := maxi(1, (img.get_width() + k - 1) / k * k)
+	var h := maxi(1, (img.get_height() + k - 1) / k * k)
+	if w == img.get_width() and h == img.get_height():
+		return img
+	var out := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	out.blit_rect(img, Rect2i(Vector2i.ZERO, img.get_size()), Vector2i.ZERO)
+	return out
+
+
+## 众数滤波抽取：每输出像素 = k×k 块内出现最多的不透明色（平局取先到）；
+## 全透明块输出透明。描边/主色留存率远高于点采样（英雄「糊」的根治）
+func _mode_decimate(img: Image, k: int) -> Image:
+	if k <= 1:
+		return img
+	var w := maxi(1, img.get_width() / k)
+	var h := maxi(1, img.get_height() / k)
+	var out := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		for x in w:
+			var tally := {}
+			for by in k:
+				for bx in k:
+					var c := img.get_pixel(x * k + bx, y * k + by)
+					if c.a < 0.05:
+						continue
+					var key: int = c.to_rgba32()
+					var e: Array = tally.get(key, [0, c])
+					e[0] = e[0] + 1
+					tally[key] = e
+			var best := Color(0, 0, 0, 0)
+			var best_n := 0
+			for key: int in tally:
+				var e: Array = tally[key]
+				if e[0] > best_n:
+					best_n = e[0]
+					best = e[1]
+			out.set_pixel(x, y, best)
+	return out
 
 
 ## 横向同色游程统计 → 素材预放大周期（2× 素材的 2-游程远多于 1-游程；
