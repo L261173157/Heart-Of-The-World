@@ -23,10 +23,10 @@ GODOT="$HOME/Library/Application Support/Steam/steamapps/common/Godot Engine/God
 "$GODOT" --headless --path Code -s tests/sim_test.gd          # 生态不变量单测（纯逻辑，123 项断言）
 "$GODOT" --headless --path Code -s tests/frames_test.gd        # 帧资产契约验收（第七测，444 项断言：29 物种/三皮肤/6 NPC/18 fx 可加载+动画集+尺寸界+内容非空；代码/场景字面 res:// 资产路径存在性——切帧/烘焙/generate_fx 重跑后必跑）
 "$GODOT" --headless --path Code -s tests/balance_test.gd      # 数值平衡校验（6 地形×物种手感区间，v4 起按地形去重展开）
-"$GODOT" --headless --path Code res://tests/combat_test.tscn --quit-after 100000   # 战斗闭环+五技能/连击/赏金验证（据点式流式下测试自动传送至目标据点，~15s 自行退出）
+HOTW_TEST_SAVE="res://tests/fixtures/test_save.json" "$GODOT" --headless --path Code res://tests/combat_test.tscn --quit-after 100000   # 战斗闭环+五技能/连击/赏金验证（据点式流式下测试自动传送至目标据点，~15s 自行退出；HOTW_TEST_SAVE=固定种子夹具，与真实档隔离防种子敏感——2026-09-20 玩家档换种子后现形三处测试盲区）
 "$GODOT" --headless --path Code res://tests/save_test.tscn --quit-after 5000       # 存档读写/坏档防御/商店购买
 "$GODOT" --headless --path Code res://tests/ui_flow_test.tscn --quit-after 8000    # UI/流程冒烟：菜单→世界→死亡重生→回菜单→继续（TERRAIN_THEMES 映射/三路音量总线/快照恢复 26 项）
-"$GODOT" --headless --path Code res://tests/pacing_test.tscn --quit-after 100000   # 节奏浸泡：拟人机器人 10 游戏分钟（首升/Lv3/金币/压力/生态六项区间，约 2.5 分钟真实时间）
+HOTW_TEST_SAVE="res://tests/fixtures/test_save.json" "$GODOT" --headless --path Code res://tests/pacing_test.tscn --quit-after 100000   # 节奏浸泡：拟人机器人 10 游戏分钟（首升/Lv3/金币/压力/生态六项区间，约 2.5 分钟真实时间；同样走固定种子夹具）
 "$GODOT" --headless --path Code -s tools/generate_terrain.gd                      # 生成 6 张群系地表 PNG（v4 起仅主菜单装饰条消费；游戏内地表为运行时分块绘制）
 "$GODOT" --headless --path Code -s tools/generate_obstacle_tileset.gd             # 障碍瓦片集 data/{obstacle,nav}_tileset.tres（改 ObstacleField 的 KIND_INFO/类型表后必须重跑；贴图内嵌 tres 不产 PNG）
 "$GODOT" --headless --path Code -s tools/obstacle_probe.gd                        # 障碍覆盖率探针（调 RECIPES 阈值后看各群系实测%；sim_test 分带守闸）

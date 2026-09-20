@@ -1004,6 +1004,9 @@ func _verify_items() -> void:
 	if qm == null:
 		_fail("QuestManager 未挂载（quest_manager 组）")
 		return
+	# 测试自持任务态：游走阶段机器人可能顺路接过委托（世界种子/路线相关），
+	# 残留在途单会挡住 offer 与「放弃后清空」断言（2026-09-20 真实档种子变更后现形）
+	GameState.quests["active"].clear()
 	var off: Dictionary = qm.offer("lm_collect_test", "collect", "草药师")
 	if off["kind"] != "quest":
 		_fail("collect 委托未能生成（%s）" % str(off.get("text", "")))
@@ -1366,6 +1369,11 @@ func _verify_v5_interactions() -> void:
 					EventBus.monster_killed_by_player.emit(0, 0, "测试", q["species"])
 				"ransack":
 					EventBus.nest_ransacked.emit("测试")
+				"collect":
+					# collect 走库存推进（add_item → _progress_match）；
+					# 此前缺分支落到探索信号上、collect 单永不推进——最近 NPC
+					# 是草药师（古树）时必挂，种子/存档变化后现形（2026-09-20）
+					GameState.add_item(String(q["item"]), 1)
 				_:
 					EventBus.landmark_discovered.emit("lm_t%d" % i, "p_t", "测试", Vector2.ZERO)
 		var completed_ok: bool = GameState.quests["active"].is_empty() \
