@@ -481,8 +481,17 @@ const CREATURES_TS := {
 	"fx_smoke": {"cell": Vector2i(64, 64), "anims": {"play": "Particle FX/Dust_01.png"}, "bake": {"sat": 0.15}, "h": 12, "fps": 10.0, "loop": false},
 	"fx_darksmoke": {"cell": Vector2i(64, 64), "anims": {"play": "Particle FX/Dust_02.png"}, "bake": {"sat": 0.3, "val": 0.6}, "h": 12, "fps": 10.0, "loop": false},
 	"fx_orb": {"cell": Vector2i(64, 64), "anims": {"play": "Particle FX/Fire_03.png"}, "bake": {"hue": 0.8, "sat": 0.7}, "h": 10, "fps": 14.0, "loop": false},
-	## 注：TS 无瀑布/水车/旗帜动画与挥砍特效——deco_waterfall*/camp_* 暂留 NA 帧（P2/P3 消费端改造），
-	## slash/flash/beam/pillar/beams 由 generate_fx.gd 合成后回填本表（P2）。
+	# --- 合成特效（tools/generate_fx.gd 产出，TS 色板程序化） ---
+	"fx_slash": {"cell": Vector2i(112, 112), "anims": {"play": "fx_generated/slash.png"}, "h": 14, "fps": 15.0, "loop": false},
+	"fx_slash_gold": {"cell": Vector2i(112, 112), "anims": {"play": "fx_generated/slash_gold.png"}, "h": 14, "fps": 15.0, "loop": false},
+	"fx_flash": {"cell": Vector2i(96, 96), "anims": {"play": "fx_generated/flash.png"}, "h": 12, "fps": 12.0, "loop": false},
+	"fx_flash_gold": {"cell": Vector2i(96, 96), "anims": {"play": "fx_generated/flash_gold.png"}, "h": 12, "fps": 12.0, "loop": false},
+	"fx_flash_blue": {"cell": Vector2i(96, 96), "anims": {"play": "fx_generated/flash_blue.png"}, "h": 12, "fps": 12.0, "loop": false},
+	"fx_flash_yellow": {"cell": Vector2i(96, 96), "anims": {"play": "fx_generated/flash_yellow.png"}, "h": 12, "fps": 12.0, "loop": false},
+	"fx_beam": {"cell": Vector2i(96, 96), "anims": {"play": "fx_generated/beam.png"}, "h": 12, "fps": 14.0, "loop": false},
+	"fx_pillar": {"cell": Vector2i(96, 96), "anims": {"play": "fx_generated/pillar.png"}, "h": 16, "fps": 10.0, "loop": false},
+	"fx_beams": {"cell": Vector2i(96, 96), "anims": {"play": "fx_generated/beams.png"}, "h": 16, "fps": 12.0, "loop": false},
+	## 注：TS 无瀑布/水车/旗帜动画——deco_waterfall*/camp_* 暂留 NA 帧（P2/P3 消费端改造）。
 }
 
 

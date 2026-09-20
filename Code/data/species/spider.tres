@@ -7,7 +7,7 @@
 script = ExtResource("1_u0al7")
 frames_override = ExtResource("2_frames")
 species_name = "沼泽蟹"
-visual_scale = 0.91
+visual_scale = 0.98
 tint = Color(0.75, 0.85, 0.95, 1)
 ai_archetype = "ranged"
 habitats = Array[String](["swamp"])

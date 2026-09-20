@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_spr")
 species_name = "萌芽怪"
-visual_scale = 0.86
+visual_scale = 0.99
 frames_override = ExtResource("2_frames")
 ai_archetype = "soldier"
 habitats = Array[String](["plains", "forest"])

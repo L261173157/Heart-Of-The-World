@@ -13,6 +13,4 @@ script = ExtResource("1_projectile")
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 shape = SubResource("CircleShape2D_hit")
 
-[node name="Visual" type="Polygon2D" parent="."]
-color = Color(0.8, 0.95, 1, 0.9)
-polygon = PackedVector2Array(7, 0, 0, 4, -7, 0, 0, -4)
+[node name="Visual" type="Sprite2D" parent="."]

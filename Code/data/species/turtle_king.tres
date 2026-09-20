@@ -33,4 +33,4 @@ is_boss = true
 boss_respawn_ticks = 480
 boss_size_scale = 2.2
 element = "fire"
-visual_scale = 0.32
+visual_scale = 0.35

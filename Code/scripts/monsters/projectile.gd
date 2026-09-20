@@ -24,6 +24,8 @@ func launch(dir: Vector2, dmg: float, p_speed := 270.0, p_source := "") -> void:
 
 func _ready() -> void:
 	body_entered.connect(_on_body_entered)
+	# v6 TS 弹道：Archer 箭矢缩图（素材朝右，launch 已按方向设 rotation）
+	($Visual as Sprite2D).texture = load("res://assets/ts/structures_baked/arrow.png")
 
 
 func _physics_process(delta: float) -> void:

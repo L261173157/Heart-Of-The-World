@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_sql")
 species_name = "松鼠"
-visual_scale = 0.58
+visual_scale = 0.97
 frames_override = ExtResource("2_frames")
 ai_archetype = "charger"
 habitats = Array[String](["hill"])

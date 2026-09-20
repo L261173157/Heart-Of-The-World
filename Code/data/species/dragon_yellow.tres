@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_drg")
 species_name = "火龙"
-visual_scale = 1.18
+visual_scale = 1.04
 tint = Color(0.95, 0.7, 0.25, 1)
 frames_override = ExtResource("2_frames")
 ai_archetype = "ranged"

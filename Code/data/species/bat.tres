@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_bat")
 species_name = "蝙蝠"
-visual_scale = 0.66
+visual_scale = 0.9
 frames_override = ExtResource("2_frames")
 ai_archetype = "melee_swarm"
 habitats = Array[String](["swamp"])

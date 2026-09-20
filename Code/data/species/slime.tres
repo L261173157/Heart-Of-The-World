@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_q4dwy")
 species_name = "红史莱姆"
-visual_scale = 0.70
+visual_scale = 0.880
 tint = Color(0.62, 0.4, 0.85, 1)
 frames_override = ExtResource("2_frames")
 ai_archetype = "splitter"

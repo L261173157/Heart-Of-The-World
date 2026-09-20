@@ -402,9 +402,9 @@ func _open_dialogue(payload: Dictionary) -> void:
 	_dialogue_quest = payload.get("quest", {}) if _dialogue_kind == "quest" else {}
 	_dialogue_name.text = str(payload.get("giver", ""))
 	_dialogue_text.text = str(payload.get("text", ""))
-	var face_id := int(payload.get("faceset", 0))
-	var face_path := "res://assets/na/characters/faceset/%d.png" % face_id
-	_dialogue_faceset.texture = load(face_path) if face_id > 0 and ResourceLoader.exists(face_path) else null
+	var face_path := str(payload.get("faceset", ""))
+	_dialogue_faceset.texture = load(face_path) \
+			if not face_path.is_empty() and ResourceLoader.exists(face_path) else null
 	var has_offer: bool = not _dialogue_quest.is_empty() or _dialogue_kind == "shop"
 	_dialogue_yes.visible = has_offer
 	_dialogue_no.visible = has_offer

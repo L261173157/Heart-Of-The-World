@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_cac")
 species_name = "仙人掌怪"
-visual_scale = 1.18
+visual_scale = 1.11
 frames_override = ExtResource("2_frames")
 ai_archetype = "ranged"
 habitats = Array[String](["hill"])

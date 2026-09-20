@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_rcn")
 species_name = "浣熊"
-visual_scale = 0.66
+visual_scale = 0.99
 tint = Color(0.7, 0.6, 0.5, 1)
 frames_override = ExtResource("2_frames")
 ambient = true

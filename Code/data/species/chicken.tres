@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_chk")
 species_name = "鸡"
-visual_scale = 0.66
+visual_scale = 0.99
 tint = Color(0.95, 0.9, 0.8, 1)
 frames_override = ExtResource("2_frames")
 ambient = true
