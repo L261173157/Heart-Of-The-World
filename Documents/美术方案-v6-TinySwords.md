@@ -160,3 +160,18 @@
 
 - 回滚：slicer `STYLE = "ts" | "na"` 一键切回 NA 帧；main 分支即 NA 主线
 - 每阶段验收：改帧→combat_test+save_test；改 UI→ui_flow_test；改障碍→sim_test；改数值→balance_test；P6 六测全绿 + screenshot.tscn 六点位取证（出生/雪原/熔岩/交界/menu/codex/night）
+
+## 12. 落地定稿记录（2026-09-20，P0~P6 收束）
+
+六个阶段提交：00b236f（入库+方案）→ dcd05b8（切帧管线）→ c466ca0（角色层）→ edb7080（地形层）→ 869dfdf（UI 全套）→ a52e2b4（音频）+ 终验提交。与初稿的差异与实证：
+
+1. **尺寸体系**：TS 素材实测为 2× 预放大（非 6×）；切帧=union bbox 裁剪+目标内容高重采样，输出内容高 9~18/46（Boss）×场景 4.8=与 NA 世界占地逐物种对齐（29 .tres visual_scale 等比重标，碰撞/占地零变化）。
+2. **Lancer 分段实证**：idle=5 方向×12 帧（右向 24-35）、run=5×6（右向 12-17），攻击取 *_Right_* 独立文件；只用于 hill Boss 与 cactus/dragon 两物种（竖枪画布不适合常规怪）。
+3. **英雄侧向翻转零代码**：player._update_anim 原生降级链（缺 _up/_down 自动侧向+flip_h、缺 attack1-3 回退 attack、缺 die/hurt 跳过）直接吃 TS 单视角帧表。
+4. **特效**：TS 源 9 组（Fire/Explosion/Dust 烘焙变色）+ generate_fx 合成 9 组（slash 弧光两轮几何调优：56 画布半径 22±45°）+ orb_core 法弹球；FxLayer TABLE 路径不变零代码接入。
+5. **装饰双通道**：障碍/装饰统一走 assets/deco 精灵通道（world_deco 原生 AI 精灵优先机制复用），bake_structures 一站产出 14 件。
+6. **UI**：39 件图标产线（对位/变色/合成）；对话框=RegularPaper 九宫+TS 方钮+合成金边头像框；血条=BigBar_Fill 烘三色平铺+SmallBar_Base 九宫（StyleBoxTexture texture_margin API 实测：属性名 texture_margin_*、值为 float）；室内口袋合成件（地板/墙/床）关闭 NA 残留。
+7. **音频**：FreePD 2025 关站改道 OpenGameArt CC0 合集（10 槽）+ Kenney 四包（24 事件音）；WAV 两曲 ffmpeg libmp3lame 转 mp3；mp3/ogg 运行时 loop。jingles 族编号未试听、mp3 循环间隙为已知观察项。
+8. **显示名迁移缓办**：物种名被 prey 链/WorldConfig/TERRAIN_BOSSES/任务按字符串引用，改名静默断链风险大于收益；待 Enemy Pack 到货（怪物形象再变）统一走 SPECIES_RENAME_MAP。
+9. **验收**：六测全绿（sim 123 项/balance/combat 62 项/save/ui_flow 26 项/pacing）+ 七点位截图像素实证（出生/交界/主菜单/HUD/雪原/熔岩/夜间/图鉴），零 NA 视觉残留、零渲染异常。存档完全兼容（id/路径键全未动）。
+10. **回滚通道**：slice_spritesheets.gd `STYLE="na"` 重跑即整体回退 NA 帧；main 分支=NA 主线。

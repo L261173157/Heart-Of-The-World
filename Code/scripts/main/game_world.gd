@@ -882,26 +882,24 @@ func _update_landmark_markers() -> void:
 			_npc_nodes.erase(id)
 
 
-## 地标动画装饰（玩法 v7 P2）：随标记流式同进出——精灵泉挂瀑布三段纵排
-## （NA Animated waterfall 条带，水从泉眼流出）、古树挂草叶摇摆 ×2；
+## 地标动画装饰（美术 v6 TS）：随标记流式同进出——精灵泉挂水面浪花动画
+## （TS Water Foam 条带）、古树两侧静态草丛（world_deco 同源件）；
 ## 其余地标保持原有圆环/精灵不抢戏
 func _attach_landmark_deco(marker: Node2D, kind: String) -> void:
 	# 偏移是相对地标的局部坐标（装饰作为 marker 子节点随其流式同进出）
 	if kind == "精灵泉":
-		var wf := [
-			["deco_waterfall_start", Vector2(-44, -30)],
-			["deco_waterfall_middle", Vector2(-44, 2)],
-			["deco_waterfall_end", Vector2(-44, 34)],
-		]
-		for pair in wf:
-			marker.add_child(_make_animated_prop(
-				"res://assets/creatures/frames/%s/%s_frames.tres" % [pair[0], pair[0]],
-				pair[1], 2.0))
+		marker.add_child(_make_animated_prop(
+			"res://assets/creatures/frames/deco_foam/deco_foam_frames.tres",
+			Vector2(0, 12), 1.4))
 	elif kind == "古树":
 		for offset in [Vector2(-40, 6), Vector2(40, -4)]:
-			marker.add_child(_make_animated_prop(
-				"res://assets/creatures/frames/deco_plant/deco_plant_frames.tres",
-				offset, 2.0))
+			var node := Node2D.new()
+			node.position = offset
+			var sp := Sprite2D.new()
+			sp.texture = load("res://assets/deco/grass.png")
+			sp.scale = Vector2(1.6, 1.6)
+			node.add_child(sp)
+			marker.add_child(node)
 
 
 ## 动画挂件（地标装饰版：相对地标的局部坐标，随标记同生命周期）

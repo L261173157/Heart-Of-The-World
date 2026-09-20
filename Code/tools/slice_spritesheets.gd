@@ -491,7 +491,8 @@ const CREATURES_TS := {
 	"fx_beam": {"cell": Vector2i(96, 96), "anims": {"play": "fx_generated/beam.png"}, "h": 12, "fps": 14.0, "loop": false},
 	"fx_pillar": {"cell": Vector2i(96, 96), "anims": {"play": "fx_generated/pillar.png"}, "h": 16, "fps": 10.0, "loop": false},
 	"fx_beams": {"cell": Vector2i(96, 96), "anims": {"play": "fx_generated/beams.png"}, "h": 16, "fps": 12.0, "loop": false},
-	## 注：TS 无瀑布/水车/旗帜动画——deco_waterfall*/camp_* 暂留 NA 帧（P2/P3 消费端改造）。
+	# --- 地标动画装饰（精灵泉水花，TS Water Foam 条带） ---
+	"deco_foam": {"cell": Vector2i(192, 192), "anims": {"play": "Terrain/Tileset/Water Foam.png"}, "h": 16, "fps": 8.0, "loop": true},
 }
 
 
