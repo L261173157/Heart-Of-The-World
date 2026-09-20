@@ -313,6 +313,9 @@ func _physics_process(delta: float) -> void:
 			visual.flip_h = dir.x < 0.0
 		_spawn_dust(delta)
 	move_and_slide()
+	# 像素稳定：精灵世界坐标吸附整数网格（相机画布吸附稳世界；精灵自身
+	# 浮点坐标仍会逐帧跳格采样——毛刺闪动的第二来源）
+	visual.global_position = visual.global_position.round()
 
 	# 双通道输入先各自取值再合并：or 短路会让触摸队列滞留一帧后误触发
 	var key_attack := Input.is_action_just_pressed("attack")
@@ -417,7 +420,9 @@ func _update_anim(delta := 0.0) -> void:
 	if walking and visual.animation == "walk":
 		bob_target = sin(TAU * float(visual.frame + visual.frame_progress) / 3.0) * BOB_AMPLITUDE
 	if delta > 0.0:
-		visual.offset.y = lerpf(visual.offset.y, bob_target, 1.0 - exp(-16.0 * delta))
+		# 像素稳定：bob 目标与实际偏移取整（亚像素抖动=毛刺闪动）
+		visual.offset.y = roundf(lerpf(visual.offset.y, bob_target,
+			1.0 - exp(-16.0 * delta)))
 	# 起停过渡反馈（死亡态不给——倒地帧不该被挤压）
 	if delta > 0.0 and walking != _was_walking and not _is_dead:
 		if walking:

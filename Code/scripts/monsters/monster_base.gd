@@ -299,7 +299,9 @@ func _get_player() -> Node2D:
 
 ## 体型表现（分裂子代缩小）；子类可扩展（如红史莱姆的果冻脉动在此基础上叠加）
 func _apply_size_visual() -> void:
-	visual.scale = _visual_base()
+	# 像素稳定：最终渲染缩放取整（非整数缩放=像素行宽窄交替，边缘毛刺闪动的
+	# 来源之一；只影响视觉不影响碰撞 body_k）
+	visual.scale = _visual_base().round()
 
 
 ## visual.scale 的稳态基准（果冻脉动/squash 回弹目标同源）：
@@ -565,7 +567,10 @@ func _update_anim() -> void:
 		want = "idle"
 	if visual.animation != want or not visual.is_playing():
 		visual.play(want)
-	visual.offset.y = sin(_anim_time * 13.0) * 0.9 if want == "walk" else 0.0
+	# 像素稳定：bob 与精灵世界坐标都吸附整数（相机画布吸附只稳世界不动精灵，
+	# 移动中的精灵在浮点坐标上逐帧跳格采样=边缘毛刺闪动，2026-09-20 实测反馈）
+	visual.offset.y = roundf(sin(_anim_time * 13.0) * 0.9) if want == "walk" else 0.0
+	visual.global_position = visual.global_position.round()
 	prof_anim_ms += (Time.get_ticks_usec() - _ta) * 0.001
 	prof_anim_n += 1
 
