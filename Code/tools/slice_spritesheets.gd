@@ -637,6 +637,9 @@ func _slice_ts(creature: String, cfg: Dictionary) -> void:
 			var b := _ts_bbox(s["img"], Rect2i(k * cell.x, 0, cell.x, cell.y))
 			if b.get_area() <= 0:
 				continue
+			# bbox 返回条带绝对坐标——先平移到帧内局部坐标再并 union，
+			# 否则跨帧 min/max 横向铺满整条带（每帧裁出多角色横带的回归即此）
+			b.position.x -= k * cell.x
 			min_x = mini(min_x, b.position.x)
 			min_y = mini(min_y, b.position.y)
 			max_x = maxi(max_x, b.position.x + b.size.x)
