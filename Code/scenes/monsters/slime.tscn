@@ -15,6 +15,6 @@ script = ExtResource("1_slime")
 shape = SubResource("CircleShape2D_body")
 
 [node name="Visual" type="AnimatedSprite2D" parent="."]
-scale = Vector2(4.8, 4.8)
+scale = Vector2(5.0, 5.0)
 sprite_frames = ExtResource("2_sprite")
 autoplay = "idle"

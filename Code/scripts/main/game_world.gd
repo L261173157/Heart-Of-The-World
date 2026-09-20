@@ -1002,7 +1002,7 @@ class LandmarkNPC extends Node2D:
 		var frames: SpriteFrames = FRAMES.get(kind)
 		if frames != null:
 			_visual.sprite_frames = frames
-		_visual.scale = Vector2(4.8, 4.8)
+		_visual.scale = Vector2(5.0, 5.0)
 		_visual.position.y = -4.0
 		_visual.play(&"idle")
 		add_child(_visual)
