@@ -202,7 +202,7 @@ func _beams_frames(edge: Color) -> Array:
 							continue
 						var dist := Vector2(ox, oy).length()
 						var col := _mix(CORE, edge, 0.4)
-						col.a = _quant(peak[k] * (1.0 - step / lens[k]) * (1.0 - 0.35 * dist))
+						col.a = _quant(peak[k] * (1.0 - step / lens[k]) * (1.0 - 0.18 * dist))
 						img.set_pixel(int(p.x), int(p.y), col)
 		frames.append(img)
 	return frames

@@ -2,7 +2,7 @@
 ## 双风格开关（美术 v6，2026-09-20）：
 ##   STYLE="ts" → Tiny Swords 免费包（assets/ts/，逐动画单行条带，帧 192×192=2× 预放大；
 ##     裁全体 union bbox → 按目标内容高重采样 → 按需 HSV 烘焙。Lancer 64×320 竖画布
-##     且 idle/run 按 5 方向分段：右向=idle 帧 24-35 / run 帧 12-17，攻击取 *_Right_* 独立文件）
+##     Lancer 实为 320×320 真帧（idle 12 帧/run 6 帧正面竖枪，方向通用；攻击/防御取 *_Right_* 朝右侧面））
 ##   STYLE="na" → Ninja Adventure 16px 表（v5 回滚线，表保留原样）
 ## 帧纹理直接内嵌进 .tres（FLAG_BUNDLE_RESOURCES，不产生散碎帧文件）。
 ## 输出：assets/creatures/frames/<name>/<name>_frames.tres，场景 Visual（AnimatedSprite2D）引用之。
@@ -418,10 +418,10 @@ const CREATURES_TS := {
 		"bake": {"hue": -0.04, "sat": 1.2, "val": 0.95}, "h": 9, "fps": {"idle": 6.0, "walk": 8.0},
 	},
 	"cactus": {
-		"cell": Vector2i(64, 320),
+		"cell": Vector2i(320, 320),
 		"anims": {
-			"idle": {"path": "Units/Yellow Units/Lancer/Lancer_Idle.png", "from": 24, "count": 12},
-			"walk": {"path": "Units/Yellow Units/Lancer/Lancer_Run.png", "from": 12, "count": 6},
+			"idle": "Units/Yellow Units/Lancer/Lancer_Idle.png",
+			"walk": "Units/Yellow Units/Lancer/Lancer_Run.png",
 			"attack": "Units/Yellow Units/Lancer/Lancer_Right_Attack.png",
 		},
 		"bake": {"hue": 0.2, "sat": 0.9, "val": 0.95},
@@ -433,10 +433,10 @@ const CREATURES_TS := {
 		"h": 17, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"boss_samurai": {
-		"cell": Vector2i(64, 320),
+		"cell": Vector2i(320, 320),
 		"anims": {
-			"idle": {"path": "Units/Black Units/Lancer/Lancer_Idle.png", "from": 24, "count": 12, "step": 2},
-			"walk": {"path": "Units/Black Units/Lancer/Lancer_Run.png", "from": 12, "count": 6},
+			"idle": {"path": "Units/Black Units/Lancer/Lancer_Idle.png", "step": 2},
+			"walk": "Units/Black Units/Lancer/Lancer_Run.png",
 			"attack": "Units/Black Units/Lancer/Lancer_Right_Attack.png",
 			"hurt": "Units/Black Units/Lancer/Lancer_Right_Defence.png",
 		},
@@ -456,10 +456,10 @@ const CREATURES_TS := {
 		"noloop": ["attack", "hurt"],
 	},
 	"dragon": {
-		"cell": Vector2i(64, 320),
+		"cell": Vector2i(320, 320),
 		"anims": {
-			"idle": {"path": "Units/Red Units/Lancer/Lancer_Idle.png", "from": 24, "count": 12},
-			"walk": {"path": "Units/Red Units/Lancer/Lancer_Run.png", "from": 12, "count": 6},
+			"idle": "Units/Red Units/Lancer/Lancer_Idle.png",
+			"walk": "Units/Red Units/Lancer/Lancer_Run.png",
 			"attack": "Units/Red Units/Lancer/Lancer_Right_Attack.png",
 		},
 		"bake": {"sat": 1.1, "val": 0.9}, "h": 17,

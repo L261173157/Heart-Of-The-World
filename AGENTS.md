@@ -21,6 +21,7 @@ Steam 版 Godot 二进制：
 GODOT="$HOME/Library/Application Support/Steam/steamapps/common/Godot Engine/Godot.app/Contents/MacOS/Godot"
 "$GODOT" --headless --path Code --quit     # 单帧加载主场景的冒烟测试
 "$GODOT" --headless --path Code -s tests/sim_test.gd          # 生态不变量单测（纯逻辑，123 项断言）
+"$GODOT" --headless --path Code -s tests/frames_test.gd        # 帧资产契约验收（第七测，444 项断言：29 物种/三皮肤/6 NPC/18 fx 可加载+动画集+尺寸界+内容非空；代码/场景字面 res:// 资产路径存在性——切帧/烘焙/generate_fx 重跑后必跑）
 "$GODOT" --headless --path Code -s tests/balance_test.gd      # 数值平衡校验（6 地形×物种手感区间，v4 起按地形去重展开）
 "$GODOT" --headless --path Code res://tests/combat_test.tscn --quit-after 100000   # 战斗闭环+五技能/连击/赏金验证（据点式流式下测试自动传送至目标据点，~15s 自行退出）
 "$GODOT" --headless --path Code res://tests/save_test.tscn --quit-after 5000       # 存档读写/坏档防御/商店购买
@@ -39,7 +40,7 @@ python3 Code/tools/subset_font.py    # 重新生成内嵌中文字体 assets/fon
 "$GODOT" --path Code --resolution 1280x720 res://tests/screenshot.tscn            # 视觉截图（3s+3.35s 双帧到 /tmp/hotw_shot{,_b}.png，帧差验证动画；HOTW_SHOT_POS="x,y" 指定世界坐标，v4 大世界采样点：出生平原 21888,60301 / 雪原 753707,738957 / 熔岩 774085,696114 / 平原|沼泽交界 83882,99810；HOTW_SHOT_UI="menu" 截主菜单+冒险档案面板，"codex" 截图鉴；HOTW_SHOT_NIGHT=1 强制满夜取证提灯+障碍阴影投射）
 ```
 主场景为 scenes/ui/main_menu.tscn（开始/继续冒险、新的冒险、冒险档案、设置、退出；暂停菜单含保存进度）；测试直接加载 main.tscn/combat_test.tscn 不受影响。
-无输出且退出码 0 = 通过。改生态层必跑 sim_test；改战斗/AI/场景必跑 combat_test；改 GameState 必跑 save_test；改数值必跑 balance_test；改 HUD/菜单/流程必跑 ui_flow_test。测试场景会自动关闭自动存档（GameState.save_enabled），不污染真实进度。
+无输出且退出码 0 = 通过。改生态层必跑 sim_test；改战斗/AI/场景必跑 combat_test；改 GameState 必跑 save_test；改数值必跑 balance_test；改 HUD/菜单/流程必跑 ui_flow_test；改切帧表/烘焙/generate_fx 后必跑 frames_test（09-20 横带与 Lancer 空白帧两次事故后增设——六测不覆盖资产契约层）。测试场景会自动关闭自动存档（GameState.save_enabled），不污染真实进度。
 iOS 一键导出装机（前置：Xcode 已登录账号 + 设备已连接）：仓库根 `./ios-run.sh`（输出在 build-output/，勿放回 Code/build/ 防资源自污染）。
 iOS TestFlight/App Store 上传通道（前置：Xcode 已登录团队账号 + ASC 已建 App 记录「心之世界」6808568562）：仓库根 `./ios-upload.sh`——Release 导出→自动签名 Archive→app-store 重签出 ipa→校验→**经 Xcode 会话免密码上传**（xcodebuild destination=upload，2026-09-04 实证；内部测试组自动分发）；build 号自动递增。
 **安全约束（上传通道）**：上传属对外发布操作，Agent 不得自动执行，每次须用户当次明确确认。
