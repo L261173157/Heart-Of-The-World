@@ -60,7 +60,248 @@ func _init() -> void:
 		print("%-16s -> %sarrow.png (16x16)" % ["arrow", OUT])
 	_chest()
 	_bake_props()
+	_bake_ui_icons()
 	quit(0)
+
+
+## ============================ UI 图标产线（美术 v6 P4） ============================
+## 产出 assets/ts/icons/<name>.png：TS Icons/Tools 对位直拷、HSV 变体、
+## TS 色板合成（包内无对口）。消费方：hud.gd 图标常量、item_catalog、对话框。
+const ICONS_DIR := "res://assets/ts/icons/"
+const UI_SRC := "res://assets/ts/UI Elements/UI Elements/"
+
+## [源绝对 res 路径, bake 可空]（合成件在 _synth_ui 里单独画）
+const UI_ICONS := {
+	"attack": [UI_SRC + "Icons/Icon_05.png", {}],
+	"heavy": [UI_SRC + "Icons/Icon_01.png", {}],
+	"empower": [UI_SRC + "Icons/Icon_11.png", {}],
+	"eco": [UI_SRC + "Icons/Icon_07.png", {}],
+	"shop": [UI_SRC + "Icons/Icon_03.png", {}],
+	"coin": [UI_SRC + "Icons/Icon_03.png", {}],
+	"codex": [UI_SRC + "Icons/Icon_12.png", {}],
+	"cdr": [UI_SRC + "Icons/Icon_09.png", {}],
+	"settings": [UI_SRC + "Icons/Icon_12.png", {}],
+	"hp_pot_blue": [UI_SRC + "Icons/Icon_08.png", {}],
+	"heal_pot_red": [UI_SRC + "Icons/Icon_08.png", {"hue": -0.05, "sat": 1.3, "val": 1.0}],
+	"mp_pot_green": [UI_SRC + "Icons/Icon_08.png", {"hue": 0.28, "sat": 1.0, "val": 1.0}],
+	"beaf": [UI_SRC + "Icons/Icon_04.png", {}],
+	"octopus": [UI_SRC + "Icons/Icon_04.png", {"hue": 0.72, "sat": 0.8}],
+	"tea_leaf": [UI_SRC + "Icons/Icon_02.png", {"hue": 0.13, "sat": 1.1}],
+	"scroll_fire": [UI_SRC + "Icons/Icon_12.png", {"hue": -0.06, "sat": 1.35}],
+	"scroll_rock": [UI_SRC + "Icons/Icon_12.png", {"sat": 0.25, "val": 1.05}],
+	"katana": ["res://assets/ts/Terrain/Resources/Tools/Tool_03.png", {}],
+	"fork": ["res://assets/ts/Terrain/Resources/Tools/Tool_01.png", {}],
+	"sai": ["res://assets/ts/Terrain/Resources/Tools/Tool_04.png", {}],
+	"knock_axe": ["res://assets/ts/Terrain/Resources/Tools/Tool_01.png", {}],
+	"bolt": ["res://assets/ts/fx_generated/orb_core.png", {}],
+	"save": [OUT + "chest.png", {}],
+}
+
+
+func _bake_ui_icons() -> void:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(ICONS_DIR))
+	for icon_name: String in UI_ICONS:
+		var spec: Array = UI_ICONS[icon_name]
+		var img := Image.load_from_file(ProjectSettings.globalize_path(spec[0]))
+		if img == null:
+			push_warning("UI 图标源缺失：" + spec[0])
+			continue
+		var bake: Dictionary = spec[1]
+		if not bake.is_empty():
+			_recolor(img, bake)
+		img.save_png(ProjectSettings.globalize_path(ICONS_DIR + icon_name + ".png"))
+	# 血条贴图：BigBar_Fill 烘三色（平铺填充），SmallBar_Base 直拷（九宫框）
+	var fill := Image.load_from_file(ProjectSettings.globalize_path(
+		UI_SRC + "Bars/BigBar_Fill.png"))
+	if fill != null:
+		for pair: Array in [["bar_fill_red", {"hue": -0.02, "sat": 1.25}],
+				["bar_fill_blue", {"hue": 0.58, "sat": 1.0}],
+				["bar_fill_gold", {"hue": 0.11, "sat": 1.1, "val": 1.05}]]:
+			var img: Image = fill.duplicate()
+			_recolor(img, pair[1])
+			img.save_png(ProjectSettings.globalize_path(ICONS_DIR + pair[0] + ".png"))
+	var base := Image.load_from_file(ProjectSettings.globalize_path(
+		UI_SRC + "Bars/SmallBar_Base.png"))
+	if base != null:
+		base.save_png(ProjectSettings.globalize_path(ICONS_DIR + "bar_base.png"))
+	_synth_ui()
+	print("UI 图标产线完成 -> ", ICONS_DIR)
+
+
+## TS 色板合成件（包内无对口）：疾风符/红心条带/金星/皮袋/钥匙/鱼/虾/饭团/寿司/
+## 播放三角/头像框
+func _synth_ui() -> void:
+	var c_wood := Color(0.74, 0.52, 0.30)
+	var c_dark := Color(0.33, 0.21, 0.12)
+	var c_gold := Color(1.0, 0.82, 0.34)
+	var c_white := Color(1.0, 0.98, 0.94)
+	var c_red := Color(0.85, 0.25, 0.22)
+	# 疾风符（dash）：三条白速度线 + 青点
+	var dash := Image.create(48, 28, false, Image.FORMAT_RGBA8)
+	for k in 3:
+		var y := 4 + k * 8
+		var line_len := 30 - k * 4
+		for x in line_len:
+			dash.set_pixel(x + k * 6, y, c_white)
+			dash.set_pixel(x + k * 6, y + 1, Color(0.7, 0.88, 1.0, 0.8))
+	for dy in 3:
+		for dx in 3:
+			dash.set_pixel(40 + dx, 12 + dy, Color(0.5, 0.85, 1.0))
+	dash.save_png(ProjectSettings.globalize_path(ICONS_DIR + "dash.png"))
+	# 红心条带（5 帧 ×16px：满→空，帧内=红行数递减）
+	var strip := Image.create(80, 16, false, Image.FORMAT_RGBA8)
+	for f in 5:
+		var fill_rows := 4 - f
+		for y in 16:
+			for x in 16:
+				var p := Vector2(x - 7.5, y - 8.5)
+				var in_heart: bool = (p.y > -1.0 and p.y < 5.0 and absf(p.x) < 7.0 - maxf(0.0, p.y - 3.0)) \
+						or (p.y <= -1.0 and Vector2(absf(p.x) - 3.0, p.y + 1.0).length() < 3.6)
+				if not in_heart:
+					continue
+				var red_row: bool = p.y < 4.0 - float(fill_rows)
+				strip.set_pixel(f * 16 + x, y, c_red if red_row else c_white)
+	strip.save_png(ProjectSettings.globalize_path(ICONS_DIR + "heart_strip.png"))
+	strip.get_region(Rect2i(0, 0, 16, 16)).save_png(
+		ProjectSettings.globalize_path(ICONS_DIR + "heart.png"))
+	# 金星（xp）
+	var star := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	for y in 32:
+		for x in 32:
+			var v := Vector2(x - 15.5, y - 15.5)
+			var a := absf(atan2(v.y, v.x))
+			var star_r := 6.0 + 9.0 * (1.0 - absf(fmod(a, TAU / 5.0) / (TAU / 5.0) * 2.0 - 1.0))
+			if v.length() < star_r:
+				star.set_pixel(x, y, c_gold if v.length() > star_r - 4.0 else c_white)
+	star.save_png(ProjectSettings.globalize_path(ICONS_DIR + "star_gold.png"))
+	# 皮袋（bag）
+	var bag := Image.create(40, 36, false, Image.FORMAT_RGBA8)
+	for y in 36:
+		for x in 40:
+			var p := Vector2(x - 19.5, y - 18.0) / Vector2(13.0, 14.0)
+			if p.length() <= 1.0 and y > 8:
+				bag.set_pixel(x, y, c_wood)
+			if absf(p.x) < 0.42 and y >= 6 and y <= 11:
+				bag.set_pixel(x, y, c_dark)
+	for x in range(13, 27):
+		bag.set_pixel(x, 7, c_dark)
+		bag.set_pixel(x, 8, c_gold)
+	bag.save_png(ProjectSettings.globalize_path(ICONS_DIR + "bag.png"))
+	# 钥匙（银/金）
+	for pair: Array in [["key_silver", Color(0.78, 0.8, 0.85)], ["key_gold", c_gold]]:
+		var key := Image.create(40, 24, false, Image.FORMAT_RGBA8)
+		for y in range(4, 20):
+			for x in range(2, 16):
+				var d := Vector2(x - 8.5, y - 11.5) / Vector2(6.0, 7.0)
+				if d.length() <= 1.0 and d.length() > 0.55:
+					key.set_pixel(x, y, pair[1])
+		for x in range(16, 38):
+			key.set_pixel(x, 11, pair[1])
+			key.set_pixel(x, 12, Color(pair[1].r * 0.6, pair[1].g * 0.6, pair[1].b * 0.6))
+		for y in range(12, 19):
+			key.set_pixel(31, y, pair[1])
+			key.set_pixel(36, y, pair[1])
+		key.save_png(ProjectSettings.globalize_path(ICONS_DIR + pair[0] + ".png"))
+	# 鱼
+	var fish := Image.create(40, 20, false, Image.FORMAT_RGBA8)
+	for y in 20:
+		for x in 40:
+			var d := Vector2(x - 17.0, y - 9.5) / Vector2(13.0, 6.0)
+			if d.length() <= 1.0:
+				fish.set_pixel(x, y, Color(0.55, 0.62, 0.72))
+			elif x >= 30 and x <= 38 and absf(y - 9.5) < (x - 29.0) * 1.1:
+				fish.set_pixel(x, y, Color(0.42, 0.5, 0.6))
+	fish.set_pixel(10, 8, c_dark)
+	fish.save_png(ProjectSettings.globalize_path(ICONS_DIR + "fish.png"))
+	# 虾：粉红弯钩 + 尾扇
+	var shrimp := Image.create(36, 24, false, Image.FORMAT_RGBA8)
+	for t in 60:
+		var ang := -0.5 + t / 60.0 * 2.6
+		var cx := 18.0 + cos(ang) * 10.0
+		var cy := 13.0 + sin(ang) * 7.0
+		for k in 5:
+			var px := int(cx + cos(ang + 1.57) * (k - 2.0))
+			var py := int(cy + sin(ang + 1.57) * (k - 2.0))
+			if px >= 0 and px < 36 and py >= 0 and py < 24:
+				shrimp.set_pixel(px, py, Color(0.95, 0.55, 0.45))
+	for dy in 5:
+		for dx in 3:
+			shrimp.set_pixel(27 + dx, 4 + dy + dx, Color(0.9, 0.42, 0.35))
+	shrimp.save_png(ProjectSettings.globalize_path(ICONS_DIR + "shrimp.png"))
+	# 饭团：白三角 + 海苔带
+	var oni := Image.create(32, 28, false, Image.FORMAT_RGBA8)
+	for y in 28:
+		for x in 32:
+			var p := Vector2(x - 15.5, y - 13.0)
+			if p.y > -2.0 and absf(p.x) < (p.y + 3.0) * 1.35 and absf(p.x) < 14.0 and p.y < 13.0:
+				oni.set_pixel(x, y, c_white)
+			if p.y >= 8.0 and p.y <= 16.0 and absf(p.x) < (p.y - 6.0) * 1.3:
+				oni.set_pixel(x, y, Color(0.2, 0.35, 0.22))
+	oni.save_png(ProjectSettings.globalize_path(ICONS_DIR + "onigiri.png"))
+	# 寿司：白饭底 + 橙 salmon + 海苔带
+	var susi := Image.create(36, 24, false, Image.FORMAT_RGBA8)
+	for y in range(12, 24):
+		for x in range(3, 33):
+			var d := Vector2(x - 17.5, y - 17.5) / Vector2(14.5, 6.0)
+			if d.length() <= 1.0:
+				susi.set_pixel(x, y, c_white)
+	for y in range(5, 13):
+		for x in range(4, 32):
+			var d := Vector2(x - 17.5, y - 8.5) / Vector2(13.5, 4.0)
+			if d.length() <= 1.0:
+				susi.set_pixel(x, y, Color(0.95, 0.48, 0.25))
+	for y in range(4, 22):
+		susi.set_pixel(16, y, Color(0.2, 0.35, 0.22))
+		susi.set_pixel(17, y, Color(0.2, 0.35, 0.22))
+	susi.save_png(ProjectSettings.globalize_path(ICONS_DIR + "sushi.png"))
+	# 播放三角（ResumeBtn）
+	var play := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	for x in 24:
+		var h := 4 + x
+		for y in range(16 - h, 16 + h):
+			if y >= 0 and y < 32:
+				play.set_pixel(x + 4, y, Color(0.45, 0.8, 0.4) if x < 20 else Color(0.35, 0.68, 0.32))
+	play.save_png(ProjectSettings.globalize_path(ICONS_DIR + "play.png"))
+	# 头像框（对话立绘框）：深底 + 双线金边
+	var frame := Image.create(96, 96, false, Image.FORMAT_RGBA8)
+	for y in 96:
+		for x in 96:
+			var edge := minf(minf(float(x), 95.0 - x), minf(float(y), 95.0 - y))
+			if edge < 2.0 or (edge >= 5.0 and edge < 7.0):
+				frame.set_pixel(x, y, c_gold)
+			elif edge >= 7.0:
+				frame.set_pixel(x, y, Color(0.12, 0.13, 0.18, 0.92))
+	frame.save_png(ProjectSettings.globalize_path(ICONS_DIR + "icon_frame.png"))
+	# 室内口袋三件（TS 无室内件，木色合成）：地板/深墙/床
+	var floor_img := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	for y in 32:
+		for x in 32:
+			var plank := int(y / 8.0)
+			var off := (plank % 2) * 16
+			var grain := (x + off) % 32 < 1 or (x + off) % 7 == 3
+			floor_img.set_pixel(x, y, Color(0.62, 0.44, 0.27) if not grain else Color(0.55, 0.38, 0.22))
+			if y % 8 == 0:
+				floor_img.set_pixel(x, y, Color(0.42, 0.28, 0.16))
+	floor_img.save_png(ProjectSettings.globalize_path(OUT + "interior_floor.png"))
+	var wall := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	for y in 32:
+		for x in 32:
+			var brick_y := int(y / 8.0)
+			var off := (brick_y % 2) * 16
+			var mortar := y % 8 == 0 or (x + off) % 16 == 0
+			wall.set_pixel(x, y, Color(0.3, 0.26, 0.32) if not mortar else Color(0.2, 0.17, 0.22))
+	wall.save_png(ProjectSettings.globalize_path(OUT + "interior_wall.png"))
+	var bed := Image.create(40, 28, false, Image.FORMAT_RGBA8)
+	for y in 28:
+		for x in 40:
+			var frame_edge := x < 4 or x > 35 or y < 3 or y > 24
+			if frame_edge:
+				bed.set_pixel(x, y, c_wood)
+			elif y < 6:
+				bed.set_pixel(x, y, Color(0.9, 0.88, 0.82))  # 枕
+			else:
+				bed.set_pixel(x, y, Color(0.82, 0.3, 0.28))  # 红毯
+	bed.save_png(ProjectSettings.globalize_path(OUT + "bed.png"))
 
 
 ## 世界装饰精灵（world_deco 的 assets/deco/<kind>.png 优先通道，v6 全面接管）：

@@ -443,7 +443,7 @@ func _build_interior(idx: int) -> void:
 	room.position = center
 	# 地板：32px 地板块 region 平铺（texture_repeat）
 	var floor_sp := Sprite2D.new()
-	floor_sp.texture = load("res://assets/na/structures/interior_floor.png")
+	floor_sp.texture = load("res://assets/ts/structures_baked/interior_floor.png")
 	floor_sp.centered = false
 	floor_sp.position = -INTERIOR_ROOM / 2.0
 	floor_sp.region_enabled = true
@@ -468,7 +468,7 @@ func _build_interior(idx: int) -> void:
 		shape.position = side[0]
 		body.add_child(shape)
 		var wall := Sprite2D.new()
-		wall.texture = load("res://assets/na/ui/np_dark.png")
+		wall.texture = load("res://assets/ts/structures_baked/interior_wall.png")
 		wall.position = side[0]
 		wall.centered = false
 		wall.region_enabled = true
@@ -481,7 +481,7 @@ func _build_interior(idx: int) -> void:
 	room.add_child(body)
 	# 家具：床（左上角）
 	var bed := Sprite2D.new()
-	bed.texture = load("res://assets/na/structures/bed.png")
+	bed.texture = load("res://assets/ts/structures_baked/bed.png")
 	bed.position = Vector2(-t.x + 76, -t.y + 64)
 	room.add_child(bed)
 	# 出口门（南墙缺口）：传送回营地该房屋门前

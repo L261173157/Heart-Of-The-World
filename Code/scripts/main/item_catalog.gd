@@ -3,28 +3,28 @@
 ##   本表只存元数据与图标；价格与掉落在 EconomyMath（纯逻辑，随迁服务端），
 ##   恢复比例在 CharacterStats.ITEM_HP_FRAC / ITEM_MP_FRAC——desc 动态拼接，
 ##   数值改动文案自动跟进，不出现第二份手抄副本。
-## 图标源：assets/na/items/（CC0 Ninja Adventure），按需 load + 静态缓存
+## 图标源：assets/ts/icons/（v6 Tiny Swords 对位/变色/合成），按需 load + 静态缓存
 ## （HUD 物品栏/商店/快捷槽共享同一份纹理）。
 class_name ItemCatalog
 
 const ITEMS := {
 	# --- 消耗品（商店补给 + Boss 附加掉落；效果比例见 CharacterStats） ---
-	"onigiri": {"name": "饭团", "kind": "consumable", "icon": "res://assets/na/items/onigiri.png"},
-	"sushi": {"name": "寿司", "kind": "consumable", "icon": "res://assets/na/items/sushi.png"},
-	"medipack": {"name": "医疗包", "kind": "consumable", "icon": "res://assets/na/items/medipack.png"},
-	"life-pot": {"name": "生命药剂", "kind": "consumable", "icon": "res://assets/na/items/life-pot.png"},
-	"water-pot": {"name": "竹水壶", "kind": "consumable", "icon": "res://assets/na/items/water-pot.png"},
+	"onigiri": {"name": "饭团", "kind": "consumable", "icon": "res://assets/ts/icons/onigiri.png"},
+	"sushi": {"name": "寿司", "kind": "consumable", "icon": "res://assets/ts/icons/sushi.png"},
+	"medipack": {"name": "医疗包", "kind": "consumable", "icon": "res://assets/ts/icons/hp_pot_blue.png"},
+	"life-pot": {"name": "生命药剂", "kind": "consumable", "icon": "res://assets/ts/icons/heal_pot_red.png"},
+	"water-pot": {"name": "竹水壶", "kind": "consumable", "icon": "res://assets/ts/icons/mp_pot_green.png"},
 	# --- 材料（按物种确定性掉落；卖钱出口 + P1 collect 任务交付储备） ---
-	"beaf": {"name": "兽肉", "kind": "material", "icon": "res://assets/na/items/beaf.png"},
-	"fish": {"name": "鲜鱼", "kind": "material", "icon": "res://assets/na/items/fish.png"},
-	"shrimp": {"name": "鲜虾", "kind": "material", "icon": "res://assets/na/items/shrimp.png"},
-	"octopus": {"name": "章鱼足", "kind": "material", "icon": "res://assets/na/items/octopus.png"},
-	"tea-leaf": {"name": "茶叶", "kind": "material", "icon": "res://assets/na/items/tea-leaf.png"},
-	"scroll-fire": {"name": "火之卷轴", "kind": "material", "icon": "res://assets/na/items/scroll-fire.png"},
-	"scroll-rock": {"name": "岩之卷轴", "kind": "material", "icon": "res://assets/na/items/scroll-rock.png"},
+	"beaf": {"name": "兽肉", "kind": "material", "icon": "res://assets/ts/icons/beaf.png"},
+	"fish": {"name": "鲜鱼", "kind": "material", "icon": "res://assets/ts/icons/fish.png"},
+	"shrimp": {"name": "鲜虾", "kind": "material", "icon": "res://assets/ts/icons/shrimp.png"},
+	"octopus": {"name": "章鱼足", "kind": "material", "icon": "res://assets/ts/icons/octopus.png"},
+	"tea-leaf": {"name": "茶叶", "kind": "material", "icon": "res://assets/ts/icons/tea_leaf.png"},
+	"scroll-fire": {"name": "火之卷轴", "kind": "material", "icon": "res://assets/ts/icons/scroll_fire.png"},
+	"scroll-rock": {"name": "岩之卷轴", "kind": "material", "icon": "res://assets/ts/icons/scroll_rock.png"},
 	# --- 钥匙（P1：城塞宝箱凭证；银=精英掉落开 hill 城塞，金=collect 奖励开 lava 城塞） ---
-	"silver-key": {"name": "银钥匙", "kind": "key", "icon": "res://assets/na/items/silver-key.png"},
-	"gold-key": {"name": "金钥匙", "kind": "key", "icon": "res://assets/na/items/gold-key.png"},
+	"silver-key": {"name": "银钥匙", "kind": "key", "icon": "res://assets/ts/icons/key_silver.png"},
+	"gold-key": {"name": "金钥匙", "kind": "key", "icon": "res://assets/ts/icons/key_gold.png"},
 }
 
 static var _tex_cache: Dictionary = {}

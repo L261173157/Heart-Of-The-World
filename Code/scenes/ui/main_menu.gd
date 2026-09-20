@@ -2,11 +2,11 @@
 ## 作为游戏主场景（project.godot run/main_scene）。
 extends Control
 
-const ICON_START := preload("res://assets/na/weapons/sword.png")
-const ICON_NEW := preload("res://assets/na/weapons/axe.png")
-const ICON_ARCHIVE := preload("res://assets/na/items/scroll-plant.png")
-const ICON_SETTINGS := preload("res://assets/na/items/scroll-empty.png")
-const ICON_QUIT := preload("res://assets/na/hud/arrow.png")
+const ICON_START := preload("res://assets/ts/icons/attack.png")
+const ICON_NEW := preload("res://assets/ts/icons/fork.png")
+const ICON_ARCHIVE := preload("res://assets/ts/icons/codex.png")
+const ICON_SETTINGS := preload("res://assets/ts/icons/settings.png")
+const ICON_QUIT := preload("res://assets/ts/UI Elements/UI Elements/Buttons/SmallRedSquareButton_Regular.png")
 ## 底部群系地平线装饰条（六群系地表图，与游戏内同源素材）
 const REGION_TERRAINS: Array[String] = [
 	"res://assets/terrain/region_center.png",
@@ -27,7 +27,7 @@ func _ready() -> void:
 	# 覆盖 glass 主题底但保留按钮样式（与暂停面板 np_dialogue 同款手法）。
 	# ArchivePanel 无唯一名登记，走路径定位
 	var archive_panel := get_node("ArchiveLayer/ArchivePanel") as PanelContainer
-	var archive_bg := HotwTheme.nine_patch_bg("res://assets/na/ui/np_archive.png")
+	var archive_bg := HotwTheme.nine_patch_paper("res://assets/ts/UI Elements/UI Elements/Papers/RegularPaper.png")
 	if archive_panel != null and archive_bg != null:
 		archive_panel.add_child(archive_bg)
 		archive_panel.move_child(archive_bg, 0)
