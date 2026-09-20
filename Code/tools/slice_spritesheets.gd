@@ -255,7 +255,7 @@ const CREATURES_TS := {
 			"attack3": "Units/Blue Units/Warrior/Warrior_Attack2.png",
 			"hurt": "Units/Blue Units/Warrior/Warrior_Guard.png",
 		},
-		"h": 17, "fps": {"idle": 6.0, "walk": 12.0, "attack": 10.0, "attack1": 10.0,
+		"h": 15, "fps": {"idle": 6.0, "walk": 12.0, "attack": 10.0, "attack1": 10.0,
 			"attack2": 10.0, "attack3": 10.0, "hurt": 8.0},
 		"noloop": ["attack", "attack1", "attack2", "attack3", "hurt"],
 	},
@@ -269,7 +269,7 @@ const CREATURES_TS := {
 			"attack3": "Units/Black Units/Warrior/Warrior_Attack2.png",
 			"hurt": "Units/Black Units/Warrior/Warrior_Guard.png",
 		},
-		"h": 17, "fps": {"idle": 6.0, "walk": 12.0, "attack": 10.0, "attack1": 10.0,
+		"h": 15, "fps": {"idle": 6.0, "walk": 12.0, "attack": 10.0, "attack1": 10.0,
 			"attack2": 10.0, "attack3": 10.0, "hurt": 8.0},
 		"noloop": ["attack", "attack1", "attack2", "attack3", "hurt"],
 	},
@@ -283,53 +283,53 @@ const CREATURES_TS := {
 			"attack3": "Units/Yellow Units/Warrior/Warrior_Attack2.png",
 			"hurt": "Units/Yellow Units/Warrior/Warrior_Guard.png",
 		},
-		"h": 17, "fps": {"idle": 6.0, "walk": 12.0, "attack": 10.0, "attack1": 10.0,
+		"h": 15, "fps": {"idle": 6.0, "walk": 12.0, "attack": 10.0, "attack1": 10.0,
 			"attack2": 10.0, "attack3": 10.0, "hurt": 8.0},
 		"noloop": ["attack", "attack1", "attack2", "attack3", "hurt"],
 	},
 	# --- 地标/营地 NPC（全部蓝系友军） ---
 	"npc_hunter": {
 		"anims": {"idle": "Units/Blue Units/Archer/Archer_Idle.png", "walk": "Units/Blue Units/Archer/Archer_Run.png"},
-		"h": 15, "fps": {"idle": 6.0, "walk": 8.0},
+		"h": 14, "fps": {"idle": 6.0, "walk": 8.0},
 	},
 	"npc_scholar": {
 		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle Pickaxe.png", "walk": "Units/Blue Units/Pawn/Pawn_Run Pickaxe.png"},
-		"h": 13, "fps": {"idle": 6.0, "walk": 8.0},
+		"h": 12, "fps": {"idle": 6.0, "walk": 8.0},
 	},
 	"npc_keeper": {
 		"anims": {"idle": "Units/Blue Units/Monk/Idle.png", "walk": "Units/Blue Units/Monk/Run.png"},
-		"h": 13, "fps": {"idle": 6.0, "walk": 8.0},
+		"h": 12, "fps": {"idle": 6.0, "walk": 8.0},
 	},
 	"npc_merchant": {
 		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle Gold.png", "walk": "Units/Blue Units/Pawn/Pawn_Run Gold.png"},
-		"h": 13, "fps": {"idle": 6.0, "walk": 8.0},
+		"h": 12, "fps": {"idle": 6.0, "walk": 8.0},
 	},
 	"npc_watchman": {
 		"anims": {"idle": "Units/Blue Units/Warrior/Warrior_Idle.png", "walk": "Units/Blue Units/Warrior/Warrior_Run.png"},
-		"h": 15, "fps": {"idle": 6.0, "walk": 8.0},
+		"h": 14, "fps": {"idle": 6.0, "walk": 8.0},
 	},
 	"npc_herbalist": {
 		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle Knife.png", "walk": "Units/Blue Units/Pawn/Pawn_Run Knife.png"},
-		"h": 13, "fps": {"idle": 6.0, "walk": 8.0},
+		"h": 12, "fps": {"idle": 6.0, "walk": 8.0},
 	},
 	# --- 29 物种（id/存档键不变；显示名迁移见 v6 方案 §3） ---
 	"oni": {
 		"anims": {"idle": "Units/Red Units/Pawn/Pawn_Idle.png", "walk": "Units/Red Units/Pawn/Pawn_Run.png"},
-		"h": 13, "fps": {"idle": 6.0, "walk": 8.0},
+		"h": 12, "fps": {"idle": 6.0, "walk": 8.0},
 	},
 	"sprout": {
 		"anims": {"idle": "Units/Yellow Units/Pawn/Pawn_Idle Knife.png", "walk": "Units/Yellow Units/Pawn/Pawn_Run Knife.png"},
-		"h": 13, "fps": {"idle": 6.0, "walk": 8.0},
+		"h": 12, "fps": {"idle": 6.0, "walk": 8.0},
 	},
 	"boar": {
 		"anims": {"idle": "Units/Red Units/Warrior/Warrior_Idle.png", "walk": "Units/Red Units/Warrior/Warrior_Run.png",
 			"attack": "Units/Red Units/Warrior/Warrior_Attack1.png"},
-		"h": 17, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+		"h": 16, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"turtle": {
 		"anims": {"idle": "Units/Blue Units/Warrior/Warrior_Idle.png", "walk": "Units/Blue Units/Warrior/Warrior_Run.png",
 			"attack": "Units/Blue Units/Warrior/Warrior_Attack1.png"},
-		"h": 15, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+		"h": 14, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"chicken": {
 		"cell": Vector2i(128, 128),
@@ -338,21 +338,21 @@ const CREATURES_TS := {
 	},
 	"slime": {
 		"anims": {"idle": "Units/Red Units/Pawn/Pawn_Idle.png", "walk": "Units/Red Units/Pawn/Pawn_Run.png"},
-		"bake": {"sat": 1.35, "val": 0.92}, "h": 12, "fps": {"idle": 6.0, "walk": 8.0},
+		"bake": {"sat": 1.35, "val": 0.92}, "h": 11, "fps": {"idle": 6.0, "walk": 8.0},
 	},
 	"frog": {
 		"anims": {"idle": "Units/Yellow Units/Pawn/Pawn_Idle.png", "walk": "Units/Yellow Units/Pawn/Pawn_Run.png"},
-		"h": 11, "fps": {"idle": 6.0, "walk": 8.0},
+		"h": 10, "fps": {"idle": 6.0, "walk": 8.0},
 	},
 	"mandrake": {
 		"anims": {"idle": "Units/Purple Units/Archer/Archer_Idle.png", "walk": "Units/Purple Units/Archer/Archer_Run.png",
 			"attack": "Units/Purple Units/Archer/Archer_Shoot.png"},
-		"h": 14, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+		"h": 13, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"mushroom": {
 		"anims": {"idle": "Units/Black Units/Archer/Archer_Idle.png", "walk": "Units/Black Units/Archer/Archer_Run.png",
 			"attack": "Units/Black Units/Archer/Archer_Shoot.png"},
-		"h": 14, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+		"h": 13, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"raccoon": {
 		"cell": Vector2i(128, 128),
@@ -362,7 +362,7 @@ const CREATURES_TS := {
 	"treant": {
 		"anims": {"idle": "Units/Black Units/Warrior/Warrior_Idle.png", "walk": "Units/Black Units/Warrior/Warrior_Run.png",
 			"attack": "Units/Black Units/Warrior/Warrior_Attack1.png", "hurt": "Units/Black Units/Warrior/Warrior_Guard.png"},
-		"h": 18, "fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0, "hurt": 8.0}, "noloop": ["attack", "hurt"],
+		"h": 16, "fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0, "hurt": 8.0}, "noloop": ["attack", "hurt"],
 	},
 	"slime_teal": {
 		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle.png", "walk": "Units/Blue Units/Pawn/Pawn_Run.png"},
@@ -370,37 +370,37 @@ const CREATURES_TS := {
 	},
 	"penguin": {
 		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle Pickaxe.png", "walk": "Units/Blue Units/Pawn/Pawn_Run Pickaxe.png"},
-		"h": 13, "fps": {"idle": 6.0, "walk": 8.0},
+		"h": 12, "fps": {"idle": 6.0, "walk": 8.0},
 	},
 	"ghost": {
 		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle.png", "walk": "Units/Blue Units/Pawn/Pawn_Run.png"},
-		"bake": {"sat": 0.12, "val": 1.1}, "h": 12, "fps": {"idle": 6.0, "walk": 8.0},
+		"bake": {"sat": 0.12, "val": 1.1}, "h": 11, "fps": {"idle": 6.0, "walk": 8.0},
 	},
 	"bear": {
 		"anims": {"idle": "Units/Black Units/Warrior/Warrior_Idle.png", "walk": "Units/Black Units/Warrior/Warrior_Run.png",
 			"attack": "Units/Black Units/Warrior/Warrior_Attack1.png"},
-		"h": 18, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+		"h": 16, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"bat": {
 		"anims": {"idle": "Units/Purple Units/Pawn/Pawn_Idle.png", "walk": "Units/Purple Units/Pawn/Pawn_Run.png"},
-		"h": 11, "fps": {"idle": 6.0, "walk": 8.0},
+		"h": 10, "fps": {"idle": 6.0, "walk": 8.0},
 	},
 	"crab": {
 		"anims": {"idle": "Units/Blue Units/Archer/Archer_Idle.png", "walk": "Units/Blue Units/Archer/Archer_Run.png",
 			"attack": "Units/Blue Units/Archer/Archer_Shoot.png"},
-		"bake": {"hue": 0.45, "sat": 0.95}, "h": 14, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0},
+		"bake": {"hue": 0.45, "sat": 0.95}, "h": 13, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0},
 		"noloop": ["attack"],
 	},
 	"octopus": {
 		"anims": {"idle": "Units/Red Units/Archer/Archer_Idle.png", "walk": "Units/Red Units/Archer/Archer_Run.png",
 			"attack": "Units/Red Units/Archer/Archer_Shoot.png"},
-		"bake": {"hue": 0.78}, "h": 14, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0},
+		"bake": {"hue": 0.78}, "h": 13, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0},
 		"noloop": ["attack"],
 	},
 	"eye": {
 		"anims": {"idle": "Units/Yellow Units/Archer/Archer_Idle.png", "walk": "Units/Yellow Units/Archer/Archer_Run.png",
 			"attack": "Units/Yellow Units/Archer/Archer_Shoot.png"},
-		"h": 14, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+		"h": 13, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"parrot": {
 		"cell": Vector2i(32, 32),
@@ -411,7 +411,7 @@ const CREATURES_TS := {
 	"beetle": {
 		"anims": {"idle": "Units/Yellow Units/Warrior/Warrior_Idle.png", "walk": "Units/Yellow Units/Warrior/Warrior_Run.png",
 			"attack": "Units/Yellow Units/Warrior/Warrior_Attack1.png"},
-		"h": 16, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+		"h": 15, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"squirrel": {
 		"anims": {"idle": "Units/Yellow Units/Pawn/Pawn_Idle.png", "walk": "Units/Yellow Units/Pawn/Pawn_Run.png"},
@@ -425,12 +425,12 @@ const CREATURES_TS := {
 			"attack": "Units/Yellow Units/Lancer/Lancer_Right_Attack.png",
 		},
 		"bake": {"hue": 0.2, "sat": 0.9, "val": 0.95},
-		"h": 16, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+		"h": 14, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"cyclope": {
 		"anims": {"idle": "Units/Purple Units/Warrior/Warrior_Idle.png", "walk": "Units/Purple Units/Warrior/Warrior_Run.png",
 			"attack": "Units/Purple Units/Warrior/Warrior_Attack1.png"},
-		"h": 17, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+		"h": 16, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"boss_samurai": {
 		"cell": Vector2i(320, 320),
@@ -440,19 +440,19 @@ const CREATURES_TS := {
 			"attack": "Units/Black Units/Lancer/Lancer_Right_Attack.png",
 			"hurt": "Units/Black Units/Lancer/Lancer_Right_Defence.png",
 		},
-		"h": 46, "fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0, "hurt": 8.0},
+		"h": 38, "fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0, "hurt": 8.0},
 		"noloop": ["attack", "hurt"],
 	},
 	"phoenix": {
 		"anims": {"idle": "Units/Yellow Units/Archer/Archer_Idle.png", "walk": "Units/Yellow Units/Archer/Archer_Run.png",
 			"attack": "Units/Yellow Units/Archer/Archer_Shoot.png"},
-		"bake": {"hue": -0.07, "sat": 1.3, "val": 1.05}, "h": 15,
+		"bake": {"hue": -0.07, "sat": 1.3, "val": 1.05}, "h": 14,
 		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"gargoyle": {
 		"anims": {"idle": "Units/Black Units/Warrior/Warrior_Idle.png", "walk": "Units/Black Units/Warrior/Warrior_Run.png",
 			"attack": "Units/Black Units/Warrior/Warrior_Attack2.png", "hurt": "Units/Black Units/Warrior/Warrior_Guard.png"},
-		"h": 16, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0, "hurt": 8.0},
+		"h": 14, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0, "hurt": 8.0},
 		"noloop": ["attack", "hurt"],
 	},
 	"dragon": {
@@ -462,13 +462,13 @@ const CREATURES_TS := {
 			"walk": "Units/Red Units/Lancer/Lancer_Run.png",
 			"attack": "Units/Red Units/Lancer/Lancer_Right_Attack.png",
 		},
-		"bake": {"sat": 1.1, "val": 0.9}, "h": 17,
+		"bake": {"sat": 1.1, "val": 0.9}, "h": 15,
 		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"boss_flam": {
 		"anims": {"idle": "Units/Red Units/Warrior/Warrior_Idle.png", "walk": "Units/Red Units/Warrior/Warrior_Run.png",
 			"attack": "Units/Red Units/Warrior/Warrior_Attack2.png", "hurt": "Units/Red Units/Warrior/Warrior_Guard.png"},
-		"h": 46, "fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0, "hurt": 8.0},
+		"h": 38, "fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0, "hurt": 8.0},
 		"noloop": ["attack", "hurt"],
 	},
 	# --- fx（TS 源条带 + 烘焙变色；合成类 slash/flash/beam 见 tools/generate_fx.gd，P2 接线） ---
