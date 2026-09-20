@@ -1,14 +1,23 @@
 ## 精灵表切帧工具（无头运行：godot --headless --path Code -s tools/slice_spritesheets.gd）。
-## 从 assets/creatures/sheets/ 的 Ninja Adventure 16px 精灵表生成 SpriteFrames 资源：
-##   按需色相/饱和/明度烘焙（红史莱姆红→绿、猪→野猪棕）
-##   + 镜像（猪表默认朝左）→ 帧纹理直接内嵌进 .tres（FLAG_BUNDLE_RESOURCES，
-##   不产生散碎帧文件、不依赖编辑器导入步骤）。
-## 美术 v5（NA 回归）：22 物种与 NA 22 张怪物表一一对应，无烘焙变体凑数；
-##   三忍（蓝/黑/白）同布局切帧。
+## 双风格开关（美术 v6，2026-09-20）：
+##   STYLE="ts" → Tiny Swords 免费包（assets/ts/，逐动画单行条带，帧 192×192=2× 预放大；
+##     裁全体 union bbox → 按目标内容高重采样 → 按需 HSV 烘焙。Lancer 64×320 竖画布
+##     且 idle/run 按 5 方向分段：右向=idle 帧 24-35 / run 帧 12-17，攻击取 *_Right_* 独立文件）
+##   STYLE="na" → Ninja Adventure 16px 表（v5 回滚线，表保留原样）
+## 帧纹理直接内嵌进 .tres（FLAG_BUNDLE_RESOURCES，不产生散碎帧文件）。
 ## 输出：assets/creatures/frames/<name>/<name>_frames.tres，场景 Visual（AnimatedSprite2D）引用之。
-## 布局约定（与作者 Godot 演示 sprite_character.gd 一致）：列 = 朝向（0下/1上/2左/3右），行 = 帧
+## NA 布局约定（与作者 Godot 演示 sprite_character.gd 一致）：列 = 朝向（0下/1上/2左/3右），行 = 帧
 ## （怪物 0-3 行走；角色另含 4攻击/5跳跃/6死亡）。素材取"朝右"列，运行时用 flip_h 翻转。
+## TS 条目格式（键含 "anims" 者走 TS 管线）：
+##   {"anims": {"idle": "相对路径", "walk": {"path":…, "from": 24, "count": 12, "step": 2}, …},
+##    "cell": Vector2i(192,192),   # 帧画布，缺省 192×192
+##    "h": 15,                     # 目标内容高（px；缺省 round(union高/6) ≈ 对齐现 16px 体系）
+##    "bake"/"fps"/"loop"/"noloop": [动画名…]}——fps 可为 float 或 {动画名: fps} 字典
 extends SceneTree
+
+## ★ 风格开关：改回 "na" 并重跑 = 整体回滚到 NA 帧（美术 v6 回退线）
+const STYLE := "ts"
+const TS_DIR := "res://assets/ts/"
 
 const SHEETS_DIR := "res://assets/creatures/sheets/"
 const OUT_DIR := "res://assets/creatures/frames/"
@@ -20,7 +29,7 @@ const FPS := 6.0
 ## 可选键：sheet 以 res:// 开头则用绝对路径（fx 等非 sheets 目录素材）；
 ##   strip=true 时 anim 的帧号是单行条带的 x 格号（fx 特效表布局）；
 ##   fps / loop 覆盖全局默认（特效用 15fps 非循环）
-const CREATURES := {
+const CREATURES_NA := {
 	"ninja": {
 		"sheet": "na_ninja.png", "col": 3, "flop": false, "dirs": true,
 		"anim": {"idle": [0], "walk": [0, 1, 2, 3], "attack": [4], "die": [6]},
@@ -229,10 +238,262 @@ const CREATURES := {
 	"parrot": {"sheet": "na_parrot.png", "strip": true, "fps": 8.0, "anim": {"idle": [0], "walk": [0, 1]}},
 }
 
+# ============================ Tiny Swords（美术 v6）============================
+## 五色军团生态（映射真源 Documents/美术方案-v6-TinySwords.md §3）：
+## 蓝=友军/玩家系；敌对军团按群系：plains=红、forest=黑紫、snow=蓝黑、swamp=紫、hill=黄、lava=红黑。
+## h=目标内容高：标准 15/小 11-13/大 17-18/Boss 46（×场景 4.8 后对齐现 72px 档）。
+## Lancer 右向段：idle from 24 / run from 12（5 方向×12/6 帧分段，2026-09-20 像素实证）。
+const CREATURES_TS := {
+	# --- 英雄三皮肤（Warrior；键名沿用 ninja* 免存档迁移） ---
+	"ninja": {
+		"anims": {
+			"idle": "Units/Blue Units/Warrior/Warrior_Idle.png",
+			"walk": "Units/Blue Units/Warrior/Warrior_Run.png",
+			"attack": "Units/Blue Units/Warrior/Warrior_Attack1.png",
+			"attack1": "Units/Blue Units/Warrior/Warrior_Attack1.png",
+			"attack2": "Units/Blue Units/Warrior/Warrior_Attack2.png",
+			"attack3": "Units/Blue Units/Warrior/Warrior_Attack2.png",
+			"hurt": "Units/Blue Units/Warrior/Warrior_Guard.png",
+		},
+		"h": 17, "fps": {"idle": 6.0, "walk": 12.0, "attack": 10.0, "attack1": 10.0,
+			"attack2": 10.0, "attack3": 10.0, "hurt": 8.0},
+		"noloop": ["attack", "attack1", "attack2", "attack3", "hurt"],
+	},
+	"ninja_dark": {
+		"anims": {
+			"idle": "Units/Black Units/Warrior/Warrior_Idle.png",
+			"walk": "Units/Black Units/Warrior/Warrior_Run.png",
+			"attack": "Units/Black Units/Warrior/Warrior_Attack1.png",
+			"attack1": "Units/Black Units/Warrior/Warrior_Attack1.png",
+			"attack2": "Units/Black Units/Warrior/Warrior_Attack2.png",
+			"attack3": "Units/Black Units/Warrior/Warrior_Attack2.png",
+			"hurt": "Units/Black Units/Warrior/Warrior_Guard.png",
+		},
+		"h": 17, "fps": {"idle": 6.0, "walk": 12.0, "attack": 10.0, "attack1": 10.0,
+			"attack2": 10.0, "attack3": 10.0, "hurt": 8.0},
+		"noloop": ["attack", "attack1", "attack2", "attack3", "hurt"],
+	},
+	"ninja_white": {
+		"anims": {
+			"idle": "Units/Yellow Units/Warrior/Warrior_Idle.png",
+			"walk": "Units/Yellow Units/Warrior/Warrior_Run.png",
+			"attack": "Units/Yellow Units/Warrior/Warrior_Attack1.png",
+			"attack1": "Units/Yellow Units/Warrior/Warrior_Attack1.png",
+			"attack2": "Units/Yellow Units/Warrior/Warrior_Attack2.png",
+			"attack3": "Units/Yellow Units/Warrior/Warrior_Attack2.png",
+			"hurt": "Units/Yellow Units/Warrior/Warrior_Guard.png",
+		},
+		"h": 17, "fps": {"idle": 6.0, "walk": 12.0, "attack": 10.0, "attack1": 10.0,
+			"attack2": 10.0, "attack3": 10.0, "hurt": 8.0},
+		"noloop": ["attack", "attack1", "attack2", "attack3", "hurt"],
+	},
+	# --- 地标/营地 NPC（全部蓝系友军） ---
+	"npc_hunter": {
+		"anims": {"idle": "Units/Blue Units/Archer/Archer_Idle.png", "walk": "Units/Blue Units/Archer/Archer_Run.png"},
+		"h": 15, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	"npc_scholar": {
+		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle Pickaxe.png", "walk": "Units/Blue Units/Pawn/Pawn_Run Pickaxe.png"},
+		"h": 13, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	"npc_keeper": {
+		"anims": {"idle": "Units/Blue Units/Monk/Idle.png", "walk": "Units/Blue Units/Monk/Run.png"},
+		"h": 13, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	"npc_merchant": {
+		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle Gold.png", "walk": "Units/Blue Units/Pawn/Pawn_Run Gold.png"},
+		"h": 13, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	"npc_watchman": {
+		"anims": {"idle": "Units/Blue Units/Warrior/Warrior_Idle.png", "walk": "Units/Blue Units/Warrior/Warrior_Run.png"},
+		"h": 15, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	"npc_herbalist": {
+		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle Knife.png", "walk": "Units/Blue Units/Pawn/Pawn_Run Knife.png"},
+		"h": 13, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	# --- 29 物种（id/存档键不变；显示名迁移见 v6 方案 §3） ---
+	"oni": {
+		"anims": {"idle": "Units/Red Units/Pawn/Pawn_Idle.png", "walk": "Units/Red Units/Pawn/Pawn_Run.png"},
+		"h": 13, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	"sprout": {
+		"anims": {"idle": "Units/Yellow Units/Pawn/Pawn_Idle Knife.png", "walk": "Units/Yellow Units/Pawn/Pawn_Run Knife.png"},
+		"h": 13, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	"boar": {
+		"anims": {"idle": "Units/Red Units/Warrior/Warrior_Idle.png", "walk": "Units/Red Units/Warrior/Warrior_Run.png",
+			"attack": "Units/Red Units/Warrior/Warrior_Attack1.png"},
+		"h": 17, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+	},
+	"turtle": {
+		"anims": {"idle": "Units/Blue Units/Warrior/Warrior_Idle.png", "walk": "Units/Blue Units/Warrior/Warrior_Run.png",
+			"attack": "Units/Blue Units/Warrior/Warrior_Attack1.png"},
+		"h": 15, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+	},
+	"chicken": {
+		"cell": Vector2i(128, 128),
+		"anims": {"idle": "Terrain/Resources/Meat/Sheep/Sheep_Idle.png", "walk": "Terrain/Resources/Meat/Sheep/Sheep_Move.png"},
+		"h": 10, "fps": {"idle": 4.0, "walk": 6.0},
+	},
+	"slime": {
+		"anims": {"idle": "Units/Red Units/Pawn/Pawn_Idle.png", "walk": "Units/Red Units/Pawn/Pawn_Run.png"},
+		"bake": {"sat": 1.35, "val": 0.92}, "h": 12, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	"frog": {
+		"anims": {"idle": "Units/Yellow Units/Pawn/Pawn_Idle.png", "walk": "Units/Yellow Units/Pawn/Pawn_Run.png"},
+		"h": 11, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	"mandrake": {
+		"anims": {"idle": "Units/Purple Units/Archer/Archer_Idle.png", "walk": "Units/Purple Units/Archer/Archer_Run.png",
+			"attack": "Units/Purple Units/Archer/Archer_Shoot.png"},
+		"h": 14, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+	},
+	"mushroom": {
+		"anims": {"idle": "Units/Black Units/Archer/Archer_Idle.png", "walk": "Units/Black Units/Archer/Archer_Run.png",
+			"attack": "Units/Black Units/Archer/Archer_Shoot.png"},
+		"h": 14, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+	},
+	"raccoon": {
+		"cell": Vector2i(128, 128),
+		"anims": {"idle": "Terrain/Resources/Meat/Sheep/Sheep_Idle.png", "walk": "Terrain/Resources/Meat/Sheep/Sheep_Move.png"},
+		"bake": {"sat": 0.45, "val": 0.78}, "h": 10, "fps": {"idle": 4.0, "walk": 6.0},
+	},
+	"treant": {
+		"anims": {"idle": "Units/Black Units/Warrior/Warrior_Idle.png", "walk": "Units/Black Units/Warrior/Warrior_Run.png",
+			"attack": "Units/Black Units/Warrior/Warrior_Attack1.png", "hurt": "Units/Black Units/Warrior/Warrior_Guard.png"},
+		"h": 18, "fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0, "hurt": 8.0}, "noloop": ["attack", "hurt"],
+	},
+	"slime_teal": {
+		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle.png", "walk": "Units/Blue Units/Pawn/Pawn_Run.png"},
+		"bake": {"hue": 0.52, "sat": 0.55, "val": 1.05}, "h": 12, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	"penguin": {
+		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle Pickaxe.png", "walk": "Units/Blue Units/Pawn/Pawn_Run Pickaxe.png"},
+		"h": 13, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	"ghost": {
+		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle.png", "walk": "Units/Blue Units/Pawn/Pawn_Run.png"},
+		"bake": {"sat": 0.12, "val": 1.1}, "h": 12, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	"bear": {
+		"anims": {"idle": "Units/Black Units/Warrior/Warrior_Idle.png", "walk": "Units/Black Units/Warrior/Warrior_Run.png",
+			"attack": "Units/Black Units/Warrior/Warrior_Attack1.png"},
+		"h": 18, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+	},
+	"bat": {
+		"anims": {"idle": "Units/Purple Units/Pawn/Pawn_Idle.png", "walk": "Units/Purple Units/Pawn/Pawn_Run.png"},
+		"h": 11, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	"crab": {
+		"anims": {"idle": "Units/Blue Units/Archer/Archer_Idle.png", "walk": "Units/Blue Units/Archer/Archer_Run.png",
+			"attack": "Units/Blue Units/Archer/Archer_Shoot.png"},
+		"bake": {"hue": 0.45, "sat": 0.95}, "h": 14, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0},
+		"noloop": ["attack"],
+	},
+	"octopus": {
+		"anims": {"idle": "Units/Red Units/Archer/Archer_Idle.png", "walk": "Units/Red Units/Archer/Archer_Run.png",
+			"attack": "Units/Red Units/Archer/Archer_Shoot.png"},
+		"bake": {"hue": 0.78}, "h": 14, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0},
+		"noloop": ["attack"],
+	},
+	"eye": {
+		"anims": {"idle": "Units/Yellow Units/Archer/Archer_Idle.png", "walk": "Units/Yellow Units/Archer/Archer_Run.png",
+			"attack": "Units/Yellow Units/Archer/Archer_Shoot.png"},
+		"h": 14, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+	},
+	"parrot": {
+		"cell": Vector2i(32, 32),
+		"anims": {"idle": {"path": "Terrain/Decorations/Rubber Duck/Rubber duck.png", "count": 1},
+			"walk": "Terrain/Decorations/Rubber Duck/Rubber duck.png"},
+		"h": 8, "fps": {"idle": 2.0, "walk": 5.0},
+	},
+	"beetle": {
+		"anims": {"idle": "Units/Yellow Units/Warrior/Warrior_Idle.png", "walk": "Units/Yellow Units/Warrior/Warrior_Run.png",
+			"attack": "Units/Yellow Units/Warrior/Warrior_Attack1.png"},
+		"h": 16, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+	},
+	"squirrel": {
+		"anims": {"idle": "Units/Yellow Units/Pawn/Pawn_Idle.png", "walk": "Units/Yellow Units/Pawn/Pawn_Run.png"},
+		"bake": {"hue": -0.04, "sat": 1.2, "val": 0.95}, "h": 9, "fps": {"idle": 6.0, "walk": 8.0},
+	},
+	"cactus": {
+		"cell": Vector2i(64, 320),
+		"anims": {
+			"idle": {"path": "Units/Yellow Units/Lancer/Lancer_Idle.png", "from": 24, "count": 12},
+			"walk": {"path": "Units/Yellow Units/Lancer/Lancer_Run.png", "from": 12, "count": 6},
+			"attack": "Units/Yellow Units/Lancer/Lancer_Right_Attack.png",
+		},
+		"bake": {"hue": 0.2, "sat": 0.9, "val": 0.95},
+		"h": 16, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+	},
+	"cyclope": {
+		"anims": {"idle": "Units/Purple Units/Warrior/Warrior_Idle.png", "walk": "Units/Purple Units/Warrior/Warrior_Run.png",
+			"attack": "Units/Purple Units/Warrior/Warrior_Attack1.png"},
+		"h": 17, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+	},
+	"boss_samurai": {
+		"cell": Vector2i(64, 320),
+		"anims": {
+			"idle": {"path": "Units/Black Units/Lancer/Lancer_Idle.png", "from": 24, "count": 12, "step": 2},
+			"walk": {"path": "Units/Black Units/Lancer/Lancer_Run.png", "from": 12, "count": 6},
+			"attack": "Units/Black Units/Lancer/Lancer_Right_Attack.png",
+			"hurt": "Units/Black Units/Lancer/Lancer_Right_Defence.png",
+		},
+		"h": 46, "fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0, "hurt": 8.0},
+		"noloop": ["attack", "hurt"],
+	},
+	"phoenix": {
+		"anims": {"idle": "Units/Yellow Units/Archer/Archer_Idle.png", "walk": "Units/Yellow Units/Archer/Archer_Run.png",
+			"attack": "Units/Yellow Units/Archer/Archer_Shoot.png"},
+		"bake": {"hue": -0.07, "sat": 1.3, "val": 1.05}, "h": 15,
+		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+	},
+	"gargoyle": {
+		"anims": {"idle": "Units/Black Units/Warrior/Warrior_Idle.png", "walk": "Units/Black Units/Warrior/Warrior_Run.png",
+			"attack": "Units/Black Units/Warrior/Warrior_Attack2.png", "hurt": "Units/Black Units/Warrior/Warrior_Guard.png"},
+		"h": 16, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0, "hurt": 8.0},
+		"noloop": ["attack", "hurt"],
+	},
+	"dragon": {
+		"cell": Vector2i(64, 320),
+		"anims": {
+			"idle": {"path": "Units/Red Units/Lancer/Lancer_Idle.png", "from": 24, "count": 12},
+			"walk": {"path": "Units/Red Units/Lancer/Lancer_Run.png", "from": 12, "count": 6},
+			"attack": "Units/Red Units/Lancer/Lancer_Right_Attack.png",
+		},
+		"bake": {"sat": 1.1, "val": 0.9}, "h": 17,
+		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+	},
+	"boss_flam": {
+		"anims": {"idle": "Units/Red Units/Warrior/Warrior_Idle.png", "walk": "Units/Red Units/Warrior/Warrior_Run.png",
+			"attack": "Units/Red Units/Warrior/Warrior_Attack2.png", "hurt": "Units/Red Units/Warrior/Warrior_Guard.png"},
+		"h": 46, "fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0, "hurt": 8.0},
+		"noloop": ["attack", "hurt"],
+	},
+	# --- fx（TS 源条带 + 烘焙变色；合成类 slash/flash/beam 见 tools/generate_fx.gd，P2 接线） ---
+	"fx_flame": {"cell": Vector2i(64, 64), "anims": {"play": "Particle FX/Fire_01.png"}, "h": 14, "fps": 14.0, "loop": false},
+	"fx_frost": {"cell": Vector2i(64, 64), "anims": {"play": "Particle FX/Fire_01.png"}, "bake": {"hue": 0.5, "sat": 0.8}, "h": 14, "fps": 14.0, "loop": false},
+	"fx_magic": {"cell": Vector2i(192, 192), "anims": {"play": "Particle FX/Explosion_01.png"}, "bake": {"hue": 0.75, "sat": 0.6}, "h": 16, "fps": 12.0, "loop": false},
+	"fx_charge": {"cell": Vector2i(64, 64), "anims": {"play": "Particle FX/Fire_02.png"}, "bake": {"sat": 0.2, "val": 1.1}, "h": 12, "fps": 12.0, "loop": false},
+	"fx_burst": {"cell": Vector2i(192, 192), "anims": {"play": "Particle FX/Explosion_02.png"}, "h": 16, "fps": 12.0, "loop": false},
+	"fx_boom": {"cell": Vector2i(192, 192), "anims": {"play": "Particle FX/Explosion_01.png"}, "h": 16, "fps": 12.0, "loop": false},
+	"fx_smoke": {"cell": Vector2i(64, 64), "anims": {"play": "Particle FX/Dust_01.png"}, "bake": {"sat": 0.15}, "h": 12, "fps": 10.0, "loop": false},
+	"fx_darksmoke": {"cell": Vector2i(64, 64), "anims": {"play": "Particle FX/Dust_02.png"}, "bake": {"sat": 0.3, "val": 0.6}, "h": 12, "fps": 10.0, "loop": false},
+	"fx_orb": {"cell": Vector2i(64, 64), "anims": {"play": "Particle FX/Fire_03.png"}, "bake": {"hue": 0.8, "sat": 0.7}, "h": 10, "fps": 14.0, "loop": false},
+	## 注：TS 无瀑布/水车/旗帜动画与挥砍特效——deco_waterfall*/camp_* 暂留 NA 帧（P2/P3 消费端改造），
+	## slash/flash/beam/pillar/beams 由 generate_fx.gd 合成后回填本表（P2）。
+}
+
 
 func _init() -> void:
-	for creature: String in CREATURES:
-		var cfg: Dictionary = CREATURES[creature]
+	var creatures: Dictionary = CREATURES_TS if STYLE == "ts" else CREATURES_NA
+	print("切帧风格 = %s" % ("Tiny Swords（v6）" if STYLE == "ts" else "Ninja Adventure（v5 回滚）"))
+	for creature: String in creatures:
+		var cfg: Dictionary = creatures[creature]
+		if cfg.has("anims"):
+			_slice_ts(creature, cfg)  # TS 管线（v6）：逐动画条带
+			continue
 		var img: Image = _load_baked(cfg) if cfg.has("sheet") else null
 		var frames := SpriteFrames.new()
 		frames.remove_animation("default")
@@ -326,3 +587,119 @@ func _load_baked(cfg: Dictionary) -> Image:
 	if bool(cfg.get("flop", false)):
 		img.flip_x()
 	return img
+
+
+# ============================ TS 管线（美术 v6） ============================
+
+## 逐动画条带 → 全体 union bbox 裁剪（跨动画锚点一致）→ 目标内容高重采样 →
+## HSV 烘焙 → 帧纹理内嵌 .tres（输出路径与 NA 完全一致，消费方零改动）。
+func _slice_ts(creature: String, cfg: Dictionary) -> void:
+	var cell: Vector2i = cfg.get("cell", Vector2i(192, 192))
+	var strips: Dictionary = {}
+	for anim: String in cfg["anims"]:
+		var spec: Variant = cfg["anims"][anim]
+		var rel := ""
+		var from := 0
+		var count := -1
+		var step := 1
+		if typeof(spec) == TYPE_DICTIONARY:
+			rel = spec["path"]
+			from = int(spec.get("from", 0))
+			count = int(spec.get("count", -1))
+			step = int(spec.get("step", 1))
+		else:
+			rel = spec
+		var img := Image.load_from_file(ProjectSettings.globalize_path(TS_DIR + rel))
+		if img == null:
+			push_warning("TS 素材缺失，跳过 %s: %s" % [creature, rel])
+			return
+		var n := int(img.get_width() / cell.x)
+		var to := n if count < 0 else mini(from + count, n)
+		strips[anim] = {"img": img, "from": maxi(0, from), "to": to, "step": maxi(1, step)}
+	# union bbox（帧内局部坐标）
+	var min_x := 1 << 30
+	var min_y := 1 << 30
+	var max_x := -(1 << 30)
+	var max_y := -(1 << 30)
+	for anim: String in strips:
+		var s: Dictionary = strips[anim]
+		for k in range(s["from"], s["to"], s["step"]):
+			var b := _ts_bbox(s["img"], Rect2i(k * cell.x, 0, cell.x, cell.y))
+			if b.get_area() <= 0:
+				continue
+			min_x = mini(min_x, b.position.x)
+			min_y = mini(min_y, b.position.y)
+			max_x = maxi(max_x, b.position.x + b.size.x)
+			max_y = maxi(max_y, b.position.y + b.size.y)
+	if max_x < min_x:
+		push_warning("TS 全空帧，跳过 %s" % creature)
+		return
+	var uw := max_x - min_x
+	var uh := max_y - min_y
+	var target_h: int = int(cfg.get("h", int(round(float(uh) / 6.0))))
+	var f := float(target_h) / float(uh)
+	var frames := SpriteFrames.new()
+	frames.remove_animation("default")
+	var base_fps: Variant = cfg.get("fps", FPS)
+	var base_loop: bool = cfg.get("loop", true)
+	var noloop: Array = cfg.get("noloop", [])
+	var bake: Dictionary = cfg.get("bake", {})
+	for anim: String in strips:
+		var s: Dictionary = strips[anim]
+		frames.add_animation(anim)
+		var fps := 6.0
+		if typeof(base_fps) == TYPE_DICTIONARY:
+			fps = float(base_fps.get(anim, 6.0))
+		elif typeof(base_fps) == TYPE_FLOAT:
+			fps = float(base_fps)
+		frames.set_animation_speed(anim, fps)
+		frames.set_animation_loop(anim, base_loop and not noloop.has(anim))
+		for k in range(s["from"], s["to"], s["step"]):
+			var frame_img: Image = (s["img"] as Image).get_region(
+				Rect2i(k * cell.x + min_x, min_y, uw, uh))
+			frame_img.resize(maxi(1, int(round(uw * f))), target_h, Image.INTERPOLATE_NEAREST)
+			if not bake.is_empty():
+				_ts_bake(frame_img, bake)
+			frames.add_frame(anim, ImageTexture.create_from_image(frame_img))
+	var dir := ProjectSettings.globalize_path(OUT_DIR + creature)
+	DirAccess.make_dir_recursive_absolute(dir)
+	var path := OUT_DIR + creature + "/" + creature + "_frames.tres"
+	var err := ResourceSaver.save(frames, path, ResourceSaver.FLAG_BUNDLE_RESOURCES)
+	print("%-18s %2d 组动画 %s" % [creature, frames.get_animation_names().size(),
+		"OK" if err == OK else "失败:%d" % err])
+
+
+## 帧内容 bbox（alpha>0.08 视为内容）
+func _ts_bbox(img: Image, r: Rect2i) -> Rect2i:
+	var min_x := 1 << 30
+	var min_y := 1 << 30
+	var max_x := -(1 << 30)
+	var max_y := -(1 << 30)
+	for y in range(r.position.y, r.position.y + r.size.y):
+		for x in range(r.position.x, r.position.x + r.size.x):
+			if img.get_pixel(x, y).a > 0.08:
+				min_x = mini(min_x, x)
+				max_x = maxi(max_x, x)
+				min_y = mini(min_y, y)
+				max_y = maxi(max_y, y)
+	if max_x < min_x:
+		return Rect2i()
+	return Rect2i(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+
+
+## 逐像素 HSV 烘焙（重采样后的小帧上做，量小；灰阶/描边 s≈0 只受 val 影响）
+func _ts_bake(img: Image, bake: Dictionary) -> void:
+	var hue: float = bake.get("hue", 0.0)
+	var sat: float = bake.get("sat", 1.0)
+	var val: float = bake.get("val", 1.0)
+	if hue == 0.0 and sat == 1.0 and val == 1.0:
+		return
+	for y in img.get_height():
+		for x in img.get_width():
+			var c := img.get_pixel(x, y)
+			if c.a > 0.0:
+				img.set_pixel(x, y, Color.from_hsv(
+					fposmod(c.h + hue, 1.0),
+					clampf(c.s * sat, 0.0, 1.0),
+					clampf(c.v * val, 0.0, 1.0),
+					c.a))
