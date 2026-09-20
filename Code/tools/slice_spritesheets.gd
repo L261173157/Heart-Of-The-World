@@ -650,7 +650,20 @@ func _slice_ts(creature: String, cfg: Dictionary) -> void:
 	var uw := max_x - min_x
 	var uh := max_y - min_y
 	var target_h: int = int(cfg.get("h", int(round(float(uh) / 6.0))))
-	var f := float(target_h) / float(uh)
+	# 整数倍抽取（像素块均匀的关键）：总除数 d=round(uh/target)，2× 预放大素材
+	# 偏向偶数 d；union 窗左上对齐 + 右下扩边到 d 的倍数（扩的是透明边距），
+	# 之后每帧一步 NEAREST 整除缩放——非整数混采会产生大小不一的像素行，
+	# 「像素又密又糊」的观感即由此来（2026-09-20 用户实测反馈）
+	var d: int = clampi(round(float(uh) / float(target_h)), 1, 12)
+	var p := _block_period((strips[strips.keys()[0]]["img"] as Image))
+	if p >= 2 and d % 2 == 1:
+		d += 1 if absf(float(uh) / float(d + 1) - float(target_h)) <= absf(float(uh) / float(d - 1) - float(target_h)) else -1
+	d = maxi(d, 1)
+	min_x -= min_x % d
+	min_y -= min_y % d
+	uw = maxi(d, (uw + d - 1) / d * d)
+	uh = maxi(d, (uh + d - 1) / d * d)
+	target_h = uh / d
 	var frames := SpriteFrames.new()
 	frames.remove_animation("default")
 	var base_fps: Variant = cfg.get("fps", FPS)
@@ -658,7 +671,7 @@ func _slice_ts(creature: String, cfg: Dictionary) -> void:
 	var noloop: Array = cfg.get("noloop", [])
 	var bake: Dictionary = cfg.get("bake", {})
 	for anim: String in strips:
-		var s: Dictionary = strips[anim]
+		var s2: Dictionary = strips[anim]
 		frames.add_animation(anim)
 		var fps := 6.0
 		if typeof(base_fps) == TYPE_DICTIONARY:
@@ -667,10 +680,10 @@ func _slice_ts(creature: String, cfg: Dictionary) -> void:
 			fps = float(base_fps)
 		frames.set_animation_speed(anim, fps)
 		frames.set_animation_loop(anim, base_loop and not noloop.has(anim))
-		for k in range(s["from"], s["to"], s["step"]):
-			var frame_img: Image = (s["img"] as Image).get_region(
+		for k in range(s2["from"], s2["to"], s2["step"]):
+			var frame_img: Image = (s2["img"] as Image).get_region(
 				Rect2i(k * cell.x + min_x, min_y, uw, uh))
-			frame_img.resize(maxi(1, int(round(uw * f))), target_h, Image.INTERPOLATE_NEAREST)
+			frame_img.resize(uw / d, uh / d, Image.INTERPOLATE_NEAREST)
 			if not bake.is_empty():
 				_ts_bake(frame_img, bake)
 			frames.add_frame(anim, ImageTexture.create_from_image(frame_img))
@@ -680,6 +693,28 @@ func _slice_ts(creature: String, cfg: Dictionary) -> void:
 	var err := ResourceSaver.save(frames, path, ResourceSaver.FLAG_BUNDLE_RESOURCES)
 	print("%-18s %2d 组动画 %s" % [creature, frames.get_animation_names().size(),
 		"OK" if err == OK else "失败:%d" % err])
+
+
+## 横向同色游程统计 → 素材预放大周期（2× 素材的 2-游程远多于 1-游程；
+## 原生素材则 1-游程占优。用于整数抽取时偏向偶数除数，保像素块均匀）
+func _block_period(img: Image) -> int:
+	var n1 := 0
+	var n2 := 0
+	for y in range(0, img.get_height(), 7):
+		var run := 1
+		var prev: Color = img.get_pixel(0, y)
+		for x in range(1, img.get_width()):
+			var c := img.get_pixel(x, y)
+			if c == prev:
+				run += 1
+			else:
+				if run == 1:
+					n1 += 1
+				elif run == 2:
+					n2 += 1
+				run = 1
+				prev = c
+	return 2 if n2 > n1 * 1.5 else 1
 
 
 ## 帧内容 bbox（alpha>0.08 视为内容）
