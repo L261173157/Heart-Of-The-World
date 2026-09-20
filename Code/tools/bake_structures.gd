@@ -59,7 +59,103 @@ func _init() -> void:
 		arrow.save_png(ProjectSettings.globalize_path(OUT + "arrow.png"))
 		print("%-16s -> %sarrow.png (16x16)" % ["arrow", OUT])
 	_chest()
+	_bake_props()
 	quit(0)
+
+
+## 世界装饰精灵（world_deco 的 assets/deco/<kind>.png 优先通道，v6 全面接管）：
+## TS 树/岩/灌木/金块裁内容 bbox → 目标高（岩类较扁）→ 画布统一高 32（上留白）。
+## 包内无蘑菇/香蒲/水洼：TS 色板合成。
+const DECO_DIR := "res://assets/deco/"
+
+## [源相对路径, 目标内容高, bake 可空, strip 帧宽可空（取帧 0）]
+const PROPS := {
+	"tree": ["Terrain/Resources/Wood/Trees/Tree1.png", 32, {}, 256],
+	"pine": ["Terrain/Resources/Wood/Trees/Tree3.png", 32, {}, 256],
+	"rock": ["Terrain/Decorations/Rocks/Rock1.png", 22, {}, 0],
+	"grass": ["Terrain/Decorations/Bushes/Bushe1.png", 14, {}, 64],
+	"bush": ["Terrain/Decorations/Bushes/Bushe3.png", 20, {}, 64],
+	"log": ["Terrain/Resources/Wood/Trees/Stump 2.png", 16, {}, 0],
+	"gems": ["Terrain/Resources/Gold/Gold Stones/Gold Stone 3.png", 14, {}, 0],
+	"ice": ["Terrain/Decorations/Rocks/Rock1.png", 22, {"hue": 0.55, "sat": 0.35, "val": 1.25}, 0],
+	"snowpile": ["Terrain/Decorations/Rocks/Rock2.png", 16, {"sat": 0.12, "val": 1.1}, 0],
+	"crystal": ["Terrain/Decorations/Rocks/Rock4.png", 26, {"hue": 0.83, "sat": 0.55, "val": 1.1}, 0],
+	"bones": ["Terrain/Decorations/Rocks/Rock3.png", 20, {"sat": 0.22, "val": 1.15}, 0],
+}
+
+
+func _bake_props() -> void:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(DECO_DIR))
+	for kind: String in PROPS:
+		var spec: Array = PROPS[kind]
+		var img := Image.load_from_file(ProjectSettings.globalize_path(TS + spec[0]))
+		if img == null:
+			push_warning("装饰源缺失：" + spec[0])
+			continue
+		if int(spec[3]) > 0:  # 树条带取帧 0
+			img = img.get_region(Rect2i(0, 0, int(spec[3]), int(spec[3])))
+		var b := _bbox(img)
+		var crop := img.get_region(b)
+		var bake: Dictionary = spec[2]
+		if not bake.is_empty():
+			_recolor(crop, bake)
+		var th: int = spec[1]
+		var tw := maxi(1, int(round(float(b.size.x) * float(th) / float(b.size.y))))
+		crop.resize(tw, th, Image.INTERPOLATE_NEAREST)
+		# 画布统一高 32（上留白），底边对齐——消费端按画布高定档
+		var canvas := Image.create(tw, 32, false, Image.FORMAT_RGBA8)
+		canvas.blit_rect(crop, Rect2i(Vector2i.ZERO, crop.get_size()), Vector2i(0, 32 - th))
+		canvas.save_png(ProjectSettings.globalize_path(DECO_DIR + kind + ".png"))
+		print("%-10s -> %s%s.png (%dx32)" % [kind, DECO_DIR, kind, tw])
+	_synthesize_props()
+
+
+func _recolor(img: Image, bake: Dictionary) -> void:
+	for y in img.get_height():
+		for x in img.get_width():
+			var c := img.get_pixel(x, y)
+			if c.a < 0.05:
+				continue
+			var h: float = lerpf(c.h, float(bake.get("hue", c.h)), 0.7)
+			img.set_pixel(x, y, Color.from_hsv(h,
+				clampf(c.s * float(bake.get("sat", 1.0)), 0.0, 1.0),
+				clampf(c.v * float(bake.get("val", 1.0)), 0.0, 1.0), c.a))
+
+
+## TS 色板合成装饰（包内无对口）：蘑菇 / 香蒲 / 水洼
+func _synthesize_props() -> void:
+	# 蘑菇：红帽白点 + 白茎（10×10 逻辑 ×2）
+	var m := Image.create(20, 20, false, Image.FORMAT_RGBA8)
+	for y in 20:
+		for x in 20:
+			var d := Vector2(x - 9.5, y - 9.5) / Vector2(9.0, 6.0)
+			if y <= 11 and d.length() <= 1.0:
+				m.set_pixel(x, y, Color(0.82, 0.25, 0.22))
+			if y >= 12 and absf(x - 9.5) <= 2.5 and y <= 18:
+				m.set_pixel(x, y, Color(0.9, 0.86, 0.78))
+	for pt: Vector2i in [Vector2i(7, 5), Vector2i(12, 6), Vector2i(9, 9)]:
+		m.set_pixel(pt.x, pt.y, Color(0.95, 0.93, 0.88))
+	m.save_png(ProjectSettings.globalize_path(DECO_DIR + "mushroom.png"))
+	# 香蒲：绿茎 + 棕穗（12×22 逻辑 ×2）
+	var ct := Image.create(24, 44, false, Image.FORMAT_RGBA8)
+	for y in range(8, 44):
+		ct.set_pixel(11, y, Color(0.3, 0.55, 0.28))
+		ct.set_pixel(12, y, Color(0.25, 0.45, 0.24))
+	for y in range(0, 18):
+		for x in range(6, 19):
+			var dd := Vector2(x - 11.5, y - 8.5) / Vector2(5.5, 8.5)
+			if dd.length() <= 1.0:
+				ct.set_pixel(x, y, Color(0.48, 0.35, 0.2))
+	ct.save_png(ProjectSettings.globalize_path(DECO_DIR + "cattail.png"))
+	# 水洼：water 色椭圆（半透明）
+	var pd := Image.create(28, 10, false, Image.FORMAT_RGBA8)
+	for y in 10:
+		for x in 28:
+			var dd := Vector2(x - 13.5, y - 4.5) / Vector2(13.0, 4.0)
+			if dd.length() <= 1.0:
+				pd.set_pixel(x, y, Color(0.28, 0.67, 0.66, 0.55))
+	pd.save_png(ProjectSettings.globalize_path(DECO_DIR + "puddle.png"))
+	print("mushroom/cattail/puddle -> 合成完成")
 
 
 ## TS 色板宝箱（22×16 逻辑 ×2）：木体 + 深描边 + 盖沿 + 双金带 + 锁扣
