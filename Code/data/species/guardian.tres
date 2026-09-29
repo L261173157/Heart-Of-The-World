@@ -1,13 +1,14 @@
 [gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_st3n2"]
-[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/gargoyle/gargoyle_frames.tres" id="2_frames"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/gargoyle/gargoyle_frames.res" id="2_frames"]
 
 [resource]
 script = ExtResource("1_st3n2")
 frames_override = ExtResource("2_frames")
 species_name = "石像鬼"
-visual_scale = 0.88
+visual_scale = 1.0
+body_scale = 0.88
 tint = Color(0.5, 0.5, 0.55, 1)
 ai_archetype = "guardian"
 habitats = Array[String](["lava"])

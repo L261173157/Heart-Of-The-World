@@ -127,6 +127,11 @@ var _flash_tween: Tween
 var _shadow: ShadowBlob
 ## 挤压/回弹 tween（攻击预备-过冲的打击感层，与帧动画叠加）
 var _squash_tween: Tween
+## 非循环动作动画（attack/hurt）压制窗：> 0 期间 _update_anim 不做状态切换，
+## 到期自动回归状态机动画（英雄 _attack_anim_linger 同法）
+var _action_anim_timer := 0.0
+## 受击动画最小间隔（防高频多段伤害下 hurt 循环重启抽搐成定格）
+var _hurt_anim_cd := 0.0
 ## 行走浮动计时（_update_anim 的 bob 相位）
 var _anim_time := 0.0
 ## 玩家引用缓存：替代每物理帧的组查询（失效置空重查）
@@ -178,12 +183,8 @@ func setup(p_inst: MonsterInstance) -> void:
 		_base_modulate = Color(1.0, 0.72, 0.35)
 		modulate = _base_modulate
 	_apply_size_visual()
-	# 阴影随体型缩放（含场景基础缩放，与脚点 y 同源——否则石魔像/Boss
-	# "大怪踩小影"，阴影与体型读数对不上）；占地系数走 body_k()
+	# 占地系数（碰撞体/血条用；阴影在下方 frames_override 换帧后单独锚定）
 	var body := body_k()
-	if _shadow != null:
-		_shadow.shadow_scale = Vector2.ONE * sprite_base_scale.x * body
-		_shadow.position.y = 9.0 * sprite_base_scale.y * body
 	# 碰撞体随体型缩放（duplicate 防共享 shape 资源被同场景多物种互相污染）：
 	# 小型档更好绕开、大型档更好命中——命中判定与视觉占地一致
 	var cs := $CollisionShape2D as CollisionShape2D
@@ -201,6 +202,14 @@ func setup(p_inst: MonsterInstance) -> void:
 	if inst.species.frames_override != null:
 		visual.sprite_frames = inst.species.frames_override
 		visual.play(&"idle")
+	# 阴影：贴真实脚点（idle 首帧最低不透明行——各动画脚线有漂移、攻击帧扑得
+	# 更低撑大画布，「画布底=脚点」不成立）+ 椭圆尺寸随内容宽度（缩放档 5→2 后
+	# 旧 6.5×基准缩放 公式只出 13px 小圆点，读作与本体无关的杂点）。须在
+	# frames_override 换帧后取真实帧；几何按帧资源缓存，流式重生免重扫
+	if _shadow != null:
+		var g := _frames_geometry(visual.sprite_frames)
+		_shadow.position.y = (float(g["feet"]) + 1.0 - float(g["h"]) * 0.5) * visual.scale.y
+		_shadow.shadow_scale = Vector2.ONE * (float(g["cw"]) * visual.scale.x * 0.45 / 6.5)
 	# 注册表登记：has 先行判一次（get_or_add 的默认参数每次调用都会构造新数组）。
 	# 注意不能写 `var a: Array = dict.get(k)` ——键缺失时 get 返回 null，
 	# 对强类型 Array 变量赋 null 是运行时错误（首个该物种个体登记时必然踩中）
@@ -311,12 +320,34 @@ func _visual_base() -> Vector2:
 	return sprite_base_scale * maxf(0.45, inst.size_scale) * inst.species.visual_scale
 
 
-## 碰撞/阴影/血条抬升的占地系数：非 Boss 含物种档位（占地随视觉缩放）；
+## 帧内容几何（idle 首帧）→ {h=帧高, feet=最低不透明行, cw=内容宽}：
+## 阴影脚点锚定/椭圆尺寸的真源（2026-09-20 错位根治）。值由切帧器写入资源
+## meta（纯数据）；★严禁运行时 get_image() 补算——真渲染器上它走 GPU 读回/
+## 管线同步，怪物生成帧内调用卡死 Metal 提交（同日 GUI 卡死事故，无头测试
+## 不可见）；按帧资源实例缓存，流式反复 spawn 免查 meta
+static var _frames_geom := {}
+
+static func _frames_geometry(frames: SpriteFrames) -> Dictionary:
+	var key: int = frames.get_instance_id()
+	if _frames_geom.has(key):
+		return _frames_geom[key]
+	var anchor := "idle" if frames.has_animation("idle") else frames.get_animation_names()[0]
+	var h: int = frames.get_frame_texture(anchor, 0).get_height()
+	var geom := {
+		"h": h,
+		"feet": int(frames.get_meta("feet", h - 2)),
+		"cw": int(frames.get_meta("cw", maxi(1, h - 4))),
+	}
+	_frames_geom[key] = geom
+	return geom
+
+
+## 碰撞/阴影/血条抬升的占地系数：非 Boss 含物种档位（占地随 body_scale）；
 ## Boss 只含 size_scale——其 visual_scale 是画幅补偿，不改变世界占地
 func body_k() -> float:
 	if inst.species.is_boss:
 		return maxf(0.45, inst.size_scale)
-	return maxf(0.45, inst.size_scale) * inst.species.visual_scale
+	return maxf(0.45, inst.size_scale) * inst.species.body_scale
 
 
 func _physics_process(delta: float) -> void:
@@ -354,6 +385,8 @@ func _near_tick(delta: float, player: Node2D) -> void:
 	_attack_cd = maxf(0.0, _attack_cd - delta)
 	_aggro_lock = maxf(0.0, _aggro_lock - delta)
 	_enrage_timer = maxf(0.0, _enrage_timer - delta)
+	_action_anim_timer = maxf(0.0, _action_anim_timer - delta)
+	_hurt_anim_cd = maxf(0.0, _hurt_anim_cd - delta)
 	# 年龄增长 → max_hp 实时上调，未受伤的部分随上限同步抬升
 	# （已扣血量保持不变，血条比例对玩家始终可信）
 	var max_now := inst.max_hp()
@@ -414,6 +447,8 @@ func _far_tick(delta: float, player: Node2D) -> void:
 	_attack_cd = maxf(0.0, _attack_cd - delta)
 	_aggro_lock = maxf(0.0, _aggro_lock - delta)
 	_enrage_timer = maxf(0.0, _enrage_timer - delta)
+	_action_anim_timer = maxf(0.0, _action_anim_timer - delta)
+	_hurt_anim_cd = maxf(0.0, _hurt_anim_cd - delta)
 	var max_now := inst.max_hp()
 	if max_now > _max_hp_ref:
 		current_hp = minf(current_hp + (max_now - _max_hp_ref), max_now)
@@ -548,31 +583,43 @@ func _has_los(target_pos: Vector2) -> bool:
 
 
 ## 状态机 → 帧动画的统一映射（纯表现，不影响逻辑判定）：
-## 尸体→die（无该动画则回退 idle）；攻击/前摇站定→attack（无则 idle）；
-## 其余按速度切 walk/idle。子类扩展状态（冲锋/蓄力/硬直）多数可由速度自然覆盖。
+## 尸体→die（无该动画则回退 idle）；其余按速度切 walk/idle。
+## 攻击/受击不走状态映射——出招/受击瞬间经 _play_action_anim 定点播放并
+## 短暂压制状态切换，帧与伤害同相位（2026-09-28 动作补齐；旧法 S_ATTACK
+## 常驻循环 attack，出招挥刀与冷却站桩无法区分）。
 ## 行走时叠加轻微上下浮动（帧动画之外的第二层动感）
 func _update_anim() -> void:
 	var _ta := Time.get_ticks_usec()
 	if visual == null:
 		return
 	var want := "idle"
-	match state:
-		S_CORPSE:
-			want = "die"
-		S_ATTACK:
-			want = "attack"
-		_:
-			want = "walk" if velocity.length() > 5.0 else "idle"
-	if visual.sprite_frames == null or not visual.sprite_frames.has_animation(want):
-		want = "idle"
-	if visual.animation != want or not visual.is_playing():
-		visual.play(want)
+	if _action_anim_timer <= 0.0:
+		match state:
+			S_CORPSE:
+				want = "die"
+			_:
+				want = "walk" if velocity.length() > 5.0 else "idle"
+		if visual.sprite_frames == null or not visual.sprite_frames.has_animation(want):
+			want = "idle"
+		if visual.animation != want or not visual.is_playing():
+			visual.play(want)
 	# 像素稳定：bob 与精灵世界坐标都吸附整数（相机画布吸附只稳世界不动精灵，
 	# 移动中的精灵在浮点坐标上逐帧跳格采样=边缘毛刺闪动，2026-09-20 实测反馈）
 	visual.offset.y = roundf(sin(_anim_time * 13.0) * 0.9) if want == "walk" else 0.0
 	visual.global_position = visual.global_position.round()
 	prof_anim_ms += (Time.get_ticks_usec() - _ta) * 0.001
 	prof_anim_n += 1
+
+
+## 非循环动作动画（attack/hurt）定点播放：dur 秒内压制状态动画切换，播完
+## （非循环停在末帧）自动回归状态机映射。帧表缺该动画返回 false 静默跳过
+func _play_action_anim(anim: String, dur: float) -> bool:
+	if visual == null or visual.sprite_frames == null \
+			or not visual.sprite_frames.has_animation(anim):
+		return false
+	visual.play(anim)
+	_action_anim_timer = maxf(_action_anim_timer, dur)
+	return true
 
 
 ## 挤压回弹（预备-过冲打击感）：朝 amount 比例压 0.5×dur 秒再弹回基础体型。
@@ -609,6 +656,12 @@ func take_damage(amount: float, from_position := Vector2.INF, p_heavy := false,
 	_sync_hp_mirror()
 	EventBus.damage_number.emit(global_position, int(round(dealt)), false, p_effective)
 	_pulse_red()
+	# 受击帧动画（Warrior Guard/Lancer Defence 演出）：只在无进行中动作时播——
+	# 不打断出招/吐息/蓄力（动作优先，闪红已给受击反馈）；0.45s 最小间隔防
+	# 高频多段伤害下重启抽搐成定格
+	if _action_anim_timer <= 0.0 and _hurt_anim_cd <= 0.0 \
+			and _play_action_anim("hurt", 0.4):
+		_hurt_anim_cd = 0.45
 	# 被玩家攻击会中断迁徙反击：迁徙中挨打毫无反应（不还手不停步）像坏掉了
 	if state == S_MIGRATING and from_position != Vector2.INF:
 		state = S_CHASE
@@ -674,6 +727,7 @@ func on_sim_death() -> void:
 		return
 	state = S_CORPSE
 	velocity = Vector2.ZERO
+	_action_anim_timer = 0.0  # 让出招/受击压制立即让位给尸体表现
 	set_deferred("collision_layer", 0)
 	set_deferred("collision_mask", 0)
 	# 有死亡帧则播（玩家侧骑士才有 die 行）；怪物无死亡帧回退 idle 后由侧倒+灰化表达
@@ -760,6 +814,9 @@ func _attack_tick(_delta: float, player: Node2D) -> void:
 ## 普攻执行（子类重写可加协同加成等）；source 名传给玩家做死亡信息
 func _perform_attack(player: Node2D) -> void:
 	_squash(Vector2(0.92, 1.08), 0.14)  # 出刀瞬间过冲
+	# 出招帧与伤害结算同相位（Interact/Attack 条带 0.3~0.4s 非循环完整走完，
+	# 压制窗略宽防冷却期 walk 盖掉收招）
+	_play_action_anim("attack", 0.45)
 	if player.has_method("take_damage"):
 		player.take_damage(CombatMath.physical_damage(inst.attack_power()), global_position, inst.display_name())
 		# 命中紫色邪光（美术 v5 fx 全量；Boss ×1.5）

@@ -9,12 +9,62 @@
 ## 约定：切帧器/烘焙工具改表重跑后必跑本测试；退出码非 0 = 失败。
 extends SceneTree
 
-## 帧尺寸界（单角色档：横带事故时帧宽 219/236px；正常最大 = boss_flam 50、
-## fx 最大 ~40。96 留一倍余量，未来加宽素材再调）
-const MAX_FRAME_DIM := 96
+## 帧尺寸界（粗闸：防横带级超宽帧——事故时帧宽 219/236px；格心对称锚定后最大
+## = Lancer 系 147×113（含对称留边），160 留余量。精确守卫见 EXPECTED_SIZES 白名单）
+const MAX_FRAME_DIM := 160
 const MIN_FRAME_DIM := 3
 ## 帧内容最少不透明像素数（防裁到条带空白段/全透明帧）
 const MIN_OPAQUE_PIXELS := 8
+
+## 逐条目期望尺寸白名单（真源=切帧器打印；2026-09-28 动作补齐后同步：
+## 裸兵种换工具版/加 Interact 攻击帧扩了 9 目录画布）：
+## p 误检（÷p 步长错）/ k 回归 / 横带事故/ 锚定回退四类都会在这里现形——
+## 切帧表或素材改动时按切帧器输出同步更新本表
+const EXPECTED_SIZES := {
+	"ninja": Vector2i(67, 60), "ninja_dark": Vector2i(67, 60), "ninja_white": Vector2i(67, 60),
+	"npc_hunter": Vector2i(40, 50), "npc_scholar": Vector2i(43, 39), "npc_keeper": Vector2i(42, 38),
+	"npc_merchant": Vector2i(37, 39), "npc_watchman": Vector2i(50, 51), "npc_herbalist": Vector2i(46, 39),
+	"oni": Vector2i(58, 39), "sprout": Vector2i(46, 45), "boar": Vector2i(67, 60),
+	"turtle": Vector2i(67, 60), "chicken": Vector2i(52, 55), "slime": Vector2i(23, 23),
+	"frog": Vector2i(46, 45), "mandrake": Vector2i(44, 50), "mushroom": Vector2i(44, 50),
+	"raccoon": Vector2i(52, 55), "treant": Vector2i(67, 60), "slime_teal": Vector2i(23, 23),
+	"penguin": Vector2i(57, 39), "ghost": Vector2i(46, 45), "bear": Vector2i(67, 60),
+	"bat": Vector2i(46, 45), "crab": Vector2i(44, 50), "octopus": Vector2i(44, 50),
+	"eye": Vector2i(44, 50), "parrot": Vector2i(32, 24), "beetle": Vector2i(67, 60),
+	"squirrel": Vector2i(46, 45), "cactus": Vector2i(147, 113), "cyclope": Vector2i(67, 60),
+	"boss_samurai": Vector2i(147, 113), "phoenix": Vector2i(44, 50), "gargoyle": Vector2i(63, 56),
+	"dragon": Vector2i(147, 113), "boss_flam": Vector2i(63, 56),
+	"fx_flame": Vector2i(11, 12), "fx_frost": Vector2i(11, 12), "fx_magic": Vector2i(16, 16),
+	"fx_charge": Vector2i(9, 11), "fx_burst": Vector2i(14, 18), "fx_boom": Vector2i(16, 16),
+	"fx_smoke": Vector2i(18, 17), "fx_darksmoke": Vector2i(13, 12), "fx_orb": Vector2i(10, 10),
+	"fx_slash": Vector2i(6, 15), "fx_slash_gold": Vector2i(6, 15), "fx_flash": Vector2i(14, 14),
+	"fx_flash_gold": Vector2i(14, 14), "fx_flash_blue": Vector2i(14, 14),
+	"fx_flash_yellow": Vector2i(14, 14), "fx_beam": Vector2i(40, 16),
+	"fx_pillar": Vector2i(8, 16), "fx_beams": Vector2i(14, 13), "deco_foam": Vector2i(15, 16),
+}
+
+## 物种帧目录 → 必需动作集（2026-09-28 动作补齐口径）：战斗怪必有 attack
+## （Pawn 工具版 Interact / Warrior Attack / Archer Shoot / Lancer Right_Attack），
+## Warrior/Lancer 系另有 hurt（Guard/Right_Defence 演出）；羊/鸭被动系仅
+## idle/walk（永不参战，无动作素材）。与运行时请求面（_perform_attack 播
+## attack、take_damage 播 hurt）一致——该切没切/切了没接线在此现形
+const SPECIES_REQUIRED := {
+	"oni": ["idle", "walk", "attack"], "sprout": ["idle", "walk", "attack"],
+	"frog": ["idle", "walk", "attack"], "ghost": ["idle", "walk", "attack"],
+	"bat": ["idle", "walk", "attack"], "squirrel": ["idle", "walk", "attack"],
+	"slime": ["idle", "walk", "attack"], "slime_teal": ["idle", "walk", "attack"],
+	"penguin": ["idle", "walk", "attack"],
+	"mandrake": ["idle", "walk", "attack"], "mushroom": ["idle", "walk", "attack"],
+	"crab": ["idle", "walk", "attack"], "octopus": ["idle", "walk", "attack"],
+	"eye": ["idle", "walk", "attack"], "phoenix": ["idle", "walk", "attack"],
+	"boar": ["idle", "walk", "attack", "hurt"], "turtle": ["idle", "walk", "attack", "hurt"],
+	"bear": ["idle", "walk", "attack", "hurt"], "beetle": ["idle", "walk", "attack", "hurt"],
+	"cyclope": ["idle", "walk", "attack", "hurt"], "treant": ["idle", "walk", "attack", "hurt"],
+	"gargoyle": ["idle", "walk", "attack", "hurt"], "boss_flam": ["idle", "walk", "attack", "hurt"],
+	"boss_samurai": ["idle", "walk", "attack", "hurt"], "cactus": ["idle", "walk", "attack", "hurt"],
+	"dragon": ["idle", "walk", "attack", "hurt"],
+	"chicken": ["idle", "walk"], "raccoon": ["idle", "walk"], "parrot": ["idle", "walk"],
+}
 
 ## 英雄三皮肤（键名沿用 ninja* 免存档迁移）
 const HERO_FRAME_DIRS := ["ninja", "ninja_dark", "ninja_white"]
@@ -43,7 +93,8 @@ func _init() -> void:
 	print("=== A. 帧契约 ===")
 	_test_species_frames()
 	for hero: String in HERO_FRAME_DIRS:
-		_test_frames_dir(hero, ["idle", "walk", "attack"], "英雄皮肤")
+		_test_frames_dir(hero, ["idle", "walk", "attack", "attack1", "attack2",
+			"attack3", "hurt"], "英雄皮肤")
 	for npc: String in NPC_FRAME_DIRS:
 		_test_frames_dir(npc, ["idle", "walk"], "NPC")
 	for fx: String in FX_FRAME_DIRS:
@@ -76,7 +127,7 @@ func _test_species_frames() -> void:
 	files.sort()
 	_check(files.size() >= 29, "物种 .tres 数量 %d ≥ 29" % files.size())
 	var re_path := RegEx.new()
-	re_path.compile("path=\"(res://assets/creatures/frames/[^\"]+\\.tres)\"")
+	re_path.compile("path=\"(res://assets/creatures/frames/[^\"]+\\.res)\"")
 	var re_scale := RegEx.new()
 	re_scale.compile("visual_scale = ([0-9.]+)")
 	for f in files:
@@ -85,7 +136,11 @@ func _test_species_frames() -> void:
 		if m == null:
 			_check(false, "%s 含 frames_override 路径" % f)
 			continue
-		_test_frames_file(m.get_string(1), ["idle", "walk"], "物种 " + f)
+		# 帧目录名（frames_override 路径首段）→ 按物种动作期望验收
+		var frame_dir: String = m.get_string(1).replace(
+			"res://assets/creatures/frames/", "").split("/")[0]
+		var required: Array = SPECIES_REQUIRED.get(frame_dir, ["idle", "walk"])
+		_test_frames_file(m.get_string(1), required, "物种 " + f)
 		var ms := re_scale.search(text)
 		if ms != null:
 			var scale := float(ms.get_string(1))
@@ -94,7 +149,7 @@ func _test_species_frames() -> void:
 
 
 func _test_frames_dir(frame_dir: String, required: Array, label: String) -> void:
-	_test_frames_file("res://assets/creatures/frames/%s/%s_frames.tres" % [frame_dir, frame_dir],
+	_test_frames_file("res://assets/creatures/frames/%s/%s_frames.res" % [frame_dir, frame_dir],
 		required, "%s %s" % [label, frame_dir])
 
 
@@ -112,7 +167,8 @@ func _test_frames_file(path: String, required: Array, label: String) -> void:
 			continue
 		var n := frames.get_frame_count(anim)
 		_check(n >= 1, "%s.%s 帧数 %d ≥ 1" % [label, anim, n])
-	# 尺寸界 + 内容非空（横带守卫：超宽帧直接 FAIL）
+	# 尺寸界 + 内容非空（横带守卫：超宽帧直接 FAIL）+ 白名单精确尺寸
+	var dir_name := path.replace("res://assets/creatures/frames/", "").split("/")[0]
 	for anim in frames.get_animation_names():
 		var bad_dim := ""
 		for k in frames.get_frame_count(anim):
@@ -122,6 +178,10 @@ func _test_frames_file(path: String, required: Array, label: String) -> void:
 			if w < MIN_FRAME_DIM or h < MIN_FRAME_DIM or w > MAX_FRAME_DIM or h > MAX_FRAME_DIM:
 				bad_dim = "%s.%s 帧%d 尺寸 %dx%d 越界 [%d,%d]" % [label, anim, k, w, h,
 					MIN_FRAME_DIM, MAX_FRAME_DIM]
+				break
+			if EXPECTED_SIZES.has(dir_name) and Vector2i(w, h) != EXPECTED_SIZES[dir_name]:
+				bad_dim = "%s.%s 帧%d 尺寸 %dx%d ≠ 白名单 %s" % [label, anim, k, w, h,
+					str(EXPECTED_SIZES[dir_name])]
 				break
 		_check(bad_dim.is_empty(), "%s.%s 全帧尺寸在界内%s" % [label, anim,
 			"" if bad_dim.is_empty() else "（" + bad_dim + "）"])

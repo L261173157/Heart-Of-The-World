@@ -52,16 +52,16 @@ const BOB_AMPLITUDE := 1.05
 @onready var visual: AnimatedSprite2D = $Visual
 
 ## 打击特效帧（slice_spritesheets 生成的 NA fx 条带表）
-const FX_SLASH := preload("res://assets/creatures/frames/fx_slash/fx_slash_frames.tres")
-const FX_SLASH_GOLD := preload("res://assets/creatures/frames/fx_slash_gold/fx_slash_gold_frames.tres")
-const FX_BURST := preload("res://assets/creatures/frames/fx_burst/fx_burst_frames.tres")
+const FX_SLASH := preload("res://assets/creatures/frames/fx_slash/fx_slash_frames.res")
+const FX_SLASH_GOLD := preload("res://assets/creatures/frames/fx_slash_gold/fx_slash_gold_frames.res")
+const FX_BURST := preload("res://assets/creatures/frames/fx_burst/fx_burst_frames.res")
 
 ## 三忍皮肤（美术 v5）：蓝/黑/白忍同布局表（idle/walk/attack/die 动画名同构，
 ## 换帧零逻辑差异）；存档键 settings.hero_skin，缺省蓝忍
 const HERO_SKINS := {
-	"blue": preload("res://assets/creatures/frames/ninja/ninja_frames.tres"),
-	"dark": preload("res://assets/creatures/frames/ninja_dark/ninja_dark_frames.tres"),
-	"white": preload("res://assets/creatures/frames/ninja_white/ninja_white_frames.tres"),
+	"blue": preload("res://assets/creatures/frames/ninja/ninja_frames.res"),
+	"dark": preload("res://assets/creatures/frames/ninja_dark/ninja_dark_frames.res"),
+	"white": preload("res://assets/creatures/frames/ninja_white/ninja_white_frames.res"),
 }
 
 ## 视觉基础缩放（挤压回弹的恢复基准，_ready 时从场景读）
@@ -413,6 +413,13 @@ func _update_anim(delta := 0.0) -> void:
 		var ground_speed := DASH_SPEED if _dash_timer > 0.0 else velocity.length()
 		visual.speed_scale = clampf(
 			(ground_speed / STRIDE_PX) / (12.0 / 3.0), 0.75, 1.8)
+	elif want.begins_with("attack"):
+		# 攻击条带全长 0.4s（4 帧@10fps）> 判定窗 0.32s（0.18 出招 + 0.14 收招）：
+		# 纯视觉 1.3× 提速让动作完整走完再切段，手感/输入窗口数值不动
+		visual.speed_scale = 1.3
+	elif want == "hurt":
+		# 受击条带全长 0.75s（6 帧@8fps）> 受击窗 0.3s：2.5× 收进窗口完整可读
+		visual.speed_scale = 2.5
 	else:
 		visual.speed_scale = 1.0
 	# 锁相 bob：6 帧循环 = 两步，相位 = (帧序 + 帧内进度)/3 步取整圈

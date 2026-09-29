@@ -633,21 +633,21 @@ func _process_dungeon_zone(player: Node) -> void:
 class FxLayer extends Node2D:
 	## kind → 帧资源（slash 系仍由 player 本地播——已接线的旧路径不动）
 	const TABLE := {
-		"flame": preload("res://assets/creatures/frames/fx_flame/fx_flame_frames.tres"),
-		"magic": preload("res://assets/creatures/frames/fx_magic/fx_magic_frames.tres"),
-		"charge": preload("res://assets/creatures/frames/fx_charge/fx_charge_frames.tres"),
-		"frost": preload("res://assets/creatures/frames/fx_frost/fx_frost_frames.tres"),
-		"boom": preload("res://assets/creatures/frames/fx_boom/fx_boom_frames.tres"),
-		"smoke": preload("res://assets/creatures/frames/fx_smoke/fx_smoke_frames.tres"),
-		"darksmoke": preload("res://assets/creatures/frames/fx_darksmoke/fx_darksmoke_frames.tres"),
-		"orb": preload("res://assets/creatures/frames/fx_orb/fx_orb_frames.tres"),
-		"beam": preload("res://assets/creatures/frames/fx_beam/fx_beam_frames.tres"),
-		"pillar": preload("res://assets/creatures/frames/fx_pillar/fx_pillar_frames.tres"),
-		"flash": preload("res://assets/creatures/frames/fx_flash/fx_flash_frames.tres"),
-		"flash_gold": preload("res://assets/creatures/frames/fx_flash_gold/fx_flash_gold_frames.tres"),
-		"flash_blue": preload("res://assets/creatures/frames/fx_flash_blue/fx_flash_blue_frames.tres"),
-		"flash_yellow": preload("res://assets/creatures/frames/fx_flash_yellow/fx_flash_yellow_frames.tres"),
-		"beams": preload("res://assets/creatures/frames/fx_beams/fx_beams_frames.tres"),
+		"flame": preload("res://assets/creatures/frames/fx_flame/fx_flame_frames.res"),
+		"magic": preload("res://assets/creatures/frames/fx_magic/fx_magic_frames.res"),
+		"charge": preload("res://assets/creatures/frames/fx_charge/fx_charge_frames.res"),
+		"frost": preload("res://assets/creatures/frames/fx_frost/fx_frost_frames.res"),
+		"boom": preload("res://assets/creatures/frames/fx_boom/fx_boom_frames.res"),
+		"smoke": preload("res://assets/creatures/frames/fx_smoke/fx_smoke_frames.res"),
+		"darksmoke": preload("res://assets/creatures/frames/fx_darksmoke/fx_darksmoke_frames.res"),
+		"orb": preload("res://assets/creatures/frames/fx_orb/fx_orb_frames.res"),
+		"beam": preload("res://assets/creatures/frames/fx_beam/fx_beam_frames.res"),
+		"pillar": preload("res://assets/creatures/frames/fx_pillar/fx_pillar_frames.res"),
+		"flash": preload("res://assets/creatures/frames/fx_flash/fx_flash_frames.res"),
+		"flash_gold": preload("res://assets/creatures/frames/fx_flash_gold/fx_flash_gold_frames.res"),
+		"flash_blue": preload("res://assets/creatures/frames/fx_flash_blue/fx_flash_blue_frames.res"),
+		"flash_yellow": preload("res://assets/creatures/frames/fx_flash_yellow/fx_flash_yellow_frames.res"),
+		"beams": preload("res://assets/creatures/frames/fx_beams/fx_beams_frames.res"),
 	}
 
 	func _ready() -> void:
@@ -889,7 +889,7 @@ func _attach_landmark_deco(marker: Node2D, kind: String) -> void:
 	# 偏移是相对地标的局部坐标（装饰作为 marker 子节点随其流式同进出）
 	if kind == "精灵泉":
 		marker.add_child(_make_animated_prop(
-			"res://assets/creatures/frames/deco_foam/deco_foam_frames.tres",
+			"res://assets/creatures/frames/deco_foam/deco_foam_frames.res",
 			Vector2(0, 12), 1.4))
 	elif kind == "古树":
 		for offset in [Vector2(-40, 6), Vector2(40, -4)]:
@@ -967,12 +967,12 @@ class LandmarkNPC extends Node2D:
 	## 地标类型 → NA 角色帧（characters 表 8=猎人 4=老者 7=巫女 6=行商；
 	## P1 扩容 13=瞭望者 9=草药师，视觉盘点定）
 	const FRAMES := {
-		"石环": preload("res://assets/creatures/frames/npc_hunter/npc_hunter_frames.tres"),
-		"荒废遗迹": preload("res://assets/creatures/frames/npc_scholar/npc_scholar_frames.tres"),
-		"精灵泉": preload("res://assets/creatures/frames/npc_keeper/npc_keeper_frames.tres"),
-		"merchant": preload("res://assets/creatures/frames/npc_merchant/npc_merchant_frames.tres"),
-		"了望石塔": preload("res://assets/creatures/frames/npc_watchman/npc_watchman_frames.tres"),
-		"古树": preload("res://assets/creatures/frames/npc_herbalist/npc_herbalist_frames.tres"),
+		"石环": preload("res://assets/creatures/frames/npc_hunter/npc_hunter_frames.res"),
+		"荒废遗迹": preload("res://assets/creatures/frames/npc_scholar/npc_scholar_frames.res"),
+		"精灵泉": preload("res://assets/creatures/frames/npc_keeper/npc_keeper_frames.res"),
+		"merchant": preload("res://assets/creatures/frames/npc_merchant/npc_merchant_frames.res"),
+		"了望石塔": preload("res://assets/creatures/frames/npc_watchman/npc_watchman_frames.res"),
+		"古树": preload("res://assets/creatures/frames/npc_herbalist/npc_herbalist_frames.res"),
 	}
 	## 立绘（v6 TS：Avatars 单张裁切到 assets/ts/facesets/；空串 = 无立绘兜底）
 	const FACESETS := {
@@ -1002,7 +1002,7 @@ class LandmarkNPC extends Node2D:
 		var frames: SpriteFrames = FRAMES.get(kind)
 		if frames != null:
 			_visual.sprite_frames = frames
-		_visual.scale = Vector2(5.0, 5.0)
+		_visual.scale = Vector2(2.0, 2.0)
 		_visual.position.y = -4.0
 		_visual.play(&"idle")
 		add_child(_visual)

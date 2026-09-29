@@ -13,9 +13,13 @@ extends Resource
 ## 表现层用：帧动画覆盖（共用表现场景但形象不同的种族，如冰晶史莱姆→蓝色红史莱姆帧；
 ## 空 = 用场景默认 SpriteFrames）。纯表现数据，模拟层不读
 @export var frames_override: SpriteFrames
-## 视觉缩放补偿（美术 v5 完整包）：大画幅精灵（Boss 48-50px 条带）用它对齐
-## 16px 基准的屏幕体型；1.0 = 原生 16px 表
+## 视觉缩放（美术 v6 原生直出）：凑「最终整数渲染缩放」用——场景基准 2.0 ×
+## visual_scale 四舍五入 = 目标整数档（0.5=×1 档小型、1.0=×2 档标准/大型）；
+## Boss 为画幅补偿（×boss_size_scale 后落目标档）。只管像素密度，不管占地
 @export var visual_scale := 1.0
+## 占地/碰撞系数（2026-09-20 从 visual_scale 拆出）：驱动 body_k 碰撞体与
+## 血条抬升。改美术密度/渲染缩放不碰它——手感真源，改动需平衡性依据
+@export var body_scale := 1.0
 ## 被动生物（美术 v5 完整包动物）：永不主动攻击玩家，玩家靠近即逃；
 ## 是猎物基底与生态氛围（承伤带在 balance_test 豁免，击杀带照常）
 @export var ambient := false

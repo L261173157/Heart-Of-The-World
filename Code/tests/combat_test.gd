@@ -69,6 +69,8 @@ var _bolt_multi_verified := false
 var _bolt_multi_fails := 0
 var _bolt_multi_timer := -1.0
 var _bolt_multi_retries := 0
+## 检查窗内个体被释放（法弹击杀/生态层死亡/流式回收）的作废轮数（预算防死循环）
+var _bolt_multi_window_drops := 0
 var _bolt_multi_a: MonsterBase
 var _bolt_multi_b: MonsterBase
 var _bolt_multi_hp_a := 0.0
@@ -583,8 +585,17 @@ func _bolt_multi_check(delta: float) -> void:
 	if _bolt_multi_timer < 0.3:
 		return
 	_bolt_multi_timer = -1.0
-	var a_damaged: bool = _bolt_multi_a.current_hp < _bolt_multi_hp_a
-	var b_damaged: bool = _bolt_multi_b.current_hp < _bolt_multi_hp_b
+	# 检查窗内个体被释放（0.3s 内法弹击杀或生态层死亡/捕食/流式回收，与守卫
+	# 无关）→ 本轮作废换对重测（调度器下步重进 _verify_bolt_multihit）；预算
+	# 5 轮后按「已释放=被打死=受损」兜底判定，不再静默 SCRIPT ERROR
+	if not is_instance_valid(_bolt_multi_a) or not is_instance_valid(_bolt_multi_b):
+		_bolt_multi_window_drops += 1
+		if _bolt_multi_window_drops <= 5:
+			return
+	var a_damaged: bool = (not is_instance_valid(_bolt_multi_a)) \
+			or _bolt_multi_a.current_hp < _bolt_multi_hp_a
+	var b_damaged: bool = (not is_instance_valid(_bolt_multi_b)) \
+			or _bolt_multi_b.current_hp < _bolt_multi_hp_b
 	if a_damaged != b_damaged:  # 布尔不等 = 恰好一只（GDScript 无 xor 运算符）
 		print("  PASS  法弹对重叠怪单次结算（恰好一只掉血）")
 	else:

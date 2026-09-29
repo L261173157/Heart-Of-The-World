@@ -1,7 +1,7 @@
 [gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/monsters/goblin.gd" id="1_goblin"]
-[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/oni/oni_frames.tres" id="2_sprite"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/oni/oni_frames.res" id="2_sprite"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
 size = Vector2(18, 18)
@@ -15,6 +15,6 @@ script = ExtResource("1_goblin")
 shape = SubResource("RectangleShape2D_body")
 
 [node name="Visual" type="AnimatedSprite2D" parent="."]
-scale = Vector2(5.12, 5.12)
+scale = Vector2(2.0, 2.0)
 sprite_frames = ExtResource("2_sprite")
 autoplay = "idle"
