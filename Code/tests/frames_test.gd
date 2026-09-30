@@ -245,7 +245,11 @@ func _collect(dir_path: String, re: RegEx, out: Dictionary) -> void:
 						continue  # 注释行里的历史路径不算引用
 					for m: RegExMatch in re.search_all(line):
 						var p := m.get_string(0)
-						if not p.contains("%"):
-							out[p] = true
+						# 含 % 的动态拼接路径不算：正则字符类不含 %，匹配串总是断在
+						# %s 前的目录前缀（如探图 res://assets/landmarks/），故看匹配
+						# 后余文是否以 % 起头，而非匹配串本身
+						if line.substr(m.get_end()).lstrip(" ").begins_with("%"):
+							continue
+						out[p] = true
 		fn = dir.get_next()
 	dir.list_dir_end()
