@@ -53,10 +53,12 @@ func detect_events(summary: Dictionary) -> Array[Dictionary]:
 			for species_name: String in region["species"]:
 				if region["species"][species_name] >= INVASION_THRESHOLD \
 						and not last_set.has(species_name):
-					_emit(events, "invade:%s:%s" % [species_name, rid], "invade", species_name,
+					# 节流 key 用显示名而非斑块 id：多个斑块同名（如若干"丘陵"），
+					# 按 id 节流会同时播三条相同文案刷屏
+					_emit(events, "invade:%s:%s" % [species_name, region["name"]], "invade", species_name,
 						"⚠ %s 大举迁入%s！" % [species_name, region["name"]])
 			if region["alive"] >= region["capacity"]:
-				_emit(events, "full:%s" % rid, "full", "",
+				_emit(events, "full:%s" % region["name"], "full", "",
 					"%s 种群饱和，扩张在即" % region["name"])
 	_global_totals = totals
 	_region_species = regions_state

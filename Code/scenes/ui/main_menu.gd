@@ -3,9 +3,11 @@
 extends Control
 
 const ICON_START := preload("res://assets/ts/icons/attack.png")
-const ICON_NEW := preload("res://assets/ts/icons/fork.png")
-const ICON_ARCHIVE := preload("res://assets/ts/icons/codex.png")
-const ICON_SETTINGS := preload("res://assets/ts/icons/settings.png")
+## 语义对位：play=开始新的冒险 / save=档案箱 / star=设置偏好。
+## 注意 TS 包的 codex.png 与 settings.png 贴图内容同为音符（挑图时错位），勿用
+const ICON_NEW := preload("res://assets/ts/icons/play.png")
+const ICON_ARCHIVE := preload("res://assets/ts/icons/save.png")
+const ICON_SETTINGS := preload("res://assets/ts/icons/star_gold.png")
 const ICON_QUIT := preload("res://assets/ts/UI Elements/UI Elements/Buttons/SmallRedSquareButton_Regular.png")
 ## 底部群系地平线装饰条（六群系地表图，与游戏内同源素材）
 const REGION_TERRAINS: Array[String] = [
@@ -87,11 +89,10 @@ func _apply_style() -> void:
 		grid_label.add_theme_font_size_override("font_size", 18)
 	var strip := HBoxContainer.new()
 	strip.name = "TerrainStrip"
-	strip.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	# 底部全宽 + 高 140：anchors+offsets 一步到位（分开设 preset 与 offset
+	# 会触发引擎 "non-equal opposite anchors" 布局提示警告）
+	strip.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	strip.offset_top = -140.0
-	strip.offset_bottom = 0.0
-	strip.offset_left = 0.0
-	strip.offset_right = 0.0
 	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for path: String in REGION_TERRAINS:
 		var tex := TextureRect.new()

@@ -129,6 +129,17 @@ func _ready() -> void:
 	GameState.stats_rebuilt.connect(_reconnect_stats)
 
 
+func _exit_tree() -> void:
+	# 退出时停掉在播的流：AudioServer 持有 playback 引用，不停会被记成
+	# ObjectDB 泄漏（menu.mp3 每次退出都出现在 --verbose 报告里）；
+	# stop 之外还要摘除 stream 引用，退出时序里 AudioServer 侧才释放得掉
+	stop_music()
+	_music.stream = null
+	for channel in _channels:
+		channel.stop()
+		channel.stream = null
+
+
 func _reconnect_stats() -> void:
 	if not GameState.stats.leveled_up.is_connected(_on_leveled_up):
 		GameState.stats.leveled_up.connect(_on_leveled_up)

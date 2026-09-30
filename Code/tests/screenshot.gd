@@ -63,7 +63,10 @@ func _ready() -> void:
 		_menu = MENU_SCENE.instantiate()
 		add_child(_menu)
 		# 本工具根是 Node2D，不给子 Control 布局（菜单锚点参考矩形为 0）——
-		# 真实游戏里菜单是主场景由视口铺满；这里手动铺满复现同等布局
+		# 真实游戏里菜单是主场景由视口铺满；这里手动铺满复现同等布局。
+		# 先把根锚点归零（tscn 里是两侧不等的全屏锚点）再设 size，
+		# 否则 set_size 触发 non-equal anchors 布局警告
+		_menu.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		_menu.position = Vector2.ZERO
 		_menu.size = get_viewport_rect().size
 		return

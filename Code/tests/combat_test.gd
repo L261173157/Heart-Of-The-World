@@ -18,6 +18,8 @@ var _fails := 0
 var _kills := {}
 var _queue_index := 0
 var _species_tries := 0
+## 传送找活体的轮次（_teleport_to_species 内按它轮换候选实例）
+var _teleport_rounds := 0
 ## 机制观察等待计数（沼泽蟹/野猪/石像鬼站位等待 AI 起手的步数；
 ## 与 _species_tries 分开——后者在找到目标时被清零，等待分支永远数不过 1）
 var _observe_tries := 0
@@ -834,11 +836,13 @@ func _step() -> void:
 	if target == null:
 		_species_tries += 1
 		# v4 大世界流式生成：目标物种可能还没有表现节点（玩家不在其斑块附近）——
-		# 第 8 次尝试时传送到该物种所在斑块中心，流式 pass（0.5s 轮询）随后
-		# 会把它的节点生成在玩家 380~1400px 带，_find_alive 就能找到
-		if _species_tries == 8:
+		# 传送到该物种存活实例的据点，流式 pass（0.5s 轮询）随后会把节点刷出，
+		# _find_alive 就能找到。传送到位 ≠ 立即有节点：还要串行等区域滞回
+		# 提交（0.6s）+ 流式 pass（0.5s 粒度）+ deferred 生成，故每 25 步重传
+		# 一次直至预算耗尽（单次传送曾偶发超时误报"找不到活体"）
+		if _species_tries >= 8 and (_species_tries - 8) % 25 == 0:
 			_teleport_to_species(species_name)
-		if _species_tries > 80:
+		if _species_tries > 240:
 			# 全图找不到活体：若此前已击杀过则视为通过（种群可能被顺带清空）
 			if _kills.get(species_name, 0) > 0:
 				print("  PASS  %s 已击杀（顺带清空，跳过）" % species_name)
@@ -908,11 +912,16 @@ func _find_alive(species_name: String) -> MonsterBase:
 func _teleport_to_species(species_name: String) -> void:
 	if _sim == null or _player == null:
 		return
+	var candidates: Array[MonsterInstance] = []
 	for inst: MonsterInstance in _sim.instances.values():
 		if inst.is_alive and inst.species.species_name == species_name \
 				and inst.spawn_pos != Vector2.INF:
-			_player.global_position = inst.spawn_pos
-			return
+			candidates.append(inst)
+	if candidates.is_empty():
+		return
+	# 多实例轮换：反复传到同一只刚死/尚未刷出的实例会空耗预算
+	_player.global_position = candidates[_teleport_rounds % candidates.size()].spawn_pos
+	_teleport_rounds += 1
 
 
 ## 传送到最近的存活个体据点（武装强化靶怪被 AOE 误伤清空本地时的兜底）——

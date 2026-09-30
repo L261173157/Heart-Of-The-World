@@ -944,12 +944,13 @@ func _refresh_codex() -> void:
 	if WorldSim.sim != null:
 		for species: SpeciesData in WorldSim.sim.species_list:
 			species_names.append(species.species_name)
-	for species_name in species_names:
-		var kills: int = int(GameState.codex.get(species_name, 0))
+	for i in species_names.size():
+		var kills: int = int(GameState.codex.get(species_names[i], 0))
 		if kills > 0:
-			lines.append("✓ %s  累计猎杀 %d" % [species_name, kills])
+			lines.append("✓ %s  累计猎杀 %d" % [species_names[i], kills])
 		else:
-			lines.append("？ 未曾猎杀")
+			# 未猎杀隐藏名字（收集悬念），但给序号让玩家能感知收集进度
+			lines.append("？ #%02d 未曾猎杀" % [i + 1])
 	if GameState.stats.equips.is_empty():
 		lines.append("— 未装备（猎杀精英/Boss 有几率掉落）")
 	else:

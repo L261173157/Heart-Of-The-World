@@ -104,8 +104,9 @@ func _ready() -> void:
 	# 强制横屏重申：引擎方向掩码在场景锚定时若单例未就绪会短暂放行全方向，
 	# 挂起恢复/设备旋转后可能跟随设备竖屏——竖屏下 expand 拉伸会把可视世界
 	# 纵向撑大约 4 倍，人物缩到屏高 ~1.5%（2026-09-09 模拟器实证）。
-	# 引擎此调用会向 UIKit 请求方向几何更新，桌面端等效空操作。
-	DisplayServer.screen_set_orientation(DisplayServer.SCREEN_LANDSCAPE)
+	# 引擎此调用仅移动端有方向几何意义，桌面 display server 不支持会打警告——显式跳过
+	if OS.get_name() == "iOS" or OS.get_name() == "Android":
+		DisplayServer.screen_set_orientation(DisplayServer.SCREEN_LANDSCAPE)
 	stats = CharacterStats.new()
 	stats.changed.connect(_on_stats_changed)
 	_load()
