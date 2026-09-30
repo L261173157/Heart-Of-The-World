@@ -112,36 +112,36 @@ var _fps_label: Label
 var _fps_accum := 0.0
 
 # --- 触控按钮图标（NA CC0 像素素材，与怪物/道具同风格源） ---
-const ICON_ATTACK := preload("res://assets/na/weapons/sword.png")
-const ICON_DASH := preload("res://assets/na/hud/shuriken.png")
-const ICON_HEAVY := preload("res://assets/na/weapons/hammer.png")
-const ICON_BOLT := preload("res://assets/na/items/fireball.png")
-const ICON_HEAL := preload("res://assets/na/items/life-pot.png")
-const ICON_EMPOWER := preload("res://assets/na/items/scroll-thunder.png")
-const ICON_ECO := preload("res://assets/na/items/scroll-plant.png")
-const ICON_SHOP := preload("res://assets/na/items/coin-2.png")
-const ICON_CODEX := preload("res://assets/na/items/scroll-ice.png")
-const ICON_COIN := preload("res://assets/na/items/gold-coin.png")
-const ICON_HEART := preload("res://assets/na/items/heart.png")
+const ICON_ATTACK := preload("res://assets/ts/icons/attack.png")
+const ICON_DASH := preload("res://assets/ts/icons/dash.png")
+const ICON_HEAVY := preload("res://assets/ts/icons/heavy.png")
+const ICON_BOLT := preload("res://assets/ts/icons/bolt.png")
+const ICON_HEAL := preload("res://assets/ts/icons/heal_pot_red.png")
+const ICON_EMPOWER := preload("res://assets/ts/icons/empower.png")
+const ICON_ECO := preload("res://assets/ts/icons/eco.png")
+const ICON_SHOP := preload("res://assets/ts/icons/shop.png")
+const ICON_CODEX := preload("res://assets/ts/icons/codex.png")
+const ICON_COIN := preload("res://assets/ts/icons/coin.png")
+const ICON_HEART := preload("res://assets/ts/icons/heart.png")
 ## P2 武器图标补位（NA weapons 闲置件）：katana=武器磨刀（刀）、fork=法杖赋能
 ## （三叉法器）、sai=蛮力被动（叉手）；lance/bow 无语义位留库
-const ICON_KATANA := preload("res://assets/na/weapons/katana.png")
-const ICON_FORK := preload("res://assets/na/weapons/fork.png")
-const ICON_SAI := preload("res://assets/na/weapons/sai.png")
+const ICON_KATANA := preload("res://assets/ts/icons/katana.png")
+const ICON_FORK := preload("res://assets/ts/icons/fork.png")
+const ICON_SAI := preload("res://assets/ts/icons/sai.png")
 ## 物品栏按钮（v7）：NA jar 罐子 = 收纳意象
-const ICON_BAG := preload("res://assets/na/items/jar.png")
+const ICON_BAG := preload("res://assets/ts/icons/bag.png")
 ## 升级三选一：被动 id → 图标（缺省用空卷轴）
 const PASSIVE_ICONS := {
 	"lifesteal": ICON_HEART, "atk_speed": ICON_DASH, "move": ICON_BOLT,
-	"cdr": preload("res://assets/na/items/scroll-empty.png"),
-	"hp": preload("res://assets/na/items/medipack.png"),
-	"mp_regen": preload("res://assets/na/items/water-pot.png"),
+	"cdr": preload("res://assets/ts/icons/cdr.png"),
+	"hp": preload("res://assets/ts/icons/hp_pot_blue.png"),
+	"mp_regen": preload("res://assets/ts/icons/mp_pot_green.png"),
 		"phys": ICON_SAI, "magic": ICON_BOLT, "gold": ICON_COIN,
-	"xp": preload("res://assets/na/items/fortune-cookie.png"),
+	"xp": preload("res://assets/ts/icons/star_gold.png"),
 	"heal_power": ICON_HEAL,
-	"knock": preload("res://assets/na/weapons/axe.png"),
+	"knock": preload("res://assets/ts/icons/knock_axe.png"),
 }
-const PASSIVE_ICON_DEFAULT := preload("res://assets/na/items/scroll-empty.png")
+const PASSIVE_ICON_DEFAULT := preload("res://assets/ts/icons/cdr.png")
 
 
 func _ready() -> void:
@@ -216,7 +216,7 @@ func _ready() -> void:
 	# P2 面板底：暂停菜单换 NA 对话框九宫格（np_dialogue）——
 	# 覆盖 glass 主题底但保留其按钮样式
 	var pause_panel := get_node("Root/PauseLayer/PausePanel") as PanelContainer
-	var pause_bg := HotwTheme.nine_patch_bg("res://assets/na/ui/np_dialogue.png")
+	var pause_bg := HotwTheme.nine_patch_paper("res://assets/ts/UI Elements/UI Elements/Papers/SpecialPaper.png")
 	if pause_bg != null:
 		pause_panel.add_child(pause_bg)
 		pause_panel.move_child(pause_bg, 0)
@@ -282,7 +282,7 @@ var _dialogue_timer := 0.0
 ## 对话发起 NPC 的世界位置（走开自动关气泡用；INF = 载荷未带位置不判距）
 var _dialogue_origin := Vector2.INF
 ## NA 心形五帧（美术 v5 UI 主题化）：条带 80×16，帧 0-4 = 空→满
-const HEART_STRIP := preload("res://assets/na/hud/heart.png")
+const HEART_STRIP := preload("res://assets/ts/icons/heart_strip.png")
 var _heart_icon: TextureRect
 var _heart_cache: Array[AtlasTexture] = []
 
@@ -317,20 +317,19 @@ func _setup_dialogue_bubble() -> void:
 	_place_below_modal_layers(_dialogue_panel)
 
 	var bubble := NinePatchRect.new()
-	# 美术 v5 借鉴①：官方九宫格 np_6 暗蓝灰框（16px×4 放大保像素，边距带 20）
-	var np_img: Image = load("res://assets/na/ui/np_panel.png").get_image()
-	np_img.resize(64, 64, Image.INTERPOLATE_NEAREST)
-	bubble.texture = ImageTexture.create_from_image(np_img)
-	bubble.patch_margin_left = 20
-	bubble.patch_margin_top = 20
-	bubble.patch_margin_right = 20
-	bubble.patch_margin_bottom = 20
+	# 美术 v6：TS RegularPaper 纸面九宫（320 原生，边饰带宽约 56）
+	bubble.texture = load("res://assets/ts/UI Elements/UI Elements/Papers/RegularPaper.png")
+	bubble.patch_margin_left = 56
+	bubble.patch_margin_top = 56
+	bubble.patch_margin_right = 56
+	bubble.patch_margin_bottom = 56
 	bubble.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dialogue_panel.add_child(bubble)
 
 	var box := TextureRect.new()
-	box.texture = preload("res://assets/na/hud/faceset-box.png")
+	# v6：TS 无现成头像框 → 金边深底合成件（icon_frame）
+	box.texture = preload("res://assets/ts/icons/icon_frame.png")
 	box.position = Vector2(20, 40)
 	box.size = Vector2(96, 96)
 	box.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -363,15 +362,18 @@ func _setup_dialogue_bubble() -> void:
 	_dialogue_panel.add_child(_dialogue_text)
 
 	_dialogue_yes = TextureButton.new()
-	_dialogue_yes.texture_normal = preload("res://assets/na/hud/yes-button.png")
-	_dialogue_yes.scale = Vector2(2.6, 2.6)
-	_dialogue_yes.position = Vector2(462, 112)
+	# v6：TS 方钮两态（蓝=确认；128px 源 ×0.55 ≈ 70px 命中区，满足 ≥44pt 触控）
+	_dialogue_yes.texture_normal = preload("res://assets/ts/UI Elements/UI Elements/Buttons/SmallBlueSquareButton_Regular.png")
+	_dialogue_yes.texture_pressed = preload("res://assets/ts/UI Elements/UI Elements/Buttons/SmallBlueSquareButton_Pressed.png")
+	_dialogue_yes.scale = Vector2(0.55, 0.55)
+	_dialogue_yes.position = Vector2(452, 104)
 	_dialogue_yes.pressed.connect(_on_dialogue_action.bind("confirm"))
 	_dialogue_panel.add_child(_dialogue_yes)
 	_dialogue_no = TextureButton.new()
-	_dialogue_no.texture_normal = preload("res://assets/na/hud/no-button.png")
-	_dialogue_no.scale = Vector2(2.6, 2.6)
-	_dialogue_no.position = Vector2(552, 112)
+	_dialogue_no.texture_normal = preload("res://assets/ts/UI Elements/UI Elements/Buttons/SmallRedSquareButton_Regular.png")
+	_dialogue_no.texture_pressed = preload("res://assets/ts/UI Elements/UI Elements/Buttons/SmallRedSquareButton_Pressed.png")
+	_dialogue_no.scale = Vector2(0.55, 0.55)
+	_dialogue_no.position = Vector2(542, 104)
 	_dialogue_no.pressed.connect(_on_dialogue_action.bind("decline"))
 	_dialogue_panel.add_child(_dialogue_no)
 	var yes_label := Label.new()
@@ -402,9 +404,9 @@ func _open_dialogue(payload: Dictionary) -> void:
 	_dialogue_quest = payload.get("quest", {}) if _dialogue_kind == "quest" else {}
 	_dialogue_name.text = str(payload.get("giver", ""))
 	_dialogue_text.text = str(payload.get("text", ""))
-	var face_id := int(payload.get("faceset", 0))
-	var face_path := "res://assets/na/characters/faceset/%d.png" % face_id
-	_dialogue_faceset.texture = load(face_path) if face_id > 0 and ResourceLoader.exists(face_path) else null
+	var face_path := str(payload.get("faceset", ""))
+	_dialogue_faceset.texture = load(face_path) \
+			if not face_path.is_empty() and ResourceLoader.exists(face_path) else null
 	var has_offer: bool = not _dialogue_quest.is_empty() or _dialogue_kind == "shop"
 	_dialogue_yes.visible = has_offer
 	_dialogue_no.visible = has_offer
@@ -535,18 +537,12 @@ func _on_boss_hp(current: float, maximum: float) -> void:
 func _apply_theme() -> void:
 	(get_node("Root") as Control).theme = HotwTheme.glass_theme()
 
-	# 进度条三色（血/蓝/经验），stylebox 覆盖默认灰条
-	var fill_hp := _bar_fill(Color(0.78, 0.22, 0.2))
-	var fill_mp := _bar_fill(Color(0.24, 0.5, 0.85))
-	var fill_xp := _bar_fill(Color(0.9, 0.75, 0.25))
-	hp_bar.add_theme_stylebox_override("fill", fill_hp)
-	mp_bar.add_theme_stylebox_override("fill", fill_mp)
-	xp_bar.add_theme_stylebox_override("fill", fill_xp)
+	# 进度条三色（血/蓝/经验）：TS BigBar_Fill 烘色平铺纹理（v6）
+	hp_bar.add_theme_stylebox_override("fill", _ts_bar_fill("bar_fill_red"))
+	mp_bar.add_theme_stylebox_override("fill", _ts_bar_fill("bar_fill_blue"))
+	xp_bar.add_theme_stylebox_override("fill", _ts_bar_fill("bar_fill_gold"))
 	for bar: ProgressBar in [mp_bar, xp_bar]:
-		var bg := StyleBoxFlat.new()
-		bg.bg_color = Color(0.05, 0.06, 0.08, 0.85)
-		bg.set_corner_radius_all(4)
-		bar.add_theme_stylebox_override("background", bg)
+		bar.add_theme_stylebox_override("background", _ts_bar_base())
 	# 血条本体背景透明：底色由其后绘制的白色残影条携带（_setup_hp_ghost_bar），
 	# 不透明背景会把残影整条盖住——"刚掉的白截"永远不可见
 	var hp_bg := StyleBoxFlat.new()
@@ -560,6 +556,30 @@ func _bar_fill(c: Color) -> StyleBoxFlat:
 	fill.bg_color = c
 	fill.set_corner_radius_all(4)
 	return fill
+
+
+## TS 条填充纹理（BigBar_Fill 烘色件，横向平铺）
+func _ts_bar_fill(tex_name: String) -> StyleBoxTexture:
+	var sb := StyleBoxTexture.new()
+	sb.texture = load("res://assets/ts/icons/%s.png" % tex_name)
+	sb.texture_margin_left = 6.0
+	sb.texture_margin_top = 6.0
+	sb.texture_margin_right = 6.0
+	sb.texture_margin_bottom = 6.0
+	sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE
+	return sb
+
+
+## TS 条框（SmallBar_Base 九宫：端帽保留、上下窄边）
+func _ts_bar_base() -> StyleBoxTexture:
+	var sb := StyleBoxTexture.new()
+	sb.texture = load("res://assets/ts/icons/bar_base.png")
+	sb.texture_margin_left = 24.0
+	sb.texture_margin_top = 6.0
+	sb.texture_margin_right = 24.0
+	sb.texture_margin_bottom = 6.0
+	sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE
+	return sb
 
 
 ## 触控按钮图形化（MOBA 布局）：攻击大圆钮 + 五技能圆钮 + 冷却遮罩/数字/
@@ -588,10 +608,10 @@ func _setup_icon_buttons() -> void:
 		HotwTheme.add_icon(btn, pair[1], 18.0)
 	HotwTheme.style_circle_button(%PauseBtn)
 	# 暂停面板/商店/三选一的图标走 Button.icon（文字说明保留，图标辅助扫读）
-	%ResumeBtn.icon = preload("res://assets/na/hud/arrow.png")
-	%SaveBtn.icon = preload("res://assets/na/items/little-treasure-chest.png")
-	%PauseSettingsBtn.icon = preload("res://assets/na/items/scroll-empty.png")
-	%MenuBtn.icon = preload("res://assets/na/hud/dialogue-bubble.png")
+	%ResumeBtn.icon = preload("res://assets/ts/icons/play.png")
+	%SaveBtn.icon = preload("res://assets/ts/icons/save.png")
+	%PauseSettingsBtn.icon = preload("res://assets/ts/icons/settings.png")
+	%MenuBtn.icon = preload("res://assets/ts/UI Elements/UI Elements/Swords/Swords.png")
 	%ResumeBtn.expand_icon = true
 	%SaveBtn.expand_icon = true
 	%PauseSettingsBtn.expand_icon = true
@@ -628,9 +648,9 @@ func _setup_stats_row() -> void:
 	parent.get_parent().add_child(heart)
 	_place_below_modal_layers(heart)
 	_heart_icon = heart
-	# MP 条头苦无（NA hud/kunai）：贴条左侧作蓝量标识
+	# MP 条头标记（v6 TS 蓝药图标）：贴条左侧作蓝量标识
 	var kunai := TextureRect.new()
-	kunai.texture = preload("res://assets/na/hud/kunai.png")
+	kunai.texture = preload("res://assets/ts/icons/hp_pot_blue.png")
 	kunai.position = Vector2(-17, -3)
 	kunai.custom_minimum_size = Vector2(20, 20)
 	kunai.expand_mode = TextureRect.EXPAND_IGNORE_SIZE

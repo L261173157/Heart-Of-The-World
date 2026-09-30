@@ -1,11 +1,13 @@
 [gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_trt"]
-[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/treant/treant_frames.tres" id="2_frames"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/treant/treant_frames.res" id="2_frames"]
 
 [resource]
 script = ExtResource("1_trt")
 species_name = "树人"
+visual_scale = 0.682
+body_scale = 1.0
 frames_override = ExtResource("2_frames")
 ai_archetype = "charger"
 habitats = Array[String](["forest"])

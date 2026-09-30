@@ -1,7 +1,7 @@
 [gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/player/player.gd" id="1_player"]
-[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/ninja/ninja_frames.tres" id="2_ninja"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/ninja/ninja_frames.res" id="2_ninja"]
 [ext_resource type="Script" path="res://scripts/player/player_camera.gd" id="3_camera"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
@@ -20,7 +20,7 @@ shape = SubResource("RectangleShape2D_body")
 
 [node name="Visual" type="AnimatedSprite2D" parent="."]
 sprite_frames = ExtResource("2_ninja")
-scale = Vector2(4.8, 4.8)
+scale = Vector2(2.0, 2.0)
 autoplay = "idle"
 
 [node name="Camera2D" type="Camera2D" parent="."]

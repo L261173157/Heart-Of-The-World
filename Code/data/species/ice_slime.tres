@@ -1,12 +1,13 @@
 [gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_q4dwy"]
-[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/slime_teal/slime_teal_frames.tres" id="2_frames"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/slime_teal/slime_teal_frames.res" id="2_frames"]
 
 [resource]
 script = ExtResource("1_q4dwy")
 species_name = "冰史莱姆"
-visual_scale = 0.70
+visual_scale = 1.0
+body_scale = 0.88
 tint = Color(0.62, 0.85, 1, 1)
 frames_override = ExtResource("2_frames")
 ai_archetype = "splitter"

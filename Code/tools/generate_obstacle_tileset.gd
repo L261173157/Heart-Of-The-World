@@ -2,40 +2,38 @@
 ## "$GODOT" --headless --path Code -s tools/generate_obstacle_tileset.gd
 ## 产出两个 TileSet（确定性，可重跑；贴图为内存构建的 ImageTexture 内嵌 .tres，
 ## 不产生需 import 的中间 PNG）：
-##   data/obstacle_tileset.tres —— 可见障碍层用：图集（3×3 障碍格，源 na_tileset
-##     已验证矩形 + 放大/调色派生，零新素材）+ 物理层（墙 layer 1，按
+##   data/obstacle_tileset.tres —— 可见障碍层用：图集（3×3 障碍格，源 TS deco 精灵
+##     底边对齐/放大/调色派生）+ 物理层（墙 layer 1，按
 ##     ObstacleField.KIND_INFO 半径的八边形）+ 遮挡层（Light2D 阴影）+
 ##     y_sort_origin（树冠遮挡排序基线）+ kind 自定义数据
 ##   data/nav_tileset.tres —— 导航专用层用：透明可走瓦片 + 整格导航多边形
 ## 与 ObstacleField.KIND_INFO/RECIPES 的 kind 键一一对应；改障碍种类两边同步。
 extends SceneTree
 
-const SRC := "res://assets/creatures/sheets/na_tileset.png"
 const TILESET_TRES := "res://data/obstacle_tileset.tres"
 const NAV_TRES := "res://data/nav_tileset.tres"
 
 const CELL := 32
 ## kind 顺序 = 图集格序（col=i%3, row=i/3）；water 为透明深水阻挡瓦（第 4 行，
-## 地面已画水只补碰撞，不留遮挡不留贴图）；castle 为城塞墙（美术 v5 Boss 地牢）
+## 地面已画水只补碰撞，不留遮挡不留贴图）；castle 为城塞墙（美术 v6 Boss 地牢）
 const KINDS := ["tree", "big_tree", "pine", "deadtree", "rock", "boulder",
 	"ice", "crystal", "bones", "water", "castle"]
-## 派生规则：src = na_tileset 已验证矩形；zoom>1 时裁底居中；HSV 调色
-## （deadtree=松树灰化、ice/crystal/bones=岩石染色——与 world_deco 的
-## 枯树灰化/多边形冰晶手法同源，素材无对口验证矩形故派生）
-## castle：城堡石砖区（行 5-8 左区，对照板视觉验收的灰石砖+垛口带）
+## 派生规则（美术 v6 TS）：img = assets/deco 精灵（tools/bake_structures.gd 产出，
+## 32 高画布底边对齐）；zoom>1 放大后仍底边对齐水平居中（超格自动裁）；
+## deadtree = 松树灰化；castle = 黑城塞墙体矩形（baked 城堡下部石墙带）
 const DERIVE := {
-	"tree": {"src": Rect2(0, 160, 32, 32)},
-	"big_tree": {"src": Rect2(0, 160, 32, 32), "zoom": 1.35},
-	"pine": {"src": Rect2(64, 160, 32, 32)},
-	"deadtree": {"src": Rect2(64, 160, 32, 32), "sat": 0.22, "val": 0.85},
-	"rock": {"src": Rect2(160, 160, 32, 32)},
-	"boulder": {"src": Rect2(160, 160, 32, 32), "zoom": 1.35},
-	"ice": {"src": Rect2(160, 160, 32, 32), "hue": 0.55, "sat": 0.35, "val": 1.25},
-	"crystal": {"src": Rect2(160, 160, 32, 32), "hue": 0.83, "sat": 0.55, "val": 1.1},
-	"bones": {"src": Rect2(160, 160, 32, 32), "sat": 0.25, "val": 1.2},
+	"tree": {"img": "res://assets/deco/tree.png"},
+	"big_tree": {"img": "res://assets/deco/tree.png", "zoom": 1.5},
+	"pine": {"img": "res://assets/deco/pine.png"},
+	"deadtree": {"img": "res://assets/deco/pine.png", "sat": 0.22, "val": 0.85},
+	"rock": {"img": "res://assets/deco/rock.png"},
+	"boulder": {"img": "res://assets/deco/rock.png", "zoom": 1.5},
+	"ice": {"img": "res://assets/deco/ice.png"},
+	"crystal": {"img": "res://assets/deco/crystal.png"},
+	"bones": {"img": "res://assets/deco/bones.png"},
 	"water": {"transparent": true},
-	"castle": {"src": Rect2(0, 0, 32, 32),
-		"src_img": "res://assets/creatures/sheets/na_dungeon_tileset.png"},  # 完整包 TilesetDungeon 专用墙砖
+	"castle": {"src": Rect2(100, 168, 40, 40),
+		"src_img": "res://assets/ts/structures_baked/ts_castle_black.png"},
 }
 ## 高大障碍的排序基线（y_sort_origin，格底部附近）——走到树后会被树冠遮挡
 const TALL_SORT_ORIGIN := 14
@@ -58,7 +56,7 @@ func _init() -> void:
 	quit(0)
 
 
-## 障碍图集：逐 kind 从 na_tileset 取源矩形 → 调色/放大 → 拼入 3×3 图集
+## 障碍图集：逐 kind 取源（deco 精灵底边对齐 / castle 矩形）→ 调色/放大 → 拼入 3×3
 func _build_atlas_image() -> Image:
 	var atlas := Image.create(CELL * 3, CELL * 4, false, Image.FORMAT_RGBA8)
 	for i in KINDS.size():
@@ -66,19 +64,27 @@ func _build_atlas_image() -> Image:
 		var spec: Dictionary = DERIVE[kind]
 		if bool(spec.get("transparent", false)):
 			continue  # 透明瓦（深水）：只占图集位不画内容
-		# src_img：该 kind 的独立源图（castle 用完整包 TilesetDungeon），缺省 na_tileset
-		var src_tex: Image = load(String(spec.get("src_img", SRC))).get_image()
-		var rect: Rect2 = spec["src"]
-		var cell_img: Image = src_tex.get_region(Rect2i(Vector2i(rect.position), Vector2i(rect.size)))
-		cell_img = _recolor(cell_img, spec)
-		var zoom: float = float(spec.get("zoom", 1.0))
-		if zoom > 1.001:
-			var big := cell_img
-			big.resize(int(CELL * zoom), int(CELL * zoom), Image.INTERPOLATE_NEAREST)
-			# 裁底居中：保底部（树干/岩基）牺牲顶部
-			cell_img = big.get_region(Rect2i(
-				Vector2i(int((big.get_width() - CELL) * 0.5), big.get_height() - CELL),
-				Vector2i(CELL, CELL)))
+		var cell_img: Image
+		if spec.has("img"):
+			# deco 精灵路径：底边对齐 + 水平居中放入 CELL 格（超格自动裁）
+			var prop: Image = Image.load_from_file(ProjectSettings.globalize_path(String(spec["img"])))
+			prop = _recolor(prop, spec)
+			var zoom: float = float(spec.get("zoom", 1.0))
+			if zoom != 1.0:
+				var big := prop
+				big.resize(int(big.get_width() * zoom), int(big.get_height() * zoom),
+					Image.INTERPOLATE_NEAREST)
+				prop = big
+			cell_img = Image.create(CELL, CELL, false, Image.FORMAT_RGBA8)
+			cell_img.blit_rect(prop, Rect2i(Vector2i.ZERO, prop.get_size()),
+				Vector2i((CELL - prop.get_width()) / 2, CELL - prop.get_height()))
+		else:
+			# 矩形路径（castle 墙砖）
+			var src_tex: Image = Image.load_from_file(ProjectSettings.globalize_path(String(spec["src_img"])))
+			var rect: Rect2 = spec["src"]
+			cell_img = src_tex.get_region(Rect2i(Vector2i(rect.position), Vector2i(rect.size)))
+			cell_img = _recolor(cell_img, spec)
+			cell_img.resize(CELL, CELL, Image.INTERPOLATE_NEAREST)
 		atlas.blit_rect(cell_img, Rect2i(Vector2i.ZERO, Vector2i(CELL, CELL)),
 				Vector2i((i % 3) * CELL, (i / 3) * CELL))
 	return atlas

@@ -1,12 +1,13 @@
 [gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_ber"]
-[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/bear/bear_frames.tres" id="2_frames"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/bear/bear_frames.res" id="2_frames"]
 
 [resource]
 script = ExtResource("1_ber")
 species_name = "雪熊"
-visual_scale = 1.08
+visual_scale = 1.0
+body_scale = 0.9
 tint = Color(0.85, 0.82, 0.78, 1)
 frames_override = ExtResource("2_frames")
 ai_archetype = "charger"

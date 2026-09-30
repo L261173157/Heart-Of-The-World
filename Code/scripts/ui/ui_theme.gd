@@ -159,3 +159,20 @@ static func nine_patch_bg(path: String) -> NinePatchRect:
 	np.set_anchors_preset(Control.PRESET_FULL_RECT)
 	np.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return np
+
+
+## TS Paper 纸面九宫（美术 v6）：320 原生纹理、边饰带宽约 1/5.7≈56；
+## 不缩放（Paper 细节在原尺寸最干净），用法同 nine_patch_bg
+static func nine_patch_paper(path: String) -> NinePatchRect:
+	var tex: Texture2D = load(path)
+	if tex == null:
+		return null
+	var np := NinePatchRect.new()
+	np.texture = tex
+	np.patch_margin_left = 56
+	np.patch_margin_top = 56
+	np.patch_margin_right = 56
+	np.patch_margin_bottom = 56
+	np.set_anchors_preset(Control.PRESET_FULL_RECT)
+	np.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return np

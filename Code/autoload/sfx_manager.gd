@@ -1,8 +1,9 @@
 ## 音效与音乐管理（autoload 单例）。
-## 音效：NA（Ninja Adventure，CC0）为主 + Kenney Impact Sounds（CC0）补位——
-## 命中/受击/击杀/升级/死亡/换图/冲刺/技能施放；纯订阅 EventBus 播放；
+## 音频 v6（美术 v6 P5）：Kenney 四包（RPG Audio/Impact/Interface/Music Jingles，
+## CC0）事件音 + OpenGameArt CC0 合集 BGM 十槽——NA 音频整体退役。
+## 来源与语义对照见 assets/audio/LICENSE.md；纯订阅 EventBus 播放；
 ## 非空间化（俯视全场可听），随机 ±8% 音调防止重复感；4 通道轮询不互相截断。
-## 音乐：NA musics 区域 BGM（六区域一区一曲 + 主菜单），player_entered_region 驱动
+## 音乐：六地形一区一曲 + 菜单/地牢/Boss/营地，player_entered_region 驱动
 ## 换曲（切区 0.4s 淡出淡入，同曲不重启）；总线分离：音效走 SFX、音乐走 Music，
 ## 音量各自由设置面板的三条滑条控制（Master 总音量兜底）。
 extends Node
@@ -16,53 +17,52 @@ const CROSSFADE := 0.4
 ## 不节流会抢光 4 个轮询通道糊成一片（顿帧侧早有同款 0.2s 节流，音频侧对齐）
 const HIT_SFX_THROTTLE := 0.1
 
-## 事件音（美术 v5 完整包增量 2026-09-17：NA 分类音效全对口，Kenney 全退役；
-## na_ 前缀 = 完整包 Hit&Impact/Whoosh/Jingles 分类件）
+## 事件音（v6 Kenney CC0，语义重命名件在 assets/audio/sfx/）
 const SFX := {
 	"hit": [
-		preload("res://assets/na/audio/sounds/sword.ogg"),
-		preload("res://assets/na/audio/sounds/na_hit1.wav"),
+		preload("res://assets/audio/sfx/hit.ogg"),
+		preload("res://assets/audio/sfx/hit2.ogg"),
 	],
-	"hurt": [preload("res://assets/na/audio/sounds/na_hit2.wav")],
-	"kill": [preload("res://assets/na/audio/sounds/kill.ogg")],
-	"dash": [preload("res://assets/na/audio/sounds/na_whoosh.wav")],
-	"heavy": [preload("res://assets/na/audio/sounds/na_impact.wav")],
-	"bolt": [preload("res://assets/na/audio/sounds/magic-1.ogg")],
-	"heal": [preload("res://assets/na/audio/sounds/succes.ogg")],
-	"levelup": [preload("res://assets/na/audio/sounds/na_levelup.wav")],
-	"died": [preload("res://assets/na/audio/sounds/na_gameover.wav")],
-	"region": [preload("res://assets/na/audio/sounds/na_bonus2.wav")],
-	"gold": [preload("res://assets/na/audio/sounds/gold-1.ogg")],
-	"gold2": [preload("res://assets/na/audio/sounds/gold-2.ogg")],
-	"gold3": [preload("res://assets/na/audio/sounds/gold-3.ogg")],
-	"menu": [preload("res://assets/na/audio/sounds/menu-1.ogg")],
-	"quest": [preload("res://assets/na/audio/sounds/succes-2.ogg")],
-	"discover": [preload("res://assets/na/audio/sounds/succes-3.ogg")],
-	"passive": [preload("res://assets/na/audio/sounds/power-up-2.ogg")],
-	"secret": [preload("res://assets/na/audio/sounds/secret-1.wav")],
-	"alert": [preload("res://assets/na/audio/sounds/alert.ogg")],
-	"voice1": [preload("res://assets/na/audio/sounds/voice-1.ogg")],
-	"voice2": [preload("res://assets/na/audio/sounds/voice-2.ogg")],
-	"voice3": [preload("res://assets/na/audio/sounds/voice-3.ogg")],
-	"voice4": [preload("res://assets/na/audio/sounds/voice-4.ogg")],
+	"hurt": [preload("res://assets/audio/sfx/hurt.ogg")],
+	"kill": [preload("res://assets/audio/sfx/kill.ogg")],
+	"dash": [preload("res://assets/audio/sfx/dash.ogg")],
+	"heavy": [preload("res://assets/audio/sfx/heavy.ogg")],
+	"bolt": [preload("res://assets/audio/sfx/bolt.ogg")],
+	"heal": [preload("res://assets/audio/sfx/heal.ogg")],
+	"levelup": [preload("res://assets/audio/sfx/levelup.ogg")],
+	"died": [preload("res://assets/audio/sfx/died.ogg")],
+	"region": [preload("res://assets/audio/sfx/region.ogg")],
+	"gold": [preload("res://assets/audio/sfx/gold.ogg")],
+	"gold2": [preload("res://assets/audio/sfx/gold2.ogg")],
+	"gold3": [preload("res://assets/audio/sfx/gold3.ogg")],
+	"menu": [preload("res://assets/audio/sfx/menu.ogg")],
+	"quest": [preload("res://assets/audio/sfx/quest.ogg")],
+	"discover": [preload("res://assets/audio/sfx/discover.ogg")],
+	"passive": [preload("res://assets/audio/sfx/passive.ogg")],
+	"secret": [preload("res://assets/audio/sfx/secret.ogg")],
+	"alert": [preload("res://assets/audio/sfx/alert.ogg")],
+	"voice1": [preload("res://assets/audio/sfx/voice1.ogg")],
+	"voice2": [preload("res://assets/audio/sfx/voice2.ogg")],
+	"voice3": [preload("res://assets/audio/sfx/voice3.ogg")],
+	"voice4": [preload("res://assets/audio/sfx/voice4.ogg")],
 }
 
-## 群系 BGM（NA musics，六地形一系一曲 + 菜单）——换群系即换情绪。
+## 群系 BGM（v6 OpenGameArt CC0，六地形 + 菜单/地牢/Boss/营地）——换群系即换情绪。
 ## v4 起按地形键控（同地形多斑块共享一曲，曲随地貌不随行政区划）
 const TERRAIN_THEMES := {
-	"plains": preload("res://assets/na/audio/musics/theme-4.ogg"),
-	"forest": preload("res://assets/na/audio/musics/theme-2.ogg"),
-	"snow": preload("res://assets/na/audio/musics/theme-9.ogg"),
-	"swamp": preload("res://assets/na/audio/musics/theme-12.ogg"),
-	"hill": preload("res://assets/na/audio/musics/theme-5.ogg"),
-	"lava": preload("res://assets/na/audio/musics/theme-13.ogg"),
-	"menu": preload("res://assets/na/audio/musics/theme-10.ogg"),
-	## 城塞内腔（美术 v5 M-B）：进出城塞切曲，出腔回当前群系曲
-	"dungeon": preload("res://assets/na/audio/musics/fullpack_dungeon.ogg"),
-	## Boss 临场（美术 v5 M-C 全量）：活体 Boss 进入追踪圈切战斗曲
-	"boss": preload("res://assets/na/audio/musics/fullpack_fight.ogg"),
-	## 出生营地（美术 v5 M-C）：安全区休整曲
-	"camp": preload("res://assets/na/audio/musics/fullpack_camp.ogg"),
+	"plains": preload("res://assets/audio/music/plains.mp3"),
+	"forest": preload("res://assets/audio/music/forest.mp3"),
+	"snow": preload("res://assets/audio/music/snow.mp3"),
+	"swamp": preload("res://assets/audio/music/swamp.ogg"),
+	"hill": preload("res://assets/audio/music/hill.mp3"),
+	"lava": preload("res://assets/audio/music/lava.mp3"),
+	"menu": preload("res://assets/audio/music/menu.mp3"),
+	## 城塞内腔：进出城塞切曲，出腔回当前群系曲
+	"dungeon": preload("res://assets/audio/music/dungeon.ogg"),
+	## Boss 临场：活体 Boss 进入追踪圈切战斗曲
+	"boss": preload("res://assets/audio/music/boss.mp3"),
+	## 出生营地：安全区休整曲
+	"camp": preload("res://assets/audio/music/camp.mp3"),
 }
 
 var _channels: Array[AudioStreamPlayer] = []
@@ -168,7 +168,11 @@ func play_music(name: String) -> void:
 
 
 func _switch_stream(stream: AudioStream) -> void:
+	# v6 曲源 mp3/ogg 混排：两类都在运行时置循环（mp3 帧间隙可能有无声顿点，
+	# 听感明显时换源或回 wav + loop 区间）
 	if stream is AudioStreamOggVorbis:
+		stream.loop = true
+	elif stream is AudioStreamMP3:
 		stream.loop = true
 	_music.stream = stream
 	_music.play()

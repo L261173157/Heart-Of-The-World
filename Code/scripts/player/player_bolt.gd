@@ -34,12 +34,10 @@ func _ready() -> void:
 	collision_layer = 0
 	collision_mask = 7
 	body_entered.connect(_on_body_entered)
-	# 淡金色小光点（占位几何，素材期替换）
-	var visual := Polygon2D.new()
-	visual.polygon = PackedVector2Array([
-		Vector2(10, 0), Vector2(2, -5), Vector2(-8, 0), Vector2(2, 5),
-	])
-	visual.color = Color(1.0, 0.92, 0.55)
+	# 紫色魔法球（v6 TS：generate_fx 合成 orb_core 48px ×0.4 ≈ 19px）
+	var visual := Sprite2D.new()
+	visual.texture = load("res://assets/ts/fx_generated/orb_core.png")
+	visual.scale = Vector2(0.4, 0.4)
 	add_child(visual)
 	var shape := CollisionShape2D.new()
 	var circle := CircleShape2D.new()

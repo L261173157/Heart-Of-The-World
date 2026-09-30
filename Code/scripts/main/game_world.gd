@@ -363,14 +363,14 @@ var _teleporting := false
 
 func _setup_camp() -> void:
 	var spawn: Vector2 = WorldConfig.spawn_pos()
-	# 建筑三件（视觉盘点验收过的 na_tileset 房屋/鸟居烘焙件）：
+	# 建筑群（美术 v6 TS：蓝系友军营地，tools/bake_structures.gd 烘焙件）：
 	# 底部 StaticBody2D 矩形挡身位（独立于 ObstacleField 瓦片物理，营地恒不被流式回收）
-	_add_structure("house_red", spawn + Vector2(-310, -60), Vector2(140, 44))
-	_add_structure("house_brown", spawn + Vector2(215, -185), Vector2(140, 44))
-	_add_structure("torii", spawn + Vector2(-4, -235), Vector2(120, 36), true)
-	# P2 闲置件补位：灰屋（营地东侧民居）+ 道场招牌（鸟居旁，练武去处的暗示）
-	_add_structure("house_grey", spawn + Vector2(430, -70), Vector2(140, 44))
-	_add_structure("sign_dojo", spawn + Vector2(-118, -212), Vector2(40, 12), true)
+	_add_structure("ts_house1", spawn + Vector2(-310, -60), Vector2(80, 40))
+	_add_structure("ts_house2", spawn + Vector2(215, -185), Vector2(84, 40))
+	_add_structure("ts_tower", spawn + Vector2(-4, -235), Vector2(70, 44))
+	_add_structure("ts_house3", spawn + Vector2(430, -70), Vector2(92, 42))
+	_add_structure("ts_barracks", spawn + Vector2(-160, -232), Vector2(86, 40))
+	# （v6：水车/桨叶/旗帜动画件退役——TS 包无对应素材，兵营补北侧）
 	# 行商：对话气泡确认后开商店（HUD 侧 kind=="shop" 分支）
 	var merchant := LandmarkNPC.new()
 	merchant.position = spawn + Vector2(96, 24)
@@ -382,13 +382,6 @@ func _setup_camp() -> void:
 	merchant.interact_fn = func(_id: String, _kind: String, _giver: String) -> Dictionary:
 		return {"kind": "shop", "text": "风尘仆仆的猎人——看看营地补给吗？"}
 	_landmark_root.add_child(merchant)
-	# 营地动画件（完整包 Animated）：水车 + 旋转桨叶 + 旗帜
-	_add_animated_prop("res://assets/creatures/frames/camp_watermill/camp_watermill_frames.tres",
-			spawn + Vector2(-150, -230), 2.6)
-	_add_animated_prop("res://assets/creatures/frames/camp_propeller/camp_propeller_frames.tres",
-			spawn + Vector2(-150, -262), 2.6)
-	_add_animated_prop("res://assets/creatures/frames/camp_flag/camp_flag_frames.tres",
-			spawn + Vector2(-4, -262), 2.6)
 	# 借鉴③：房屋可进——门前 Area2D 传送门 + 淡入淡出过场 → 世界内嵌室内口袋
 	_add_house_door(spawn + Vector2(-310, -8), 0)
 	_add_house_door(spawn + Vector2(215, -137), 1)
@@ -450,7 +443,7 @@ func _build_interior(idx: int) -> void:
 	room.position = center
 	# 地板：32px 地板块 region 平铺（texture_repeat）
 	var floor_sp := Sprite2D.new()
-	floor_sp.texture = load("res://assets/na/structures/interior_floor.png")
+	floor_sp.texture = load("res://assets/ts/structures_baked/interior_floor.png")
 	floor_sp.centered = false
 	floor_sp.position = -INTERIOR_ROOM / 2.0
 	floor_sp.region_enabled = true
@@ -475,7 +468,7 @@ func _build_interior(idx: int) -> void:
 		shape.position = side[0]
 		body.add_child(shape)
 		var wall := Sprite2D.new()
-		wall.texture = load("res://assets/na/ui/np_dark.png")
+		wall.texture = load("res://assets/ts/structures_baked/interior_wall.png")
 		wall.position = side[0]
 		wall.centered = false
 		wall.region_enabled = true
@@ -488,7 +481,7 @@ func _build_interior(idx: int) -> void:
 	room.add_child(body)
 	# 家具：床（左上角）
 	var bed := Sprite2D.new()
-	bed.texture = load("res://assets/na/structures/bed.png")
+	bed.texture = load("res://assets/ts/structures_baked/bed.png")
 	bed.position = Vector2(-t.x + 76, -t.y + 64)
 	room.add_child(bed)
 	# 出口门（南墙缺口）：传送回营地该房屋门前
@@ -511,25 +504,12 @@ func _build_interior(idx: int) -> void:
 	add_child(room)
 
 
-## 营地动画件（完整包 Animated 背景）：AnimatedSprite2D 循环播放，底部对齐落点
-func _add_animated_prop(frames_path: String, pos: Vector2, scale := 2.0) -> void:
-	var node := Node2D.new()
-	node.position = pos
-	var sp := AnimatedSprite2D.new()
-	sp.sprite_frames = load(frames_path)
-	sp.scale = Vector2(scale, scale)
-	var frames: SpriteFrames = sp.sprite_frames
-	if frames != null and frames.get_animation_names().size() > 0:
-		sp.play(frames.get_animation_names()[0])
-	node.add_child(sp)
-	add_child(node)
-
-
+## 营地/建筑烘焙件消费（v6 TS）：底边中心锚点 + 矩形碰撞体
 func _add_structure(stamp: String, pos: Vector2, body_size: Vector2, thin := false) -> void:
 	var node := Node2D.new()
 	node.position = pos
 	var sp := Sprite2D.new()
-	sp.texture = load("res://assets/na/structures/%s.png" % stamp)
+	sp.texture = load("res://assets/ts/structures_baked/%s.png" % stamp)
 	# 锚点落底边中心（y-sort 按脚点排序，建筑可被走到"后面"）
 	sp.offset = Vector2(0, -sp.texture.get_height() / 2.0)
 	node.add_child(sp)
@@ -653,21 +633,21 @@ func _process_dungeon_zone(player: Node) -> void:
 class FxLayer extends Node2D:
 	## kind → 帧资源（slash 系仍由 player 本地播——已接线的旧路径不动）
 	const TABLE := {
-		"flame": preload("res://assets/creatures/frames/fx_flame/fx_flame_frames.tres"),
-		"magic": preload("res://assets/creatures/frames/fx_magic/fx_magic_frames.tres"),
-		"charge": preload("res://assets/creatures/frames/fx_charge/fx_charge_frames.tres"),
-		"frost": preload("res://assets/creatures/frames/fx_frost/fx_frost_frames.tres"),
-		"boom": preload("res://assets/creatures/frames/fx_boom/fx_boom_frames.tres"),
-		"smoke": preload("res://assets/creatures/frames/fx_smoke/fx_smoke_frames.tres"),
-		"darksmoke": preload("res://assets/creatures/frames/fx_darksmoke/fx_darksmoke_frames.tres"),
-		"orb": preload("res://assets/creatures/frames/fx_orb/fx_orb_frames.tres"),
-		"beam": preload("res://assets/creatures/frames/fx_beam/fx_beam_frames.tres"),
-		"pillar": preload("res://assets/creatures/frames/fx_pillar/fx_pillar_frames.tres"),
-		"flash": preload("res://assets/creatures/frames/fx_flash/fx_flash_frames.tres"),
-		"flash_gold": preload("res://assets/creatures/frames/fx_flash_gold/fx_flash_gold_frames.tres"),
-		"flash_blue": preload("res://assets/creatures/frames/fx_flash_blue/fx_flash_blue_frames.tres"),
-		"flash_yellow": preload("res://assets/creatures/frames/fx_flash_yellow/fx_flash_yellow_frames.tres"),
-		"beams": preload("res://assets/creatures/frames/fx_beams/fx_beams_frames.tres"),
+		"flame": preload("res://assets/creatures/frames/fx_flame/fx_flame_frames.res"),
+		"magic": preload("res://assets/creatures/frames/fx_magic/fx_magic_frames.res"),
+		"charge": preload("res://assets/creatures/frames/fx_charge/fx_charge_frames.res"),
+		"frost": preload("res://assets/creatures/frames/fx_frost/fx_frost_frames.res"),
+		"boom": preload("res://assets/creatures/frames/fx_boom/fx_boom_frames.res"),
+		"smoke": preload("res://assets/creatures/frames/fx_smoke/fx_smoke_frames.res"),
+		"darksmoke": preload("res://assets/creatures/frames/fx_darksmoke/fx_darksmoke_frames.res"),
+		"orb": preload("res://assets/creatures/frames/fx_orb/fx_orb_frames.res"),
+		"beam": preload("res://assets/creatures/frames/fx_beam/fx_beam_frames.res"),
+		"pillar": preload("res://assets/creatures/frames/fx_pillar/fx_pillar_frames.res"),
+		"flash": preload("res://assets/creatures/frames/fx_flash/fx_flash_frames.res"),
+		"flash_gold": preload("res://assets/creatures/frames/fx_flash_gold/fx_flash_gold_frames.res"),
+		"flash_blue": preload("res://assets/creatures/frames/fx_flash_blue/fx_flash_blue_frames.res"),
+		"flash_yellow": preload("res://assets/creatures/frames/fx_flash_yellow/fx_flash_yellow_frames.res"),
+		"beams": preload("res://assets/creatures/frames/fx_beams/fx_beams_frames.res"),
 	}
 
 	func _ready() -> void:
@@ -710,8 +690,8 @@ class FxLayer extends Node2D:
 ## （collect 任务奖励）；开箱 = 金币 + 双件物品（hash 确定性抽取）。
 ## 加入 npcs 组复用玩家的最近交互路由（攻击键开箱）
 class DungeonChest extends Node2D:
-	## 大宝箱（NA items 图标 16px ×3）；箱顶悬浮所需钥匙图标提示
-	const CHEST_TEX := preload("res://assets/na/items/big-treasure-chest.png")
+	## 大宝箱（v6 TS：bake_structures 合成件 44×32 ×1.2）；箱顶悬浮所需钥匙图标提示
+	const CHEST_TEX := preload("res://assets/ts/structures_baked/chest.png")
 	var boss_name := ""
 	var key_id := ""
 	var locked := true
@@ -726,7 +706,7 @@ class DungeonChest extends Node2D:
 		add_to_group("chests")
 		_sprite = Sprite2D.new()
 		_sprite.texture = CHEST_TEX
-		_sprite.scale = Vector2(3.0, 3.0)
+		_sprite.scale = Vector2(1.2, 1.2)
 		add_child(_sprite)
 		if key_id != "":
 			_key_hint = Sprite2D.new()
@@ -902,26 +882,24 @@ func _update_landmark_markers() -> void:
 			_npc_nodes.erase(id)
 
 
-## 地标动画装饰（玩法 v7 P2）：随标记流式同进出——精灵泉挂瀑布三段纵排
-## （NA Animated waterfall 条带，水从泉眼流出）、古树挂草叶摇摆 ×2；
+## 地标动画装饰（美术 v6 TS）：随标记流式同进出——精灵泉挂水面浪花动画
+## （TS Water Foam 条带）、古树两侧静态草丛（world_deco 同源件）；
 ## 其余地标保持原有圆环/精灵不抢戏
 func _attach_landmark_deco(marker: Node2D, kind: String) -> void:
 	# 偏移是相对地标的局部坐标（装饰作为 marker 子节点随其流式同进出）
 	if kind == "精灵泉":
-		var wf := [
-			["deco_waterfall_start", Vector2(-44, -30)],
-			["deco_waterfall_middle", Vector2(-44, 2)],
-			["deco_waterfall_end", Vector2(-44, 34)],
-		]
-		for pair in wf:
-			marker.add_child(_make_animated_prop(
-				"res://assets/creatures/frames/%s/%s_frames.tres" % [pair[0], pair[0]],
-				pair[1], 2.0))
+		marker.add_child(_make_animated_prop(
+			"res://assets/creatures/frames/deco_foam/deco_foam_frames.res",
+			Vector2(0, 12), 1.4))
 	elif kind == "古树":
 		for offset in [Vector2(-40, 6), Vector2(40, -4)]:
-			marker.add_child(_make_animated_prop(
-				"res://assets/creatures/frames/deco_plant/deco_plant_frames.tres",
-				offset, 2.0))
+			var node := Node2D.new()
+			node.position = offset
+			var sp := Sprite2D.new()
+			sp.texture = load("res://assets/deco/grass.png")
+			sp.scale = Vector2(1.6, 1.6)
+			node.add_child(sp)
+			marker.add_child(node)
 
 
 ## 动画挂件（地标装饰版：相对地标的局部坐标，随标记同生命周期）
@@ -989,16 +967,22 @@ class LandmarkNPC extends Node2D:
 	## 地标类型 → NA 角色帧（characters 表 8=猎人 4=老者 7=巫女 6=行商；
 	## P1 扩容 13=瞭望者 9=草药师，视觉盘点定）
 	const FRAMES := {
-		"石环": preload("res://assets/creatures/frames/npc_hunter/npc_hunter_frames.tres"),
-		"荒废遗迹": preload("res://assets/creatures/frames/npc_scholar/npc_scholar_frames.tres"),
-		"精灵泉": preload("res://assets/creatures/frames/npc_keeper/npc_keeper_frames.tres"),
-		"merchant": preload("res://assets/creatures/frames/npc_merchant/npc_merchant_frames.tres"),
-		"了望石塔": preload("res://assets/creatures/frames/npc_watchman/npc_watchman_frames.tres"),
-		"古树": preload("res://assets/creatures/frames/npc_herbalist/npc_herbalist_frames.tres"),
+		"石环": preload("res://assets/creatures/frames/npc_hunter/npc_hunter_frames.res"),
+		"荒废遗迹": preload("res://assets/creatures/frames/npc_scholar/npc_scholar_frames.res"),
+		"精灵泉": preload("res://assets/creatures/frames/npc_keeper/npc_keeper_frames.res"),
+		"merchant": preload("res://assets/creatures/frames/npc_merchant/npc_merchant_frames.res"),
+		"了望石塔": preload("res://assets/creatures/frames/npc_watchman/npc_watchman_frames.res"),
+		"古树": preload("res://assets/creatures/frames/npc_herbalist/npc_herbalist_frames.res"),
 	}
-	## 立绘编号（faceset 同源表号；0 = 无立绘兜底）
-	const FACESETS := {"石环": 101, "荒废遗迹": 102, "精灵泉": 103, "merchant": 104,
-		"了望石塔": 13, "古树": 9}
+	## 立绘（v6 TS：Avatars 单张裁切到 assets/ts/facesets/；空串 = 无立绘兜底）
+	const FACESETS := {
+		"石环": "res://assets/ts/facesets/npc_hunter.png",
+		"荒废遗迹": "res://assets/ts/facesets/npc_scholar.png",
+		"精灵泉": "res://assets/ts/facesets/npc_keeper.png",
+		"merchant": "res://assets/ts/facesets/npc_merchant.png",
+		"了望石塔": "res://assets/ts/facesets/npc_watchman.png",
+		"古树": "res://assets/ts/facesets/npc_herbalist.png",
+	}
 	var landmark_id := ""
 	var giver := ""
 	var quest_kind := ""
@@ -1018,7 +1002,7 @@ class LandmarkNPC extends Node2D:
 		var frames: SpriteFrames = FRAMES.get(kind)
 		if frames != null:
 			_visual.sprite_frames = frames
-		_visual.scale = Vector2(4.8, 4.8)
+		_visual.scale = Vector2(2.0, 2.0)
 		_visual.position.y = -4.0
 		_visual.play(&"idle")
 		add_child(_visual)
@@ -1079,7 +1063,7 @@ class LandmarkNPC extends Node2D:
 		if interact_fn.is_valid():
 			var offered: Dictionary = interact_fn.call(landmark_id, quest_kind, giver)
 			offered["giver"] = giver
-			offered["faceset"] = FACESETS.get(kind, 0)
+			offered["faceset"] = FACESETS.get(kind, "")
 			# 对话现场位置：HUD 据此在玩家走开时收气泡（不改道攻击/冲刺键）
 			offered["origin"] = global_position
 			EventBus.npc_dialogue.emit(offered)

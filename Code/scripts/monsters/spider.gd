@@ -73,6 +73,9 @@ func _is_backed_into_wall() -> bool:
 
 
 func _spit(player: Node2D) -> void:
+	# 吐息动作上屏（Archer_Shoot 8 帧@10fps）：本原型从不进 S_ATTACK，
+	# 旧状态映射下这条攻击帧永远没有播放路径（2026-09-28 动作补齐）
+	_play_action_anim("attack", 0.75)
 	_squash(Vector2(0.94, 1.06), 0.12)  # 吐息轻弹
 	var dir := (player.global_position - global_position).normalized()
 	var projectile: Projectile = PROJECTILE.instantiate()

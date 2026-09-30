@@ -1,12 +1,13 @@
 [gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_png"]
-[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/penguin/penguin_frames.tres" id="2_frames"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/penguin/penguin_frames.res" id="2_frames"]
 
 [resource]
 script = ExtResource("1_png")
 species_name = "企鹅"
-visual_scale = 0.83
+visual_scale = 1.0
+body_scale = 0.96
 frames_override = ExtResource("2_frames")
 ai_archetype = "charger"
 habitats = Array[String](["snow"])

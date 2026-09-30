@@ -65,6 +65,8 @@ func _attack_tick(_delta: float, player: Node2D) -> void:
 	velocity = Vector2.ZERO
 	state = S_WINDUP
 	_state_timer = inst.species.guard_windup_time
+	# 蓄力=抡起：攻击条带 0.4s 播完停在蓄力帧，蓄满砸下与收招 squash/boom 同拍
+	_play_action_anim("attack", inst.species.guard_windup_time)
 	set_tint(Color(1.0, 0.7, 0.3))  # 蓄力预警
 	_squash(Vector2(1.14, 0.86), 0.7)  # 蓄力下沉（与 0.8s 前摇同拍）
 	if _ring != null:

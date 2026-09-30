@@ -12,22 +12,30 @@ extends SceneTree
 const W := 1100
 const H := 700
 const OUT_DIR := "res://assets/terrain/"
-const TILESET := "res://assets/creatures/sheets/na_tileset.png"
 const TS := 16
+## 图集源（美术 v6 TS，与 terrain_painter 同表）：源瓦 64px ÷4 → 16px 网格
+const SOURCES := {
+	"main": "res://assets/ts/Terrain/Tileset/Tilemap_color1.png",
+	"cold": "res://assets/ts/Terrain/Tileset/Tilemap_color5.png",
+	"water": "res://assets/ts/Terrain/Tileset/Water Background color.png",
+}
+const ATLAS_COLS := 12
 
-## 瓦片坐标（列,行）——程序化像素统计验证（2026-09-03）：
-##   草填充绿色度=1.00 / 泥填充橙棕度=1.00 / 水瓦蓝色度≥0.96 / 冰瓦白色度≥0.86
-const GRASS_FILL := [Vector2i(22, 31), Vector2i(22, 32), Vector2i(22, 33), Vector2i(23, 31),
-	Vector2i(23, 32), Vector2i(23, 33), Vector2i(24, 33), Vector2i(24, 34),
-	Vector2i(24, 35), Vector2i(25, 31), Vector2i(25, 32), Vector2i(25, 33)]
-const GRASS_DETAIL := [Vector2i(23, 37), Vector2i(24, 37), Vector2i(25, 37),
-	Vector2i(25, 38), Vector2i(27, 37), Vector2i(27, 38)]
-const DIRT_FILL := [Vector2i(9, 32), Vector2i(9, 33), Vector2i(9, 37), Vector2i(9, 38),
-	Vector2i(10, 33), Vector2i(10, 34), Vector2i(10, 35), Vector2i(11, 31),
-	Vector2i(11, 32), Vector2i(11, 33)]
-const WATER_FILL := [Vector2i(18, 18), Vector2i(19, 19), Vector2i(18, 19), Vector2i(19, 18)]
-const ICE_FILL := [Vector2i(14, 18), Vector2i(16, 18)]
-const ICE_DETAIL := [Vector2i(13, 18), Vector2i(15, 18)]
+## 瓦片格序 [源,(列,行)]（像素统计定档，2026-09-20；布局=六组按序拼接进 12 列图集）
+const GRASS_FILL := [["main", Vector2i(1, 0)], ["main", Vector2i(6, 0)],
+	["main", Vector2i(1, 1)], ["main", Vector2i(6, 1)],
+	["main", Vector2i(1, 2)], ["main", Vector2i(6, 2)]]
+const GRASS_DETAIL := [["main", Vector2i(3, 0)], ["main", Vector2i(8, 0)],
+	["main", Vector2i(3, 1)], ["main", Vector2i(8, 1)],
+	["main", Vector2i(3, 3)], ["main", Vector2i(8, 3)]]
+const DIRT_FILL := [["main", Vector2i(5, 4)], ["main", Vector2i(6, 4)],
+	["main", Vector2i(7, 4)], ["main", Vector2i(8, 4)],
+	["main", Vector2i(5, 5)], ["main", Vector2i(7, 5)], ["main", Vector2i(8, 5)]]
+const WATER_FILL := [["water", Vector2i(0, 0)]]
+const ICE_FILL := [["cold", Vector2i(1, 0)], ["cold", Vector2i(6, 0)],
+	["cold", Vector2i(1, 1)], ["cold", Vector2i(6, 1)]]
+const ICE_DETAIL := [["cold", Vector2i(3, 0)], ["cold", Vector2i(8, 0)],
+	["cold", Vector2i(3, 1)]]
 
 ## 群系规则：base/patch=材质（grass/dirt/water/ice），thr=斑块噪声阈值；
 ## water/water_thr=独立水池层；bake=色桶 HSV 重映射（键：grass/water/ice/dirt）
@@ -75,10 +83,14 @@ const EDGE := 44.0
 
 
 func _init() -> void:
-	var ts := Image.load_from_file(ProjectSettings.globalize_path(TILESET))
+	var sources := {}
+	for key: String in SOURCES:
+		var im := Image.load_from_file(ProjectSettings.globalize_path(SOURCES[key]))
+		im.resize(im.get_width() / 4, im.get_height() / 4, Image.INTERPOLATE_NEAREST)
+		sources[key] = im
 	for key: String in BIOMES:
 		var cfg: Dictionary = BIOMES[key]
-		var img := _generate(cfg, ts)
+		var img := _generate(cfg, sources)
 		var path: String = OUT_DIR + cfg["names"][0]
 		var err := img.save_png(path)
 		print("生成 %s（%dx%d）%s" % [path, W, H, "OK" if err == OK else "失败:%d" % err])
@@ -136,9 +148,9 @@ func _bake_tileset(ts: Image, rules: Dictionary) -> Image:
 			var bucket := ""
 			if c.s < 0.14:
 				bucket = "ice" if c.v > 0.78 else ""
-			elif 0.52 <= c.h and c.h < 0.78:
+			elif 0.48 <= c.h and c.h < 0.72:
 				bucket = "water"
-			elif 0.16 <= c.h and c.h < 0.52:
+			elif 0.16 <= c.h and c.h < 0.40:
 				bucket = "grass"
 			else:
 				bucket = "dirt"
@@ -153,8 +165,8 @@ func _bake_tileset(ts: Image, rules: Dictionary) -> Image:
 	return out
 
 
-func _generate(cfg: Dictionary, ts: Image) -> Image:
-	var baked := _bake_tileset(ts, cfg.get("bake", {}))
+func _generate(cfg: Dictionary, sources: Dictionary) -> Image:
+	var baked := _bake_tileset(_build_atlas(sources), cfg.get("bake", {}))
 	var seedv: int = cfg["seedv"]
 	var cols := (W + TS - 1) / TS
 	var rows := (H + TS - 1) / TS
@@ -174,9 +186,10 @@ func _generate(cfg: Dictionary, ts: Image) -> Image:
 	## 铺瓦（含边缘溢出的 1 瓦画布，最终逐像素拷贝时裁掉）
 	var canvas := Image.create(cols * TS, rows * TS, false, Image.FORMAT_RGBA8)
 	var fills := {
-		"grass": GRASS_FILL, "dirt": DIRT_FILL, "water": WATER_FILL, "ice": ICE_FILL,
+		"grass": [0, 1, 2, 3, 4, 5], "dirt": [12, 13, 14, 15, 16, 17, 18],
+		"water": [19], "ice": [20, 21, 22, 23],
 	}
-	var details := {"grass": GRASS_DETAIL, "ice": ICE_DETAIL}
+	var details := {"grass": [6, 7, 8, 9, 10, 11], "ice": [24, 25, 26]}
 	for ty in rows:
 		for tx in cols:
 			var m := mat[ty * cols + tx]
@@ -215,7 +228,7 @@ func _generate(cfg: Dictionary, ts: Image) -> Image:
 
 ## 按材质选瓦：哈希挑填充变体；低概率换细节瓦（花簇/裂纹）打破重复
 func _pick_tile(kind: String, tx: int, ty: int, seedv: int,
-		fills: Dictionary, details: Dictionary) -> Vector2i:
+		fills: Dictionary, details: Dictionary) -> int:
 	var v := _hash2(tx, ty, seedv + 3)
 	if v > 0.93 and details.has(kind):
 		var det: Array = details[kind]
@@ -224,8 +237,28 @@ func _pick_tile(kind: String, tx: int, ty: int, seedv: int,
 	return list[int(_hash2(tx, ty, seedv + 5) * list.size())]
 
 
-func _tile_rect(cell: Vector2i) -> Rect2i:
-	return Rect2i(cell.x * TS, cell.y * TS, TS, TS)
+func _tile_rect(cell: int) -> Rect2i:
+	return Rect2i((cell % ATLAS_COLS) * TS, (cell / ATLAS_COLS) * TS, TS, TS)
+
+
+## 六组瓦表按序拼进 12 列迷你图集（索引=填充表的坐标系）
+func _build_atlas(sources: Dictionary) -> Image:
+	var cells: Array = []
+	cells.append_array(GRASS_FILL)
+	cells.append_array(GRASS_DETAIL)
+	cells.append_array(DIRT_FILL)
+	cells.append_array(WATER_FILL)
+	cells.append_array(ICE_FILL)
+	cells.append_array(ICE_DETAIL)
+	var rows := (cells.size() + ATLAS_COLS - 1) / ATLAS_COLS
+	var atlas := Image.create(ATLAS_COLS * TS, rows * TS, false, Image.FORMAT_RGBA8)
+	for idx in cells.size():
+		var spec: Array = cells[idx]
+		var img: Image = sources[spec[0]]
+		var cell: Vector2i = spec[1]
+		atlas.blit_rect(img, Rect2i(cell.x * TS, cell.y * TS, TS, TS),
+			Vector2i((idx % ATLAS_COLS) * TS, (idx / ATLAS_COLS) * TS))
+	return atlas
 
 
 ## 水瓦内侧 2px 岸线（该像素贴着非水瓦才描）

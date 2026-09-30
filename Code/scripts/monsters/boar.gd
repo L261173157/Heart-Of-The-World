@@ -61,6 +61,9 @@ func _chase_tick(delta: float, player: Node2D) -> void:
 		velocity = Vector2.ZERO
 		set_tint(Color(1.0, 0.85, 0.6))  # 前摇预警色
 		_squash(Vector2(1.12, 0.88), 0.45)  # 低头蹲伏预备
+		# 前摇=挥击预备帧：攻击条带只在冷却恢复窗播放、真实出招相位反而
+		# 站桩的错位自此修正（压制窗=前摇全长，蓄满帧起冲）
+		_play_action_anim("attack", inst.species.charge_tell_time)
 		return
 	super(delta, player)
 

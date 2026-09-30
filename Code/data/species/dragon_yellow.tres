@@ -1,12 +1,13 @@
 [gd_resource type="Resource" script_class="SpeciesData" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ecology/species_data.gd" id="1_drg"]
-[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/dragon/dragon_frames.tres" id="2_frames"]
+[ext_resource type="SpriteFrames" path="res://assets/creatures/frames/dragon/dragon_frames.res" id="2_frames"]
 
 [resource]
 script = ExtResource("1_drg")
 species_name = "火龙"
-visual_scale = 1.18
+visual_scale = 0.5
+body_scale = 1.04
 tint = Color(0.95, 0.7, 0.25, 1)
 frames_override = ExtResource("2_frames")
 ai_archetype = "ranged"

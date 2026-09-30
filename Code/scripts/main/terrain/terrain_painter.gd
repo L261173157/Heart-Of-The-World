@@ -10,7 +10,13 @@
 class_name TerrainPainter
 extends RefCounted
 
-const TILESET_PATH := "res://assets/creatures/sheets/na_tileset.png"
+## 图集源（美术 v6 TS）：Tilemap 同版式 5 套配色取 3 套 + 水底纹。
+## 源瓦 64px → ÷4 缩到 16px 世界网格（保持全部网格数学不变）。
+const SOURCES := {
+	"main": "res://assets/ts/Terrain/Tileset/Tilemap_color1.png",
+	"cold": "res://assets/ts/Terrain/Tileset/Tilemap_color5.png",
+	"water": "res://assets/ts/Terrain/Tileset/Water Background color.png",
+}
 const TS := 16
 ## 群系过渡带宽度（世界像素）：双斑块距离差在此宽度内线性混瓦
 const BLEND_PX := 72.0
@@ -18,19 +24,23 @@ const BLEND_PX := 72.0
 const OVERLAY_ALPHAS := [0.38, 0.68]
 const ATLAS_COLS := 12
 
-## 瓦片坐标（列,行）——程序化像素统计验证（2026-09-03，沿用 generate_terrain）：
-## 草填充绿色度=1.00 / 泥填充橙棕度=1.00 / 水瓦蓝色度≥0.96 / 冰瓦白色度≥0.86
-const GRASS_FILL := [Vector2i(22, 31), Vector2i(22, 32), Vector2i(22, 33), Vector2i(23, 31),
-	Vector2i(23, 32), Vector2i(23, 33), Vector2i(24, 33), Vector2i(24, 34),
-	Vector2i(24, 35), Vector2i(25, 31), Vector2i(25, 32), Vector2i(25, 33)]
-const GRASS_DETAIL := [Vector2i(23, 37), Vector2i(24, 37), Vector2i(25, 37),
-	Vector2i(25, 38), Vector2i(27, 37), Vector2i(27, 38)]
-const DIRT_FILL := [Vector2i(9, 32), Vector2i(9, 33), Vector2i(9, 37), Vector2i(9, 38),
-	Vector2i(10, 33), Vector2i(10, 34), Vector2i(10, 35), Vector2i(11, 31),
-	Vector2i(11, 32), Vector2i(11, 33)]
-const WATER_FILL := [Vector2i(18, 18), Vector2i(19, 19), Vector2i(18, 19), Vector2i(19, 18)]
-const ICE_FILL := [Vector2i(14, 18), Vector2i(16, 18)]
-const ICE_DETAIL := [Vector2i(13, 18), Vector2i(15, 18)]
+## 瓦片坐标 [源, (列,行)]——像素统计定档（2026-09-20，G/D/B/V 四指标）：
+## 纯草填充=方差<250 的 c2/c7 列；装饰草=c4/c9（暗点+亮点+高方差）；
+## 泥地=r5c6~r6c9 低绿高暗行；c5 列与 r5c2/3/5 为黑填充勿用；雪原= color5 同版式
+const GRASS_FILL := [["main", Vector2i(1, 0)], ["main", Vector2i(6, 0)],
+	["main", Vector2i(1, 1)], ["main", Vector2i(6, 1)],
+	["main", Vector2i(1, 2)], ["main", Vector2i(6, 2)]]
+const GRASS_DETAIL := [["main", Vector2i(3, 0)], ["main", Vector2i(8, 0)],
+	["main", Vector2i(3, 1)], ["main", Vector2i(8, 1)],
+	["main", Vector2i(3, 3)], ["main", Vector2i(8, 3)]]
+const DIRT_FILL := [["main", Vector2i(5, 4)], ["main", Vector2i(6, 4)],
+	["main", Vector2i(7, 4)], ["main", Vector2i(8, 4)],
+	["main", Vector2i(5, 5)], ["main", Vector2i(7, 5)], ["main", Vector2i(8, 5)]]
+const WATER_FILL := [["water", Vector2i(0, 0)]]
+const ICE_FILL := [["cold", Vector2i(1, 0)], ["cold", Vector2i(6, 0)],
+	["cold", Vector2i(1, 1)], ["cold", Vector2i(6, 1)]]
+const ICE_DETAIL := [["cold", Vector2i(3, 0)], ["cold", Vector2i(8, 0)],
+	["cold", Vector2i(3, 1)]]
 
 ## 素材种类 id（材质图 0=base 1=patch 2=water 按规则映射）
 const KIND_GRASS := 0
@@ -39,15 +49,15 @@ const KIND_WATER := 2
 const KIND_ICE := 3
 ## 每种类在迷你图集中的起始格与数量（图集布局 = 上面六组按序拼接）
 const KIND_RANGES := {
-	KIND_GRASS: [0, 12],
-	KIND_DIRT: [18, 10],
-	KIND_WATER: [28, 4],
-	KIND_ICE: [32, 2],
+	KIND_GRASS: [0, 6],
+	KIND_DIRT: [12, 7],
+	KIND_WATER: [19, 1],
+	KIND_ICE: [20, 4],
 }
 ## 低概率换细节瓦（花簇/裂纹）打破重复：种类 → 细节格区间 [start, count]
 const KIND_DETAILS := {
-	KIND_GRASS: [12, 6],
-	KIND_ICE: [34, 2],
+	KIND_GRASS: [6, 6],
+	KIND_ICE: [24, 3],
 }
 
 ## 每地形绘制规则（与 generate_terrain.BIOMES 同源，键改地形名）：
@@ -75,7 +85,7 @@ const RULES := {
 			"grass": {"sat": 0.30, "val": 0.50}}},
 }
 
-static var _tileset: Image
+static var _sources := {}
 ## terrain → 烘焙迷你图集（alpha=1，基础瓦）
 static var _atlases := {}
 ## terrain → Array[Image]（OVERLAY_ALPHAS 对应的叠绘变体）
@@ -86,12 +96,15 @@ static var _strip_v: Image
 static var _ready := false
 
 
-## 主线程初始化（load 图集 + 烘焙）。幂等。
+## 主线程初始化（load 图集 + 烘焙）。幂等。源 64px 瓦 ÷4 缩到 16px 世界格。
 static func ensure_atlases() -> void:
 	if _ready:
 		return
 	_ready = true
-	_tileset = (load(TILESET_PATH) as Texture2D).get_image()
+	for key: String in SOURCES:
+		var img := (load(SOURCES[key]) as Texture2D).get_image()
+		img.resize(img.get_width() / 4, img.get_height() / 4, Image.INTERPOLATE_NEAREST)
+		_sources[key] = img
 	var cells := _atlas_cells()
 	var rows := (cells.size() + ATLAS_COLS - 1) / ATLAS_COLS
 	for terrain: String in RULES:
@@ -245,12 +258,15 @@ static func _atlas_cells() -> Array:
 	return cells
 
 
-## 从原 tileset 抽取用到的瓦组成迷你图集，再按色桶规则 HSV 烘焙（群系氛围）
+## 从各源图集抽取用到的瓦组成迷你图集，再按色桶规则 HSV 烘焙（群系氛围）。
+## 色桶区间按 TS 素材实测色相标定（草 0.21-0.25 / 泥 0.44 / 水 0.50 青）
 static func _build_atlas(cells: Array, rows: int, bake: Dictionary) -> Image:
 	var atlas := Image.create(ATLAS_COLS * TS, rows * TS, false, Image.FORMAT_RGBA8)
 	for idx in cells.size():
-		var src: Vector2i = cells[idx]
-		atlas.blit_rect(_tileset, Rect2i(src.x * TS, src.y * TS, TS, TS),
+		var spec: Array = cells[idx]
+		var img: Image = _sources[spec[0]]
+		var cell: Vector2i = spec[1]
+		atlas.blit_rect(img, Rect2i(cell.x * TS, cell.y * TS, TS, TS),
 			Vector2i((idx % ATLAS_COLS) * TS, (idx / ATLAS_COLS) * TS))
 	if bake.is_empty():
 		return atlas
@@ -262,9 +278,9 @@ static func _build_atlas(cells: Array, rows: int, bake: Dictionary) -> Image:
 			var bucket := ""
 			if c.s < 0.14:
 				bucket = "ice" if c.v > 0.78 else ""
-			elif 0.52 <= c.h and c.h < 0.78:
+			elif 0.48 <= c.h and c.h < 0.72:
 				bucket = "water"
-			elif 0.16 <= c.h and c.h < 0.52:
+			elif 0.16 <= c.h and c.h < 0.40:
 				bucket = "grass"
 			else:
 				bucket = "dirt"

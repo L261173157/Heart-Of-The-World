@@ -95,6 +95,12 @@ func _ready() -> void:
 	# 暂停期间存档计时继续走：暂停菜单里改设置（音量/震屏）后 2s 内即落盘，
 	# 不依赖"恢复游戏后"才补写——玩家改完设置直接杀进程是真实路径
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	# 测试密闭通道（2026-09-20）：行为类测试（combat/pacing）读真实档会让世界种子
+	# 随玩家进度漂移——机器人路线/NPC 距离变化引发种子敏感偶发。launch 时设
+	# HOTW_TEST_SAVE=res://tests/fixtures/test_save.json 即与真实档完全隔离
+	var test_save := OS.get_environment("HOTW_TEST_SAVE")
+	if not test_save.is_empty():
+		SAVE_PATH = test_save
 	# 强制横屏重申：引擎方向掩码在场景锚定时若单例未就绪会短暂放行全方向，
 	# 挂起恢复/设备旋转后可能跟随设备竖屏——竖屏下 expand 拉伸会把可视世界
 	# 纵向撑大约 4 倍，人物缩到屏高 ~1.5%（2026-09-09 模拟器实证）。

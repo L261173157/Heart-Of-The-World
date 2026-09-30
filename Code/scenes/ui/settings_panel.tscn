@@ -118,7 +118,7 @@ unique_name_in_owner = true
 [node name="Label" type="Label" parent="Margin/VB/SkinRow"]
 custom_minimum_size = Vector2(120, 0)
 theme_override_font_sizes/font_size = 18
-text = "忍者外观"
+text = "骑士外观"
 
 [node name="SkinBtn" type="Button" parent="Margin/VB/SkinRow"]
 unique_name_in_owner = true
