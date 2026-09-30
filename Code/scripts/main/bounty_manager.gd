@@ -6,7 +6,7 @@
 class_name BountyManager
 extends Node
 
-## game_world 的表现场景登记表（幽灵物种过滤用）
+## game_world 的表现场景登记表（白骨兵物种过滤用）
 const _GameWorld := preload("res://scripts/main/game_world.gd")
 
 const NEW_BOUNTY_DELAY := 8.0
@@ -61,7 +61,7 @@ func _roll_bounty() -> void:
 		_roll_later(2.0)
 		return
 	# 排除唯一 Boss：全灭重生制下"猎杀 4~7 只"实际无法完成，只能干等换单；
-	# 排除无表现场景的幽灵物种：模拟层活着但玩家看不见打不着，悬赏必然烂单；
+	# 排除无表现场景的白骨兵物种：模拟层活着但玩家看不见打不着，悬赏必然烂单；
 	# 门槛 ≥3 只：濒危物种的"猎杀 N 只"注定烂单，悬赏指向繁衍健康的种群
 	var alive_counts := {}
 	for inst: MonsterInstance in WorldSim.sim.instances.values():

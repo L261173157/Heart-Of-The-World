@@ -5,7 +5,7 @@
 
 [resource]
 script = ExtResource("1_png")
-species_name = "企鹅"
+species_name = "雪原窃贼"
 visual_scale = 1.0
 body_scale = 0.96
 frames_override = ExtResource("2_frames")
@@ -28,5 +28,5 @@ attack_cooldown = 2.0
 flee_hp_ratio = 0.0
 knockback_resist = 0.3
 poise = 0.3
-prey = Array[String](["冰史莱姆"])
+prey = Array[String](["冰霜小魔"])
 element = "ice"

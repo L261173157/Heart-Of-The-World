@@ -5,12 +5,12 @@
 class_name SpeciesData
 extends Resource
 
-@export var species_name: String = "妖鬼"
+@export var species_name: String = "火把哥布林"
 
 ## 表现层用：占位视觉/小地图统一取色
 @export var tint: Color = Color(0.35, 0.7, 0.25)
 
-## 表现层用：帧动画覆盖（共用表现场景但形象不同的种族，如冰晶史莱姆→蓝色红史莱姆帧；
+## 表现层用：帧动画覆盖（共用表现场景但形象不同的种族，如冰晶史莱姆→蓝色赤炎小魔帧；
 ## 空 = 用场景默认 SpriteFrames）。纯表现数据，模拟层不读
 @export var frames_override: SpriteFrames
 ## 视觉缩放（美术 v6 原生直出）：凑「最终整数渲染缩放」用——场景基准 2.0 ×
@@ -20,6 +20,9 @@ extends Resource
 ## 占地/碰撞系数（2026-09-20 从 visual_scale 拆出）：驱动 body_k 碰撞体与
 ## 血条抬升。改美术密度/渲染缩放不碰它——手感真源，改动需平衡性依据
 @export var body_scale := 1.0
+## 远程弹体贴图名（Enemy Pack 弹体首帧烘焙件，bake_structures 产
+## structures_baked/<名>.png；空 = 默认箭矢。弹体素材须朝右，launch 旋转对齐）
+@export var projectile_tex: String = ""
 ## 被动生物（美术 v5 完整包动物）：永不主动攻击玩家，玩家靠近即逃；
 ## 是猎物基底与生态氛围（承伤带在 balance_test 豁免，击杀带照常）
 @export var ambient := false
@@ -76,7 +79,7 @@ extends Resource
 ## （kb + poise×(1-kb)，边际递减）；1 = 完全霸体（石魔像/窟魔王：任何攻击都推不动）
 @export var poise: float = 0.0
 ## 进攻倍率（v2 数值框架）：力量同时驱动生命与攻击，攻防手感要分家时用它——
-## 脆皮炮台 <1（萌芽怪/孢子类），重击威胁 >1（雪怪/守卫类）；
+## 脆皮炮台 <1（地精矿工/孢子类），重击威胁 >1（雪怪/守卫类）；
 ## 数值设计目标带反推（CombatBandMath）消费同一字段
 @export var offense_scale: float = 1.0
 
@@ -118,7 +121,7 @@ extends Resource
 ## Boss 体型放大系数（初始入场与重生共用同一数据源，避免两处魔法数漂移）
 @export var boss_size_scale: float = 2.2
 
-## --- 分裂繁殖（红史莱姆型）：被玩家击杀时裂成子代，"越杀越多" ---
+## --- 分裂繁殖（赤炎小魔型）：被玩家击杀时裂成子代，"越杀越多" ---
 ## 仅被击杀触发（自然老死不分裂）；子代到 max_generation 代后失去分裂能力
 @export var splits_on_death: bool = false
 @export var split_count: int = 2

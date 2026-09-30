@@ -5,7 +5,7 @@
 
 [resource]
 script = ExtResource("1_spr")
-species_name = "萌芽怪"
+species_name = "地精矿工"
 visual_scale = 1.0
 body_scale = 0.99
 frames_override = ExtResource("2_frames")

@@ -16,24 +16,25 @@ const MIN_FRAME_DIM := 3
 ## 帧内容最少不透明像素数（防裁到条带空白段/全透明帧）
 const MIN_OPAQUE_PIXELS := 8
 
-## 逐条目期望尺寸白名单（真源=切帧器打印；2026-09-28 动作补齐后同步：
-## 裸兵种换工具版/加 Interact 攻击帧扩了 9 目录画布）：
+## 逐条目期望尺寸白名单（真源=切帧器打印；2026-09-30 Enemy Pack 换装后同步：
+## 29 物种帧源全换 EP 条带 + 3 巢穴动画新增）：
 ## p 误检（÷p 步长错）/ k 回归 / 横带事故/ 锚定回退四类都会在这里现形——
 ## 切帧表或素材改动时按切帧器输出同步更新本表
 const EXPECTED_SIZES := {
 	"ninja": Vector2i(67, 60), "ninja_dark": Vector2i(67, 60), "ninja_white": Vector2i(67, 60),
 	"npc_hunter": Vector2i(40, 50), "npc_scholar": Vector2i(43, 39), "npc_keeper": Vector2i(42, 38),
 	"npc_merchant": Vector2i(37, 39), "npc_watchman": Vector2i(50, 51), "npc_herbalist": Vector2i(46, 39),
-	"oni": Vector2i(58, 39), "sprout": Vector2i(46, 45), "boar": Vector2i(67, 60),
-	"turtle": Vector2i(67, 60), "chicken": Vector2i(52, 55), "slime": Vector2i(23, 23),
-	"frog": Vector2i(46, 45), "mandrake": Vector2i(44, 50), "mushroom": Vector2i(44, 50),
-	"raccoon": Vector2i(52, 55), "treant": Vector2i(67, 60), "slime_teal": Vector2i(23, 23),
-	"penguin": Vector2i(57, 39), "ghost": Vector2i(46, 45), "bear": Vector2i(67, 60),
-	"bat": Vector2i(46, 45), "crab": Vector2i(44, 50), "octopus": Vector2i(44, 50),
-	"eye": Vector2i(44, 50), "parrot": Vector2i(32, 24), "beetle": Vector2i(67, 60),
-	"squirrel": Vector2i(46, 45), "cactus": Vector2i(147, 113), "cyclope": Vector2i(67, 60),
-	"boss_samurai": Vector2i(147, 113), "phoenix": Vector2i(44, 50), "gargoyle": Vector2i(63, 56),
-	"dragon": Vector2i(147, 113), "boss_flam": Vector2i(63, 56),
+	"oni": Vector2i(68, 47), "sprout": Vector2i(71, 42), "boar": Vector2i(78, 62),
+	"turtle": Vector2i(156, 50), "chicken": Vector2i(36, 38), "slime": Vector2i(38, 28),
+	"frog": Vector2i(91, 76), "mandrake": Vector2i(63, 41), "mushroom": Vector2i(70, 55),
+	"raccoon": Vector2i(52, 55), "treant": Vector2i(153, 119), "slime_teal": Vector2i(38, 28),
+	"penguin": Vector2i(86, 52), "ghost": Vector2i(77, 44), "bear": Vector2i(100, 99),
+	"bat": Vector2i(76, 65), "crab": Vector2i(80, 55), "octopus": Vector2i(46, 48),
+	"eye": Vector2i(128, 97), "parrot": Vector2i(32, 24), "beetle": Vector2i(101, 81),
+	"squirrel": Vector2i(53, 95), "cactus": Vector2i(78, 71), "cyclope": Vector2i(124, 76),
+	"boss_samurai": Vector2i(137, 104), "phoenix": Vector2i(53, 95), "gargoyle": Vector2i(137, 104),
+	"dragon": Vector2i(70, 55), "boss_flam": Vector2i(156, 56),
+	"nest_hut": Vector2i(128, 113), "nest_fish_hut": Vector2i(75, 83), "nest_cave": Vector2i(80, 77),
 	"fx_flame": Vector2i(11, 12), "fx_frost": Vector2i(11, 12), "fx_magic": Vector2i(16, 16),
 	"fx_charge": Vector2i(9, 11), "fx_burst": Vector2i(14, 18), "fx_boom": Vector2i(16, 16),
 	"fx_smoke": Vector2i(18, 17), "fx_darksmoke": Vector2i(13, 12), "fx_orb": Vector2i(10, 10),
@@ -43,26 +44,27 @@ const EXPECTED_SIZES := {
 	"fx_pillar": Vector2i(8, 16), "fx_beams": Vector2i(14, 13), "deco_foam": Vector2i(15, 16),
 }
 
-## 物种帧目录 → 必需动作集（2026-09-28 动作补齐口径）：战斗怪必有 attack
-## （Pawn 工具版 Interact / Warrior Attack / Archer Shoot / Lancer Right_Attack），
-## Warrior/Lancer 系另有 hurt（Guard/Right_Defence 演出）；羊/鸭被动系仅
-## idle/walk（永不参战，无动作素材）。与运行时请求面（_perform_attack 播
-## attack、take_damage 播 hurt）一致——该切没切/切了没接线在此现形
+## 物种帧目录 → 必需动作集（2026-09-30 Enemy Pack 口径）：EP 素材几乎无通用
+## hurt/death（仅 Gnoll/Lizard Hit、Troll Dead、Guard 系），战斗怪必有 attack
+## （Attack/Shoot/Throw 归一），有专属受击素材的才要求 hurt（Guard/Hit）；
+## Troll 系（treant）另要求 windup（冲锋前摇）与 die（死亡演出）；猪/羊/鸭
+## 被动系仅 idle/walk。与运行时请求面一致——该切没切/切了没接线在此现形
 const SPECIES_REQUIRED := {
 	"oni": ["idle", "walk", "attack"], "sprout": ["idle", "walk", "attack"],
-	"frog": ["idle", "walk", "attack"], "ghost": ["idle", "walk", "attack"],
+	"frog": ["idle", "walk", "attack", "hurt"], "ghost": ["idle", "walk", "attack", "hurt"],
 	"bat": ["idle", "walk", "attack"], "squirrel": ["idle", "walk", "attack"],
 	"slime": ["idle", "walk", "attack"], "slime_teal": ["idle", "walk", "attack"],
 	"penguin": ["idle", "walk", "attack"],
 	"mandrake": ["idle", "walk", "attack"], "mushroom": ["idle", "walk", "attack"],
 	"crab": ["idle", "walk", "attack"], "octopus": ["idle", "walk", "attack"],
 	"eye": ["idle", "walk", "attack"], "phoenix": ["idle", "walk", "attack"],
-	"boar": ["idle", "walk", "attack", "hurt"], "turtle": ["idle", "walk", "attack", "hurt"],
-	"bear": ["idle", "walk", "attack", "hurt"], "beetle": ["idle", "walk", "attack", "hurt"],
-	"cyclope": ["idle", "walk", "attack", "hurt"], "treant": ["idle", "walk", "attack", "hurt"],
-	"gargoyle": ["idle", "walk", "attack", "hurt"], "boss_flam": ["idle", "walk", "attack", "hurt"],
-	"boss_samurai": ["idle", "walk", "attack", "hurt"], "cactus": ["idle", "walk", "attack", "hurt"],
-	"dragon": ["idle", "walk", "attack", "hurt"],
+	"boar": ["idle", "walk", "attack"], "turtle": ["idle", "walk", "attack"],
+	"bear": ["idle", "walk", "attack"], "beetle": ["idle", "walk", "attack"],
+	"cyclope": ["idle", "walk", "attack"], "dragon": ["idle", "walk", "attack"],
+	"cactus": ["idle", "walk", "attack", "hurt"], "gargoyle": ["idle", "walk", "attack", "hurt"],
+	"boss_flam": ["idle", "walk", "attack", "hurt"],
+	"boss_samurai": ["idle", "walk", "attack", "hurt"],
+	"treant": ["idle", "walk", "attack", "windup", "hurt", "die"],
 	"chicken": ["idle", "walk"], "raccoon": ["idle", "walk"], "parrot": ["idle", "walk"],
 }
 
@@ -76,6 +78,8 @@ const FX_FRAME_DIRS := ["fx_slash", "fx_slash_gold", "fx_flame", "fx_magic",
 	"fx_charge", "fx_frost", "fx_burst", "fx_boom", "fx_smoke", "fx_darksmoke",
 	"fx_orb", "fx_beam", "fx_pillar", "fx_flash", "fx_flash_gold",
 	"fx_flash_blue", "fx_flash_yellow", "fx_beams"]
+## 巢穴动画（EP 小屋，nest_node 按群系消费：plains/forest=小屋、swamp=鱼屋、snow/hill/lava=洞穴）
+const NEST_FRAME_DIRS := ["nest_hut", "nest_fish_hut", "nest_cave"]
 
 var _pass := 0
 var _fail := 0
@@ -99,6 +103,8 @@ func _init() -> void:
 		_test_frames_dir(npc, ["idle", "walk"], "NPC")
 	for fx: String in FX_FRAME_DIRS:
 		_test_frames_dir(fx, ["play"], "特效")
+	for nest: String in NEST_FRAME_DIRS:
+		_test_frames_dir(nest, ["play"], "巢穴")
 	print("=== B. 字面资产路径存在性 ===")
 	_test_literal_paths()
 	print("=== 帧资产验收：%d 项断言（通过 %d / 失败 %d）===" % [_pass + _fail, _pass, _fail])

@@ -5,7 +5,7 @@
 
 [resource]
 script = ExtResource("1_rcn")
-species_name = "浣熊"
+species_name = "山羊"
 visual_scale = 0.5
 body_scale = 0.99
 tint = Color(0.7, 0.6, 0.5, 1)
@@ -28,4 +28,4 @@ detect_radius = 120.0
 attack_range = 24.0
 attack_cooldown = 1.5
 flee_hp_ratio = 0.9
-prey = Array[String](["萌芽怪"])
+prey = Array[String](["地精矿工"])

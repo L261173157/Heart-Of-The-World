@@ -43,12 +43,12 @@ const DASH_BUFF_TIME := 1.0
 const DASH_BUFF_MULT := 1.3
 const DASH_COST := 12.0
 const DASH_COOLDOWN := 1.2
-## 重击：以自身为圆心的 AOE 挥砸（清妖鬼/骷髅兵人海的保命大招）
+## 重击：以自身为圆心的 AOE 挥砸（清火把哥布林/骷髅兵人海的保命大招）
 const HEAVY_COST := 22.0
 const HEAVY_COOLDOWN := 4.0
 const HEAVY_RADIUS := 80.0
 const HEAVY_MULT := 2.4
-## 法弹：智力系远程（与沼泽蟹对射 / 风筝走位的构筑选择）。
+## 法弹：智力系远程（与沼泽蛛对射 / 风筝走位的构筑选择）。
 ## 倍率 2.0（2026-09-03 数值统一设计）：智力构筑 = 大 MP 池短窗爆发（~19s 倾泻）
 ## + 射程安全 + 强治疗，持续期回落到近战五成——定位爆发法术而非站桩替代
 const BOLT_COST := 8.0
@@ -233,7 +233,7 @@ func heal_power() -> float:
 
 
 ## 移速基准 2026-09-08 下调（230→175）：角色仅 ~38px 高，230px/s ≈ 每秒 6 身位，
-## iOS 真机手感呈"滑冰"；175 仍高于追击最快的蚂蚁(124)、慢于野猪冲锋(~291)，
+## iOS 真机手感呈"滑冰"；175 仍高于追击最快的蚂蚁(124)、慢于突袭蛇冲锋(~291)，
 ## 追逐/被追逐结构不变。手机屏小、视角缩放后感知更明显，以真机反馈为准。
 func move_speed() -> float:
 	return (150.0 + agility * 5.0) * passive_mult("move", 1.1) * (1.0 + equip_affix("move"))

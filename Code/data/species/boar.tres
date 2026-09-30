@@ -5,7 +5,7 @@
 
 [resource]
 script = ExtResource("1_mrrl7")
-species_name = "野猪"
+species_name = "突袭蛇"
 visual_scale = 1.0
 body_scale = 0.95
 tint = Color(0.72, 0.45, 0.2, 1)
@@ -29,5 +29,5 @@ attack_cooldown = 2.0
 flee_hp_ratio = 0.0
 knockback_resist = 0.5
 poise = 0.5
-prey = Array[String](["萌芽怪", "红史莱姆"])
+prey = Array[String](["地精矿工", "赤炎小魔"])
 element = "ice"

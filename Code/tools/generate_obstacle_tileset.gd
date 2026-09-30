@@ -20,12 +20,12 @@ const KINDS := ["tree", "big_tree", "pine", "deadtree", "rock", "boulder",
 	"ice", "crystal", "bones", "water", "castle"]
 ## 派生规则（美术 v6 TS）：img = assets/deco 精灵（tools/bake_structures.gd 产出，
 ## 32 高画布底边对齐）；zoom>1 放大后仍底边对齐水平居中（超格自动裁）；
-## deadtree = 松树灰化；castle = 黑城塞墙体矩形（baked 城堡下部石墙带）
+## deadtree = EP 真枯树（64 高烘焙件 zoom 0.5 入格）；castle = 黑城塞墙体矩形（baked 城堡下部石墙带）
 const DERIVE := {
 	"tree": {"img": "res://assets/deco/tree.png"},
 	"big_tree": {"img": "res://assets/deco/tree.png", "zoom": 1.5},
 	"pine": {"img": "res://assets/deco/pine.png"},
-	"deadtree": {"img": "res://assets/deco/pine.png", "sat": 0.22, "val": 0.85},
+	"deadtree": {"img": "res://assets/deco/deadtree.png", "zoom": 0.5},
 	"rock": {"img": "res://assets/deco/rock.png"},
 	"boulder": {"img": "res://assets/deco/rock.png", "zoom": 1.5},
 	"ice": {"img": "res://assets/deco/ice.png"},

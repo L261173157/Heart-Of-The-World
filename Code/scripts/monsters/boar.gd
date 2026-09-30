@@ -1,8 +1,8 @@
-## 野猪：蓄力冲锋——先停步低头（前摇预警），再沿锁定方向直线高速冲撞；
+## 突袭蛇：蓄力冲锋——先停步低头（前摇预警），再沿锁定方向直线高速冲撞；
 ## 撞墙会陷入硬直（反击窗口），命中则重创并击退玩家（命中后同样停顿）。
 ## 残血不逃反狂暴：移速与冲锋更快。走位引它撞墙是最优解。
 ## 冲锋参数（触发距离/前摇/速度/时限/伤害倍率/硬直）读 SpeciesData——
-## 企鹅/野兔/古木魔像共用本原型，Boss 型可按物种单独调参。
+## 雪原窃贼/野兔/古木魔像共用本原型，Boss 型可按物种单独调参。
 ## 注：撞地形触发硬直，撞同伴只中止冲锋不硬直（2026-09-04 细化，原"撞同伴
 ## 也硬直"按涌现玩法保留过，会把引猪撞怪堆变成无脑套路）
 class_name Boar
@@ -30,7 +30,7 @@ func _on_taken_damage(_amount: float, _from_position: Vector2) -> void:
 		set_tint(Color(1.0, 0.55, 0.45))
 
 
-## 贴身攻击状态：冷却一转好就回追击重新抉择——冲锋是野猪的核心机制
+## 贴身攻击状态：冷却一转好就回追击重新抉择——冲锋是突袭蛇的核心机制
 ## （撞墙硬直 = 反击窗口），若困在普通近战里，"贴脸站撸把它变木桩"就成了最优解，
 ## 机制博弈被完全绕过；回 CHASE 后 _chase_tick 会立即再次触发冲锋前摇
 func _attack_tick(_delta: float, player: Node2D) -> void:
@@ -62,8 +62,10 @@ func _chase_tick(delta: float, player: Node2D) -> void:
 		set_tint(Color(1.0, 0.85, 0.6))  # 前摇预警色
 		_squash(Vector2(1.12, 0.88), 0.45)  # 低头蹲伏预备
 		# 前摇=挥击预备帧：攻击条带只在冷却恢复窗播放、真实出招相位反而
-		# 站桩的错位自此修正（压制窗=前摇全长，蓄满帧起冲）
-		_play_action_anim("attack", inst.species.charge_tell_time)
+		# 站桩的错位自此修正（压制窗=前摇全长，蓄满帧起冲）。
+		# Troll 系（巨魔王）有专属 Windup 前摇条带，优先取用
+		_play_action_anim("windup", inst.species.charge_tell_time) \
+				or _play_action_anim("attack", inst.species.charge_tell_time)
 		return
 	super(delta, player)
 
@@ -100,7 +102,7 @@ func _extra_state_tick(delta: float, player: Node2D) -> void:
 
 ## 冲锋终止判定（move_and_slide 之后，当帧碰撞数据）：
 ## 撞上地形（墙）→ 硬直 = 暴露给玩家的反击窗口；只撞到同伴 → 冲锋中止但无硬直
-## （撞同伴白送硬直会把"引野猪进怪堆连环撞停"变成无脑套路——待定池 2026-09-04 细化）；
+## （撞同伴白送硬直会把"引突袭蛇进怪堆连环撞停"变成无脑套路——待定池 2026-09-04 细化）；
 ## 自然超时 → 正常回追（不误判为撞墙白送反击窗口）
 func _post_move_hook(_delta: float) -> void:
 	if state != S_CHARGE:

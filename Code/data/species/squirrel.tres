@@ -5,7 +5,7 @@
 
 [resource]
 script = ExtResource("1_sql")
-species_name = "松鼠"
+species_name = "山蜂"
 visual_scale = 0.5
 body_scale = 0.97
 frames_override = ExtResource("2_frames")

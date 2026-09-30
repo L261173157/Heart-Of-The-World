@@ -5,9 +5,10 @@
 
 [resource]
 script = ExtResource("1_eye")
-species_name = "眼魔"
-visual_scale = 1.0
+species_name = "鱼叉鲨"
+visual_scale = 0.5
 body_scale = 0.98
+projectile_tex = "harpoon"
 tint = Color(0.8, 0.5, 0.9, 1)
 frames_override = ExtResource("2_frames")
 ai_archetype = "ranged"
@@ -27,5 +28,5 @@ attack_range = 230.0
 attack_cooldown = 2.0
 flee_hp_ratio = 0.4
 poise = 0.1
-prey = Array[String](["沼泽蟹"])
+prey = Array[String](["沼泽蛛"])
 migrate_count = 2

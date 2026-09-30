@@ -58,8 +58,50 @@ func _init() -> void:
 		arrow.resize(16, 16, Image.INTERPOLATE_NEAREST)
 		arrow.save_png(ProjectSettings.globalize_path(OUT + "arrow.png"))
 		print("%-16s -> %sarrow.png (16x16)" % ["arrow", OUT])
+	# Enemy Pack 弹体首帧（条带取第 0 帧 ÷4；法弹 128 帧 → 32px）
+	var EP := "res://assets/ts_enemy/"
+	const EP_BOLTS := {
+		"acorn": ["Slingshot Gnome/Acorn_Projectile.png", 64, 16],
+		"bone": ["Gnoll/Gnoll_Bone.png", 64, 16],
+		"harpoon": ["Harpoon Shark/Harpoon.png", 64, 16],
+		"spell": ["Hex Shaman/Hex Shaman_Projectile.png", 128, 32],
+		"bomb": ["Bomb Fish/Bomb_Idle.png", 128, 16],
+	}
+	for key: String in EP_BOLTS:
+		var cfg: Array = EP_BOLTS[key]
+		var src := Image.load_from_file(ProjectSettings.globalize_path(EP + cfg[0]))
+		if src == null:
+			push_warning("EP 弹体源缺失：" + cfg[0])
+			continue
+		var cell: int = cfg[1]
+		var frame := src.get_region(Rect2i(0, 0, cell, cell))
+		var sz: int = cfg[2]
+		frame.resize(sz, sz, Image.INTERPOLATE_NEAREST)
+		frame.save_png(ProjectSettings.globalize_path(OUT + key + ".png"))
+		print("%-16s -> %s%s.png (%dx%d)" % [key, OUT, key, sz, sz])
+	# EP 场景装饰件（真骨堆升级/骷髅桩/枯树 → assets/deco/，world_deco 消费）。
+	# 放在 _bake_props 之后跑：bones.png 由本段最终覆盖（旧 Stump 派生源已失散）
+	const EPX := "res://assets/ts_enemy_extra/"
+	const EP_PROPS := {
+		"bones": ["Skull decorations/Bones_01.png", 32],
+		"skullspike": ["Skull decorations/Skull Spike_01.png", 32],
+		"deadtree": ["Dead Tree/Dead Tree.png", 64],
+	}
 	_chest()
 	_bake_props()
+	for key: String in EP_PROPS:
+		var cfg: Array = EP_PROPS[key]
+		var src := Image.load_from_file(ProjectSettings.globalize_path(EPX + cfg[0]))
+		if src == null:
+			push_warning("EP 装饰源缺失：" + cfg[0])
+			continue
+		var b := _bbox(src)
+		var crop := src.get_region(b)
+		var th: int = cfg[1]
+		var tw := maxi(1, int(round(float(b.size.x) * float(th) / float(b.size.y))))
+		crop.resize(tw, th, Image.INTERPOLATE_NEAREST)
+		crop.save_png(ProjectSettings.globalize_path(DECO_DIR + key + ".png"))
+		print("%-16s -> %s%s.png (%dx%d)" % [key, DECO_DIR, key, tw, th])
 	_bake_ui_icons()
 	quit(0)
 
@@ -272,6 +314,22 @@ func _synth_ui() -> void:
 			elif edge >= 7.0:
 				frame.set_pixel(x, y, Color(0.12, 0.13, 0.18, 0.92))
 	frame.save_png(ProjectSettings.globalize_path(ICONS_DIR + "icon_frame.png"))
+	# 怪物头顶条框（monster_bar）：TS 色板合成 64×12 木框暗槽——
+	# SmallBar_Base 320×64 直缩到 64 宽会糊成线，按目标尺寸逐像素画保脆；
+	# 消费方 scripts/monsters/monster_hp_bar.gd 按原生 64×12 绘制
+	var mbar := Image.create(64, 12, false, Image.FORMAT_RGBA8)
+	var mb_wood := Color(0.46, 0.41, 0.36)
+	var mb_wood_dark := Color(0.3, 0.26, 0.22)
+	var mb_slot := Color(0.13, 0.1, 0.08, 0.85)
+	for y in 12:
+		for x in 64:
+			if x < 3 or x > 60 or y == 0 or y == 11:
+				mbar.set_pixel(x, y, mb_wood)
+			elif y == 1 or y == 10:
+				mbar.set_pixel(x, y, mb_wood_dark)
+			else:
+				mbar.set_pixel(x, y, mb_slot)
+	mbar.save_png(ProjectSettings.globalize_path(ICONS_DIR + "monster_bar.png"))
 	# 室内口袋三件（TS 无室内件，木色合成）：地板/深墙/床
 	var floor_img := Image.create(32, 32, false, Image.FORMAT_RGBA8)
 	for y in 32:

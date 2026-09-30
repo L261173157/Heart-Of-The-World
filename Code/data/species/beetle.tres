@@ -5,8 +5,8 @@
 
 [resource]
 script = ExtResource("1_1p8w4")
-species_name = "甲虫"
-visual_scale = 1.0
+species_name = "长矛哥布林"
+visual_scale = 0.5
 body_scale = 0.81
 tint = Color(0.5, 0.55, 0.72, 1)
 frames_override = ExtResource("2_frames")
@@ -30,6 +30,6 @@ attack_cooldown = 0.75
 flee_hp_ratio = 0.15
 defense_reduction = 0.25
 poise = 0.15
-prey = Array[String](["妖鬼", "红史莱姆"])
+prey = Array[String](["火把哥布林", "赤炎小魔"])
 element = "fire"
 assist_radius = 200.0

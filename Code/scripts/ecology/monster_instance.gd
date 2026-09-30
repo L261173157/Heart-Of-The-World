@@ -14,7 +14,7 @@ var is_alive: bool = true
 ## 死亡后尸体剩余 tick，corpse_ticks < 0 表示尚未死亡
 var corpse_ticks: int = -1
 
-## 分裂世代（0 为原生代；红史莱姆子代逐代缩小且逐代不育）
+## 分裂世代（0 为原生代；赤炎小魔子代逐代缩小且逐代不育）
 var generation: int = 0
 ## 体型系数（分裂子代 < 1），线性缩放生命/攻击/经验与表现层视觉
 var size_scale: float = 1.0

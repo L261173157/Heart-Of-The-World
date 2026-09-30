@@ -220,7 +220,7 @@ func _test_progress_meta() -> void:
 	GameState.stats.passives = {}
 	GameState.settings = {"volume": 0.8, "screen_shake": true, "damage_numbers": true}
 	GameState._load()
-	_check(int(GameState.codex.get("妖鬼", 0)) == 5 and int(GameState.codex.get("锹形虫王", 0)) == 1 and int(GameState.codex.get("冰史莱姆", 0)) == 3,
+	_check(int(GameState.codex.get("火把哥布林", 0)) == 5 and int(GameState.codex.get("牛头王", 0)) == 1 and int(GameState.codex.get("冰霜小魔", 0)) == 3,
 		"读档恢复图鉴（%s）" % str(GameState.codex))
 	_check(GameState.stats.passive_level("hp") == 2 and GameState.stats.passive_level("cdr") == 1,
 		"读档恢复被动等级")
@@ -352,16 +352,16 @@ func _test_ecology_snapshot() -> void:
 		regions.append(r)
 	var species_list := SpeciesCatalog.build_all()
 	var sim := EcologySim.new()
-	sim.setup(regions, species_list, {"west": {"妖鬼": 3}, "center": {"红史莱姆": 2}})
+	sim.setup(regions, species_list, {"west": {"火把哥布林": 3}, "center": {"赤炎小魔": 2}})
 	var find := func(name: String) -> SpeciesData:
 		for s in species_list:
 			if s.species_name == name:
 				return s
 		return null
 	# 丰富状态：精英个体 + 分裂子代（世代/体型）+ 捣毁中的巢穴 + Boss 重生倒计时
-	var elite := sim.spawn_instance(find.call("妖鬼"), "west", 50, 0, 1.0, true)
-	var child := sim.spawn_instance(find.call("红史莱姆"), "center", 8, 1, 0.6)
-	_check(sim.destroy_nest("center", "红史莱姆"), "测试前置：巢穴已捣毁")
+	var elite := sim.spawn_instance(find.call("火把哥布林"), "west", 50, 0, 1.0, true)
+	var child := sim.spawn_instance(find.call("赤炎小魔"), "center", 8, 1, 0.6)
+	_check(sim.destroy_nest("center", "赤炎小魔"), "测试前置：巢穴已捣毁")
 	sim.boss_respawn_timers["獾王"] = 123
 	var count_before: int = sim.instances.size()
 	# 完整链路：挂 WorldSim（save_now 从这里取快照）→ 存档 → 卸载 → 读档 → 新世界恢复
@@ -384,8 +384,8 @@ func _test_ecology_snapshot() -> void:
 	_check(restored_child != null and restored_child.generation == 1
 			and absf(restored_child.size_scale - 0.6) < 0.001,
 		"分裂世代与体型跨会话保留")
-	_check(int(sim2.boss_respawn_timers.get("锹形虫王", 0)) == 123, "Boss 重生倒计时跨会话保留（旧名獾王→锹形虫王迁移）")
-	var nest: Dictionary = sim2.nests.get("center|红史莱姆", {})
+	_check(int(sim2.boss_respawn_timers.get("牛头王", 0)) == 123, "Boss 重生倒计时跨会话保留（旧名獾王→牛头王迁移）")
+	var nest: Dictionary = sim2.nests.get("center|赤炎小魔", {})
 	_check(not nest.is_empty() and not nest["active"], "巢穴捣毁状态跨会话保留")
 	_check(sim2.next_id > maxi(elite.id, child.id), "实例 id 计数器正确恢复")
 	# v1 旧档（无 ecology 键）升级路径：snapshot 为空 = 开新世界，不报错
@@ -424,7 +424,7 @@ func _test_quests_and_settings() -> void:
 	# 1) 正常往返（任务进行中 + 完成数 + 设置全键）
 	GameState.quests = {"active": [{
 		"id": "q_lm_x_0", "landmark_id": "lm_x", "giver": "营地猎人", "kind": "hunt",
-		"species": "妖鬼", "progress": 2, "need": 5, "title": "狩猎：击杀 妖鬼 ×5",
+		"species": "火把哥布林", "progress": 2, "need": 5, "title": "狩猎：击杀 火把哥布林 ×5",
 		"gold": 80, "xp": 40,
 	}], "completed": {"lm_x": 3}}
 	GameState.settings = {"volume": 0.6, "music_volume": 0.4, "sfx_volume": 0.9,
@@ -435,7 +435,7 @@ func _test_quests_and_settings() -> void:
 	GameState.settings = {"volume": 0.8, "auto_aim": false, "hero_skin": "blue"}
 	GameState._load()
 	_check(GameState.quests["active"].size() == 1
-			and GameState.quests["active"][0]["species"] == "妖鬼"
+			and GameState.quests["active"][0]["species"] == "火把哥布林"
 			and int(GameState.quests["active"][0]["progress"]) == 2
 			and int(GameState.quests["completed"].get("lm_x", 0)) == 3,
 			"任务进度读档往返（进行中条目+完成数）")
@@ -465,8 +465,8 @@ func _test_quests_and_settings() -> void:
 	_check(GameState.quests["active"].size() == 2,
 			"任务坏条目丢弃（保留 %d/2：非字典/缺id/坏need/缺kind·title）" % GameState.quests["active"].size())
 	var qa: Dictionary = GameState.quests["active"][0]
-	_check(qa["id"] == "q_a" and qa["species"] == "锹形虫王" and int(qa["progress"]) == 4,
-			"任务物种更名迁移（獾王→锹形虫王）+ 进度超钳到 need")
+	_check(qa["id"] == "q_a" and qa["species"] == "牛头王" and int(qa["progress"]) == 4,
+			"任务物种更名迁移（獾王→牛头王）+ 进度超钳到 need")
 	_check(int(GameState.quests["completed"].get("lm_ok", 0)) == 2
 			and int(GameState.quests["completed"].get("lm_neg", -1)) == 0
 			and not GameState.quests["completed"].has("lm_bad"),
@@ -496,7 +496,7 @@ func _test_corrupted_file() -> void:
 	var file2 := FileAccess.open(GameState.SAVE_PATH, FileAccess.WRITE)
 	file2.store_string(JSON.stringify({
 		"version": 2, "level": [1, 2], "gold": "321", "xp": {"a": 1},
-		"strength": true, "codex": {"妖鬼": "很多"}, "age_days": [9],
+		"strength": true, "codex": {"火把哥布林": "很多"}, "age_days": [9],
 		"last_save_unix": "昨天",
 		"player": {"position": ["墙外", 10.0], "hp": "满血", "mp": null},
 	}))

@@ -15,8 +15,8 @@ const RECIPES := {
 	"forest": {"big_tree": 30, "mushroom": 12, "log": 8, "bush": 10},
 	"snow": {"pine": 24, "ice": 12, "snowpile": 14},
 	"swamp": {"deadtree": 20, "cattail": 10, "mushroom": 10, "puddle": 10, "bush": 8},
-	"hill": {"boulder": 24, "rock": 14, "bush": 10, "gems": 6},
-	"lava": {"crystal": 22, "bones": 10, "gems": 5},
+	"hill": {"boulder": 24, "rock": 14, "bush": 10, "gems": 6, "skullspike": 4},
+	"lava": {"crystal": 22, "bones": 10, "gems": 5, "skullspike": 6},
 }
 
 ## 每块（512²）道具件数：与旧"每区域配方"密度同口径
@@ -47,9 +47,11 @@ const PROP_SRC := {
 	"bush": Rect2(32, 160, 32, 32),
 	"gems": Rect2(80, 192, 32, 32),
 	"cattail": Rect2(144, 240, 32, 32),
+	## 枯树回退矩形（EP 真枯树 assets/deco/deadtree.png 缺失时兜底=松树格）
+	"deadtree": Rect2(64, 160, 32, 32),
 }
-## 走贴图绘制的装饰种类（big_tree/boulder = 放大复用；枯树 = 松灰化；
-## 冰锥/雪堆/水洼/水晶/骨堆等多边形烘焙，素材无对口验证矩形）
+## 走贴图绘制的装饰种类（big_tree/boulder = 放大复用；冰锥/雪堆/水洼/水晶/
+## 骨堆/骷髅桩等多边形烘焙或 EP 精灵，素材无对口验证矩形）
 const TEXTURE_KINDS := ["tree", "big_tree", "grass", "pine", "deadtree", "rock", "boulder",
 	"mushroom", "log", "bush", "gems", "cattail"]
 ## 细软小道具：落影同步收窄（草/蘑菇/灌木/香蒲/宝石下面不该拖大黑影）
@@ -90,8 +92,9 @@ class DecoLayer extends Node2D:
 				Vector2(-s if item["flip"] else s, s))
 			var sp: Texture2D = item.get("sprite")
 			if sp != null:
-				# AI 精灵：底边贴落点，高 32px 与图集件同档（保持占地/落影一致）
-				var h := 32.0
+				# AI 精灵：底边贴落点，高 32px 与图集件同档（保持占地/落影一致）；
+				# 高件（枯树等）经 item["h"] 指定目标高
+				var h := float(item.get("h", 32.0))
 				var w := h * float(sp.get_width()) / float(sp.get_height())
 				draw_texture_rect(sp, Rect2(-w / 2.0, -h, w, h), false, item["mod"])
 				continue
@@ -278,11 +281,12 @@ func _bake_deco(kind: String, rng: RandomNumberGenerator, pos: Vector2,
 
 
 ## 纹理类装饰 → 贴图绘制条目：直取源矩形；
-## big_tree/boulder = 基础素材放大复用；枯树 = 松树灰化（沼泽枯槁感）
+## big_tree/boulder = 基础素材放大复用；枯树 = EP 真枯树精灵（56 高树档）
 func _texture_item(kind: String, rng: RandomNumberGenerator, pos: Vector2, s: float) -> Dictionary:
 	var src_key := kind
 	var mod := Color.WHITE
 	var scale_mult := 1.0
+	var h := 0.0
 	match kind:
 		"big_tree":
 			src_key = "tree"
@@ -291,14 +295,16 @@ func _texture_item(kind: String, rng: RandomNumberGenerator, pos: Vector2, s: fl
 			src_key = "rock"
 			scale_mult = 1.8
 		"deadtree":
-			src_key = "pine"
-			mod = Color(0.52, 0.5, 0.47)
+			h = 56.0  # EP 枯树：树形高件，超默认 32 档
 	# 素材尺寸偏紧凑（内容约 20px），整体再放大一档贴回原多边形的占地
-	return {
+	var item := {
 		"src": PROP_SRC[src_key], "pos": pos, "s": s * scale_mult * 1.25,
 		"flip": rng.randf() < 0.5, "mod": mod,
 		"sprite": _deco_sprite(src_key),
 	}
+	if h > 0.0:
+		item["h"] = h
+	return item
 
 
 ## 部件多边形入池：局部顶点经 缩放→旋转→平移 后追加，记录子多边形索引；

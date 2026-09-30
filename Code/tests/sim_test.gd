@@ -101,7 +101,7 @@ func _test_elite_mechanics() -> void:
 	_current = "精英机制"
 	print("[%s]" % _current)
 	var sim := _new_sim()
-	var species := sim.find_species("妖鬼")
+	var species := sim.find_species("火把哥布林")
 	var normal: MonsterInstance = sim.spawn_instance(species, "west")
 	var elite: MonsterInstance = sim.spawn_instance(species, "west", 0, 0, 1.0, true)
 	_check(elite.is_elite and not normal.is_elite, "精英标记写入（普通个体不受影响）")
@@ -124,28 +124,28 @@ func _test_world_events() -> void:
 	var detector: RefCounted = detector_script.new()
 
 	# 首帧只记录不播报
-	var first: Array[Dictionary] = detector.detect_events(_fake_summary({"west": {"红史莱姆": 6}}))
+	var first: Array[Dictionary] = detector.detect_events(_fake_summary({"west": {"赤炎小魔": 6}}))
 	_check(first.is_empty(), "首帧快照不触发事件")
 
-	# 入侵潮：east 从无甲虫 → 4 只（断言结构化字段而非文案——文案改写不断链）
+	# 入侵潮：east 从无长矛哥布林 → 4 只（断言结构化字段而非文案——文案改写不断链）
 	var invaded: Array[Dictionary] = detector.detect_events(
-		_fake_summary({"west": {"红史莱姆": 6}, "east": {"甲虫": 4}}))
+		_fake_summary({"west": {"赤炎小魔": 6}, "east": {"长矛哥布林": 4}}))
 	_check(invaded.any(func(e: Dictionary) -> bool:
-		return e["kind"] == "invade" and e["species"] == "甲虫"),
+		return e["kind"] == "invade" and e["species"] == "长矛哥布林"),
 		"区域入侵潮被播报（%s）" % str(invaded))
 
 	# 同类入侵 30s 内节流：再来一次同样事件不重复
 	var again: Array[Dictionary] = detector.detect_events(
-		_fake_summary({"west": {"红史莱姆": 5}, "east": {"甲虫": 4}}))
+		_fake_summary({"west": {"赤炎小魔": 5}, "east": {"长矛哥布林": 4}}))
 	_check(not again.any(func(e: Dictionary) -> bool: return e["kind"] == "invade"),
 		"同类事件冷却期内不刷屏")
 
-	# 全球灭绝：红史莱姆从世界上消失
+	# 全球灭绝：赤炎小魔从世界上消失
 	detector = detector_script.new()
-	detector.detect_events(_fake_summary({"west": {"红史莱姆": 6}}))
-	var extinct: Array[Dictionary] = detector.detect_events(_fake_summary({"east": {"甲虫": 4}}))
+	detector.detect_events(_fake_summary({"west": {"赤炎小魔": 6}}))
+	var extinct: Array[Dictionary] = detector.detect_events(_fake_summary({"east": {"长矛哥布林": 4}}))
 	_check(extinct.any(func(e: Dictionary) -> bool:
-		return e["kind"] == "extinct" and e["species"] == "红史莱姆"),
+		return e["kind"] == "extinct" and e["species"] == "赤炎小魔"),
 		"全球灭绝被播报（%s）" % str(extinct))
 	_check(extinct.all(func(e: Dictionary) -> bool:
 		return e["kind"] != "extinct" or not str(e["text"]).contains("永远")),
@@ -197,18 +197,18 @@ func _test_initial_setup() -> void:
 
 
 func _test_split_mechanics() -> void:
-	_current = "红史莱姆分裂"
+	_current = "赤炎小魔分裂"
 	print("[%s]" % _current)
 	var sim := _new_sim()
 	var center_id := _patch_id_of("forest")
-	# 本用例验证"只有击杀才分裂"的精确数量，关闭捕食（沼泽蟹/野猪吃红史莱姆会引入噪音）
+	# 本用例验证"只有击杀才分裂"的精确数量，关闭捕食（沼泽蛛/突袭蛇吃赤炎小魔会引入噪音）
 	sim.predation_enabled = false
 	var victim: MonsterInstance = null
 	for inst: MonsterInstance in sim.instances.values():
-		if inst.is_alive and inst.species.species_name == "红史莱姆" and inst.region_id == center_id:
+		if inst.is_alive and inst.species.species_name == "赤炎小魔" and inst.region_id == center_id:
 			victim = inst
 			break
-	_check(victim != null, "找到林地红史莱姆")
+	_check(victim != null, "找到林地赤炎小魔")
 	var before: int = sim.alive_count_in(center_id, victim.species)
 	var spawned: Array[MonsterInstance] = []
 	sim.instance_spawned.connect(func(i): if i.generation > 0: spawned.append(i))
@@ -224,24 +224,24 @@ func _test_split_mechanics() -> void:
 		sim.report_killed(child.id)
 		_check(sim.alive_count_in(center_id, victim.species) == before - 1 + children_before - 1,
 			"击杀子代不再分裂，数量守恒")
-	# 自然老死不分裂：把一只红史莱姆寿命改到立即老死
+	# 自然老死不分裂：把一只赤炎小魔寿命改到立即老死
 	var elder: MonsterInstance = null
 	for inst: MonsterInstance in sim.instances.values():
-		if inst.is_alive and inst.species.species_name == "红史莱姆":
+		if inst.is_alive and inst.species.species_name == "赤炎小魔":
 			elder = inst
 			break
 	elder.age = 0
 	elder.lifespan = 1
 	var gen0_count := 0
 	for inst: MonsterInstance in sim.instances.values():
-		if inst.is_alive and inst.species.species_name == "红史莱姆" and inst.generation == 0:
+		if inst.is_alive and inst.species.species_name == "赤炎小魔" and inst.generation == 0:
 			gen0_count += 1
 	sim.tick()
 	var gen0_after := 0
 	for inst: MonsterInstance in sim.instances.values():
-		if inst.is_alive and inst.species.species_name == "红史莱姆" and inst.generation == 0:
+		if inst.is_alive and inst.species.species_name == "赤炎小魔" and inst.generation == 0:
 			gen0_after += 1
-	_check(gen0_after == gen0_count - 1, "自然老死的红史莱姆不产生分裂（%d → %d）" % [gen0_count, gen0_after])
+	_check(gen0_after == gen0_count - 1, "自然老死的赤炎小魔不产生分裂（%d → %d）" % [gen0_count, gen0_after])
 	# 分裂子代不育："逐代缩小且逐代不育"契约——子代成年后不参与繁衍，
 	# 否则杀一只裂两只、长大再繁衍洗白回原生代，"越杀越多"没有自然出口
 	var child2 := spawned[0] if spawned.size() > 0 and spawned[0].is_alive else null
@@ -263,7 +263,7 @@ func _test_split_mechanics() -> void:
 
 
 ## 捕食链健康度：每条捕食边（prey 引用）双方 habitats 必须共享地形——
-## 否则该边永不可能同区触发（曾经的死链：甲虫吃妖鬼但栖息地无交集，
+## 否则该边永不可能同区触发（曾经的死链：长矛哥布林吃火把哥布林但栖息地无交集，
 ## "玩家清剿捕食者→猎物爆发"的生态级联在 5/8 条边上完全不存在）
 func _test_predation_reachability() -> void:
 	_current = "捕食链健康度"
@@ -354,7 +354,7 @@ func _test_predation_and_boss() -> void:
 	_current = "捕食与Boss"
 	print("[%s]" % _current)
 
-	# 捕食：甲虫压制同区妖鬼（关繁衍排除噪音；改写作用于本用例的副本）
+	# 捕食：长矛哥布林压制同区火把哥布林（关繁衍排除噪音；改写作用于本用例的副本）
 	var region := SimRegion.new()
 	region.id = "pen"
 	region.display_name = "围栏"
@@ -364,8 +364,8 @@ func _test_predation_and_boss() -> void:
 	var by_name := {}
 	for s: SpeciesData in _fresh_species():
 		by_name[s.species_name] = s
-	var goblin: SpeciesData = by_name["妖鬼"]
-	var ant: SpeciesData = by_name["甲虫"]
+	var goblin: SpeciesData = by_name["火把哥布林"]
+	var ant: SpeciesData = by_name["长矛哥布林"]
 	goblin.breeding_rate = 0.0
 	ant.breeding_rate = 0.0
 	var sim := EcologySim.new()
@@ -374,7 +374,7 @@ func _test_predation_and_boss() -> void:
 	sim.instance_died.connect(func(_i, cause: String) -> void:
 		if cause == "predated":
 			counters["predated"] += 1)
-	sim.setup([region], [goblin, ant], {"pen": {"妖鬼": 10, "甲虫": 2}})
+	sim.setup([region], [goblin, ant], {"pen": {"火把哥布林": 10, "长矛哥布林": 2}})
 	# 强制捕食者成年 + 长寿：初始年龄 5~60 随机，双未成年时零捕食是假阴性
 	for inst: MonsterInstance in sim.instances.values():
 		if inst.species == ant:
@@ -384,24 +384,24 @@ func _test_predation_and_boss() -> void:
 		sim.tick()
 	_check(counters["predated"] > 0, "捕食死亡发生（60 tick 共 %d 次）" % counters["predated"])
 	_check(sim.alive_count_in("pen", goblin) < 10,
-		"妖鬼被压制（剩 %d < 10）" % sim.alive_count_in("pen", goblin))
+		"火把哥布林被压制（剩 %d < 10）" % sim.alive_count_in("pen", goblin))
 
-	# Boss 重生：龟王被讨伐后按倒计时归来
+	# Boss 重生：熔岩龟王被讨伐后按倒计时归来
 	var lava := SimRegion.new()
 	lava.id = "den"
 	lava.display_name = "巢穴"
 	lava.terrain = "lava"
 	lava.threat = 1.0
 	lava.capacity = 10
-	var king: SpeciesData = by_name["龟王"]
+	var king: SpeciesData = by_name["熔岩龟王"]
 	king.boss_respawn_ticks = 5
 	var sim2 := EcologySim.new()
-	sim2.setup([lava], [king], {"den": {"龟王": 1}})
+	sim2.setup([lava], [king], {"den": {"熔岩龟王": 1}})
 	var boss_inst: MonsterInstance = null
 	for inst: MonsterInstance in sim2.instances.values():
 		if inst.species == king:
 			boss_inst = inst
-	_check(boss_inst != null and boss_inst.is_alive, "龟王以 Boss 姿态入场")
+	_check(boss_inst != null and boss_inst.is_alive, "熔岩龟王以 Boss 姿态入场")
 	_check(absf(boss_inst.size_scale - 2.2) < 0.001, "Boss 体型 2.2（实际 %.2f）" % boss_inst.size_scale)
 	sim2.report_killed(boss_inst.id)
 	_check(sim2.alive_count_in("den", king) == 0, "Boss 被讨伐")
@@ -661,8 +661,8 @@ func _test_predation_structures() -> void:
 	var by_name := {}
 	for s: SpeciesData in _fresh_species():
 		by_name[s.species_name] = s
-	var goblin: SpeciesData = by_name["妖鬼"]
-	var ant: SpeciesData = by_name["甲虫"]
+	var goblin: SpeciesData = by_name["火把哥布林"]
+	var ant: SpeciesData = by_name["长矛哥布林"]
 	goblin.breeding_rate = 0.0
 	ant.breeding_rate = 0.0
 
@@ -675,7 +675,7 @@ func _test_predation_structures() -> void:
 	region.threat = 1.0
 	region.capacity = 30
 	var sim := EcologySim.new()
-	sim.setup([region], [goblin, ant], {"pen1": {"妖鬼": 4, "甲虫": 3}})
+	sim.setup([region], [goblin, ant], {"pen1": {"火把哥布林": 4, "长矛哥布林": 3}})
 	# lambda 值捕获：计数走 Dictionary（int 局部变量的写入会丢失，断言会变成永真）
 	var exempt_kills := {"n": 0}
 	sim.instance_died.connect(func(_i, cause: String) -> void:
@@ -693,7 +693,7 @@ func _test_predation_structures() -> void:
 	region2.threat = 1.0
 	region2.capacity = 40
 	var sim2 := EcologySim.new()
-	sim2.setup([region2], [goblin, ant], {"pen2": {"妖鬼": 20, "甲虫": 1}})
+	sim2.setup([region2], [goblin, ant], {"pen2": {"火把哥布林": 20, "长矛哥布林": 1}})
 	var predator: MonsterInstance = null
 	for inst: MonsterInstance in sim2.instances.values():
 		if inst.species == ant:
@@ -721,19 +721,19 @@ func _test_restore_adversarial() -> void:
 	var sim := EcologySim.new()
 	var west_id := _patch_id_of("plains")
 	sim.setup(_build_regions(), _fresh_species(), {})
-	sim.spawn_instance(sim.find_species("妖鬼"), west_id)
+	sim.spawn_instance(sim.find_species("火把哥布林"), west_id)
 	var snap := sim.to_dict()
 	var entries: Array = snap["instances"]
 	entries[0]["spawn_pos"] = ["x", {}]
 	entries[0]["elite"] = "false"
 	entries[0]["alive"] = "false"
-	snap["nests"] = {"%s|妖鬼" % west_id: {"active": true}, "%s|萌芽怪" % west_id: {"rebuild": 5}}
+	snap["nests"] = {"%s|火把哥布林" % west_id: {"active": true}, "%s|地精矿工" % west_id: {"rebuild": 5}}
 	var sim2 := EcologySim.new()
 	_check(sim2.restore_from_dict(_build_regions(), _fresh_species(), snap),
 		"坏键快照仍可恢复（实例非空）")
-	var nest1: Dictionary = sim2.nests.get("%s|妖鬼" % west_id, {})
+	var nest1: Dictionary = sim2.nests.get("%s|火把哥布林" % west_id, {})
 	_check(nest1.has("active") and nest1.has("rebuild"), "缺 rebuild 的巢穴被补全为规范结构")
-	var nest2: Dictionary = sim2.nests.get("%s|萌芽怪" % west_id, {})
+	var nest2: Dictionary = sim2.nests.get("%s|地精矿工" % west_id, {})
 	_check(bool(nest2.get("active", false)), "缺 active 的巢穴默认为有效巢")
 	var restored: MonsterInstance = null
 	for inst: MonsterInstance in sim2.instances.values():
@@ -766,7 +766,7 @@ func _test_migration_split_region() -> void:
 	var species_list := _fresh_species()
 	var slime: SpeciesData = null
 	for s: SpeciesData in species_list:
-		if s.species_name == "红史莱姆":
+		if s.species_name == "赤炎小魔":
 			slime = s
 	var sim := EcologySim.new()
 	sim.setup(_build_regions(), species_list, {})
@@ -784,7 +784,7 @@ func _test_migration_split_region() -> void:
 	sim.report_killed(mother.id, snow["center"])
 	var children: Array[MonsterInstance] = []
 	for inst: MonsterInstance in sim.instances.values():
-		if inst.is_alive and inst.species.species_name == "红史莱姆" and inst.generation > 0:
+		if inst.is_alive and inst.species.species_name == "赤炎小魔" and inst.generation > 0:
 			children.append(inst)
 	_check(children.size() == 2, "分裂出 2 子代（实际 %d）" % children.size())
 	var all_in_snow := not children.is_empty()
@@ -801,9 +801,9 @@ func _test_long_run_invariants() -> void:
 	# GDScript lambda 对局部变量是值捕获，计数必须走引用类型（Dictionary）
 	var counters := {"guardian_migrated": 0, "ant_migrated": 0}
 	sim.instance_migrated.connect(func(inst: MonsterInstance, _to: String) -> void:
-		if inst.species.species_name == "石像鬼":
+		if inst.species.species_name == "黑曜牛卫":
 			counters["guardian_migrated"] += 1
-		if inst.species.species_name == "甲虫":
+		if inst.species.species_name == "长矛哥布林":
 			counters["ant_migrated"] += 1
 	)
 	var ok_habitat := true
@@ -850,8 +850,8 @@ func _test_long_run_invariants() -> void:
 	_check(min_occ >= 0.2, "逐物种存活占比 ≥20%%（最低 %.0f%%）——灭绝脉冲循环回归锁" % (min_occ * 100.0))
 	print("  INFO  逐物种存活占比最低 %.0f%%，≥80%% 物种 %d/%d" % [min_occ * 100.0, healthy, occupancy.size()])
 	_check(healthy >= occupancy.size() - 6, "多数物种存活占比 ≥80%%（%d/%d）" % [healthy, occupancy.size()])
-	_check(counters["guardian_migrated"] == 0, "石像鬼永不迁徙（迁徙 %d 次）" % counters["guardian_migrated"])
-	_check(counters["ant_migrated"] > 0, "甲虫发生扩张迁徙（%d 次）" % counters["ant_migrated"])
+	_check(counters["guardian_migrated"] == 0, "黑曜牛卫永不迁徙（迁徙 %d 次）" % counters["guardian_migrated"])
+	_check(counters["ant_migrated"] > 0, "长矛哥布林发生扩张迁徙（%d 次）" % counters["ant_migrated"])
 	_check(sim.tick_count == 2000, "tick 计数一致")
 	var total_alive := 0
 	for inst: MonsterInstance in sim.instances.values():

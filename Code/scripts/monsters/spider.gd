@@ -1,6 +1,6 @@
-## 沼泽蟹：远程吐息风筝——与玩家保持中距离吐弹幕，被贴近会主动后撤；
+## 沼泽蛛：远程吐息风筝——与玩家保持中距离吐弹幕，被贴近会主动后撤；
 ## 残血提前逃跑。逼身近战或绕侧追击是破解思路，弹幕可走位规避。
-## 保持距离读 SpeciesData（沼泽蟹/曼德拉草/石仔怪/火魔鸦共用本原型）
+## 保持距离读 SpeciesData（沼泽蛛/弹弓地精/石仔怪/火魔鸦共用本原型）
 class_name Spider
 extends MonsterBase
 
@@ -81,4 +81,5 @@ func _spit(player: Node2D) -> void:
 	var projectile: Projectile = PROJECTILE.instantiate()
 	get_parent().add_child(projectile)
 	projectile.global_position = global_position + dir * 16.0
-	projectile.launch(dir, CombatMath.magic_damage(inst.attack_power()), 270.0, inst.display_name())
+	projectile.launch(dir, CombatMath.magic_damage(inst.attack_power()), 270.0, inst.display_name(),
+		inst.species.projectile_tex)

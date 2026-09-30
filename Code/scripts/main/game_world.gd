@@ -8,36 +8,36 @@ extends Node2D
 ## 六 AI 原型场景（行为脚本绑定在场景上；视觉由 SpeciesData.frames_override 换 NA 帧）
 ## 美术 v5：22 物种与 NA 22 张怪表一一对应
 const MONSTER_SCENES := {
-	"妖鬼": preload("res://scenes/monsters/goblin.tscn"),
-	"红史莱姆": preload("res://scenes/monsters/slime.tscn"),
-	"野猪": preload("res://scenes/monsters/boar.tscn"),
-	"沼泽蟹": preload("res://scenes/monsters/spider.tscn"),
-	"甲虫": preload("res://scenes/monsters/ant.tscn"),
-	"石像鬼": preload("res://scenes/monsters/guardian.tscn"),
-	"锹形虫王": preload("res://scenes/monsters/ant.tscn"),
-	"龟王": preload("res://scenes/monsters/guardian.tscn"),
-	"冰史莱姆": preload("res://scenes/monsters/slime.tscn"),
-	"萌芽怪": preload("res://scenes/monsters/ant.tscn"),
-	"绿蛙": preload("res://scenes/monsters/goblin.tscn"),
-	"曼德拉草": preload("res://scenes/monsters/spider.tscn"),
-	"蘑菇怪": preload("res://scenes/monsters/spider.tscn"),
-	"红章鱼": preload("res://scenes/monsters/spider.tscn"),
-	"企鹅": preload("res://scenes/monsters/boar.tscn"),
-	"幽灵": preload("res://scenes/monsters/goblin.tscn"),
-	"松鼠": preload("res://scenes/monsters/boar.tscn"),
-	"蝙蝠": preload("res://scenes/monsters/goblin.tscn"),
-	"仙人掌怪": preload("res://scenes/monsters/spider.tscn"),
-	"火鸟": preload("res://scenes/monsters/spider.tscn"),
-	"绿龟": preload("res://scenes/monsters/boar.tscn"),
-	"树人": preload("res://scenes/monsters/boar.tscn"),
+	"火把哥布林": preload("res://scenes/monsters/goblin.tscn"),
+	"赤炎小魔": preload("res://scenes/monsters/slime.tscn"),
+	"突袭蛇": preload("res://scenes/monsters/boar.tscn"),
+	"沼泽蛛": preload("res://scenes/monsters/spider.tscn"),
+	"长矛哥布林": preload("res://scenes/monsters/ant.tscn"),
+	"黑曜牛卫": preload("res://scenes/monsters/guardian.tscn"),
+	"牛头王": preload("res://scenes/monsters/ant.tscn"),
+	"熔岩龟王": preload("res://scenes/monsters/guardian.tscn"),
+	"冰霜小魔": preload("res://scenes/monsters/slime.tscn"),
+	"地精矿工": preload("res://scenes/monsters/ant.tscn"),
+	"蜥蜴刀客": preload("res://scenes/monsters/goblin.tscn"),
+	"弹弓地精": preload("res://scenes/monsters/spider.tscn"),
+	"巫毒萨满": preload("res://scenes/monsters/spider.tscn"),
+	"炸弹鱼": preload("res://scenes/monsters/spider.tscn"),
+	"雪原窃贼": preload("res://scenes/monsters/boar.tscn"),
+	"白骨兵": preload("res://scenes/monsters/goblin.tscn"),
+	"山蜂": preload("res://scenes/monsters/boar.tscn"),
+	"巨蝠": preload("res://scenes/monsters/goblin.tscn"),
+	"投骨豺狼人": preload("res://scenes/monsters/spider.tscn"),
+	"火蜂": preload("res://scenes/monsters/spider.tscn"),
+	"青甲龟": preload("res://scenes/monsters/boar.tscn"),
+	"巨魔王": preload("res://scenes/monsters/boar.tscn"),
 	# 物种扩容（美术 v5 完整包）：4 战斗怪 + 3 被动动物
-	"雪熊": preload("res://scenes/monsters/boar.tscn"),
-	"独眼巨人": preload("res://scenes/monsters/ant.tscn"),
-	"眼魔": preload("res://scenes/monsters/spider.tscn"),
-	"火龙": preload("res://scenes/monsters/spider.tscn"),
-	"浣熊": preload("res://scenes/monsters/goblin.tscn"),
-	"鸡": preload("res://scenes/monsters/goblin.tscn"),
-	"鹦鹉": preload("res://scenes/monsters/goblin.tscn"),
+	"雪原巨熊": preload("res://scenes/monsters/boar.tscn"),
+	"山岳熊猫": preload("res://scenes/monsters/ant.tscn"),
+	"鱼叉鲨": preload("res://scenes/monsters/spider.tscn"),
+	"熔岩萨满": preload("res://scenes/monsters/spider.tscn"),
+	"山羊": preload("res://scenes/monsters/goblin.tscn"),
+	"山猪": preload("res://scenes/monsters/goblin.tscn"),
+	"野鸭": preload("res://scenes/monsters/goblin.tscn"),
 }
 
 ## M0 初始种群与六区域布局的唯一数据源已抽至 WorldConfig（纯数据类，
@@ -188,7 +188,7 @@ func _ready() -> void:
 		push_error("生态世界装配后 0 活体：species=%d regions=%d resumed=%s——检查种族数据目录（SpeciesCatalog）与初始种群表" % [
 			species_list.size(), regions.size(), resumed])
 	# 配置自检：数据错误显性化（捕食死链/寿命倒挂/habitats 拼写/迁徙窗口关闭）；
-	# 幽灵物种（模拟层有、表现层无）会占区域承载却看不见打不着，赏金悬赏到它将永远无法完成
+	# 白骨兵物种（模拟层有、表现层无）会占区域承载却看不见打不着，赏金悬赏到它将永远无法完成
 	SpeciesCatalog.validate(_sim.species_list, _sim.regions.values())
 	for species: SpeciesData in _sim.species_list:
 		if not MONSTER_SCENES.has(species.species_name):

@@ -114,6 +114,11 @@ func _process(delta: float) -> void:
 	if _menu_layers:
 		_process_menu_layers()
 		return
+	# overlays 模式自带七拍时序与独立退出，走专用循环（此前缺调度，模式空转
+	# 只出常规两拍——2026-09-30 UI TS 化取证时发现补上）
+	if _overlays:
+		_process_overlays(delta)
+		return
 	if _dbg_accum >= 0.25:
 		_dbg_accum = 0.0
 		# HOTW_SHOT_DEBUG=1 时每 0.25s 打印怪物组/玩家/种子诊断（流式问题排查用）
@@ -311,7 +316,7 @@ func _process_overlays(delta: float) -> void:
 			GameState.stats.pending_points = 2
 			hud._refresh_stats_label(GameState.stats.level, 2)
 			EventBus.quest_updated.emit("委托·捣巢：摧毁荒废遗迹旁的巢穴（0/1）")
-			EventBus.boss_tracked.emit(true, "龟王")
+			EventBus.boss_tracked.emit(true, "熔岩龟王")
 			EventBus.boss_hp_changed.emit(620.0, 1000.0)
 			_ov_arm("/tmp/hotw_ov_1.png")
 		1:

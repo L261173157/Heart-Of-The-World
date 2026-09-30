@@ -5,8 +5,8 @@
 
 [resource]
 script = ExtResource("1_trt")
-species_name = "树人"
-visual_scale = 0.682
+species_name = "巨魔王"
+visual_scale = 0.35
 body_scale = 1.0
 frames_override = ExtResource("2_frames")
 ai_archetype = "charger"
@@ -29,7 +29,7 @@ flee_hp_ratio = 0.0
 defense_reduction = 0.3
 knockback_resist = 0.9
 poise = 0.9
-prey = Array[String](["萌芽怪"])
+prey = Array[String](["地精矿工"])
 is_boss = true
 boss_respawn_ticks = 420
 boss_size_scale = 2.2

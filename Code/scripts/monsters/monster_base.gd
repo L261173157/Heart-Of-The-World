@@ -26,7 +26,7 @@ const HUNT_SPEED_MULT := 0.7
 const HUNT_MAX_DIST := 24000.0
 const MIGRATE_ARRIVE_DIST := 24.0
 const KNOCKBACK_DECAY := 900.0
-## 通用近战前摇：出刀前短暂站定预警（此前妖鬼/骷髅兵冷却一到瞬间结算，
+## 通用近战前摇：出刀前短暂站定预警（此前火把哥布林/骷髅兵冷却一到瞬间结算，
 ## 玩家"看不见攻击发生"就挨刀——被打时必须读得出攻击来源与规避窗口）。
 ## 与石魔像蓄力圈同一设计语言；前摇期间走出 attack_range×1.1 即取消本次出刀
 ## （1.1 而非 1.0：0.2s 前摇内玩家脚程就能跨出整个攻击距离，按 1.0 严格复查
@@ -90,7 +90,7 @@ var _awaiting_rvo := false
 var _pending_move_delta := 0.0
 
 ## 物种节点注册表（static）：受击求援按物种定向派发，
-## 只遍历本物种列表——替代原先 EventBus 全体妖鬼+骷髅兵广播（群体战 O(全怪) 开销）
+## 只遍历本物种列表——替代原先 EventBus 全体火把哥布林+骷髅兵广播（群体战 O(全怪) 开销）
 static var _species_registry: Dictionary = {}
 
 var inst: MonsterInstance
@@ -198,7 +198,7 @@ func setup(p_inst: MonsterInstance) -> void:
 			scaled = null  # 其余形状类型暂无场景使用，出现时按需补
 		if scaled != null:
 			cs.shape = scaled
-	# 种族帧覆盖（冰晶史莱姆共用红史莱姆场景但换蓝色帧）：换帧会停播，重开 idle
+	# 种族帧覆盖（冰晶史莱姆共用赤炎小魔场景但换蓝色帧）：换帧会停播，重开 idle
 	if inst.species.frames_override != null:
 		visual.sprite_frames = inst.species.frames_override
 		visual.play(&"idle")
@@ -283,7 +283,7 @@ func set_tint(color: Color) -> void:
 	modulate = color
 
 
-## 闪红结束时应恢复的颜色；子类重写以返回当前预警色（石魔像蓄力橙/野猪前摇色）
+## 闪红结束时应恢复的颜色；子类重写以返回当前预警色（石魔像蓄力橙/突袭蛇前摇色）
 func _restore_tint() -> Color:
 	# 近战前摇中被击：闪红收回后预警色仍在（出刀可读性不因受击丢失）
 	if _melee_windup > 0.0:
@@ -306,7 +306,7 @@ func _get_player() -> Node2D:
 	return _player_ref
 
 
-## 体型表现（分裂子代缩小）；子类可扩展（如红史莱姆的果冻脉动在此基础上叠加）
+## 体型表现（分裂子代缩小）；子类可扩展（如赤炎小魔的果冻脉动在此基础上叠加）
 func _apply_size_visual() -> void:
 	# 像素稳定：最终渲染缩放取整（非整数缩放=像素行宽窄交替，边缘毛刺闪动的
 	# 来源之一；只影响视觉不影响碰撞 body_k）
@@ -623,7 +623,7 @@ func _play_action_anim(anim: String, dur: float) -> bool:
 
 
 ## 挤压回弹（预备-过冲打击感）：朝 amount 比例压 0.5×dur 秒再弹回基础体型。
-## 红史莱姆的果冻脉动每帧覆写 scale，会自然吞掉本效果——无碍（它有自己的弹性语言）
+## 赤炎小魔的果冻脉动每帧覆写 scale，会自然吞掉本效果——无碍（它有自己的弹性语言）
 func _squash(amount: Vector2, dur := 0.16) -> void:
 	if visual == null:
 		return
@@ -677,7 +677,7 @@ func take_damage(amount: float, from_position := Vector2.INF, p_heavy := false,
 			dir = Vector2.UP
 		_knockback += dir * CombatMath.KNOCKBACK_BASE * (1.0 - resist) * (2.0 if p_heavy else 1.0) * p_knock_mult
 	_on_taken_damage(dealt, from_position)
-	# 仇恨连锁：同物种邻近个体会来支援（妖鬼/骷髅兵实现支援半径）
+	# 仇恨连锁：同物种邻近个体会来支援（火把哥布林/骷髅兵实现支援半径）
 	notify_allies_hit(inst.species.species_name, global_position)
 	if current_hp <= 0.0:
 		_die_by_player()
@@ -748,7 +748,7 @@ func on_sim_death() -> void:
 
 # --- 子类可重写的机制钩子 ---
 
-## 追击速度倍率（野猪狂暴时重写）
+## 追击速度倍率（突袭蛇狂暴时重写）
 func _speed_mult() -> float:
 	return 1.0
 
@@ -835,7 +835,7 @@ func _extra_state_tick(_delta: float, _player: Node2D) -> void:
 
 
 ## move_and_slide 之后的钩子：当帧碰撞数据（get_slide_collision）只有
-## 在 move 之后才有效；需要它的判定（如野猪撞墙）重写此方法
+## 在 move 之后才有效；需要它的判定（如突袭蛇撞墙）重写此方法
 func _post_move_hook(_delta: float) -> void:
 	pass
 
@@ -965,7 +965,7 @@ func _die_by_player() -> void:
 	# 场景卸载（WorldSim.stop 置空）后残余帧的攻击回调可能仍走到这里——判空防崩；
 	# 本地置尸体态：否则同帧第二来源命中会再次走完本函数（双倍经验/金币/掉落）
 	if WorldSim.sim != null:
-		WorldSim.sim.report_killed(inst.id, global_position)  # 同步触发 on_sim_death()（红史莱姆在此裂出子代）
+		WorldSim.sim.report_killed(inst.id, global_position)  # 同步触发 on_sim_death()（赤炎小魔在此裂出子代）
 	else:
 		on_sim_death()
 

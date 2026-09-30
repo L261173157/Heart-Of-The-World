@@ -5,7 +5,7 @@
 
 [resource]
 script = ExtResource("1_hvab1")
-species_name = "妖鬼"
+species_name = "火把哥布林"
 visual_scale = 1.0
 body_scale = 1.08
 frames_override = ExtResource("2_frames")
@@ -14,4 +14,4 @@ expansion_threshold = 8
 poise = 0.05
 assist_radius = 260.0
 migrate_count = 2
-prey = Array[String](["鸡"])
+prey = Array[String](["山猪"])

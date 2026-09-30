@@ -5,9 +5,10 @@
 
 [resource]
 script = ExtResource("1_msh")
-species_name = "蘑菇怪"
+species_name = "巫毒萨满"
 visual_scale = 1.0
 body_scale = 0.98
+projectile_tex = "spell"
 frames_override = ExtResource("2_frames")
 ai_archetype = "ranged"
 habitats = Array[String](["forest"])
@@ -26,5 +27,5 @@ attack_range = 230.0
 attack_cooldown = 2.2
 flee_hp_ratio = 0.4
 poise = 0.1
-prey = Array[String](["绿蛙"])
+prey = Array[String](["蜥蜴刀客"])
 migrate_count = 2

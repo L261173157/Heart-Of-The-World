@@ -5,9 +5,10 @@
 
 [resource]
 script = ExtResource("1_mdk")
-species_name = "曼德拉草"
+species_name = "弹弓地精"
 visual_scale = 1.0
 body_scale = 0.98
+projectile_tex = "acorn"
 frames_override = ExtResource("2_frames")
 ai_archetype = "ranged"
 habitats = Array[String](["forest"])

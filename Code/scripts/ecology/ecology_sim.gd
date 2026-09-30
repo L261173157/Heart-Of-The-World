@@ -1,6 +1,6 @@
 ## 生态模拟器（纯逻辑核心，RefCounted）。
 ## 闭环：老化死亡 → 尸体消散 → 繁衍补员 → 过量扩张；多物种共享区域承载（种间竞争），
-## 栖息地约束迁徙方向，红史莱姆型种族被击杀时分裂子代（越杀越多）。
+## 栖息地约束迁徙方向，赤炎小魔型种族被击杀时分裂子代（越杀越多）。
 ## 架构铁律：本类及 scripts/ecology/ 下所有依赖禁止引用 Node / 场景树；
 ## 未来联机化时整体搬到服务端做权威模拟，客户端只消费信号与快照。
 ## 所有状态变更只能通过 tick() 或 report_killed() 进入，保证模拟单点权威。
@@ -728,7 +728,7 @@ func restore_from_dict(p_regions: Array, p_species_list: Array[SpeciesData], dat
 		if typeof(entry) != TYPE_DICTIONARY:
 			continue
 		var d: Dictionary = entry
-		# 物种名经美术 v5 更名迁移（旧档骷髅兵→甲虫等；已删物种查无即跳过）
+		# 物种名经美术 v5 更名迁移（旧档骷髅兵→长矛哥布林等；已删物种查无即跳过）
 		var species := find_species(SpeciesCatalog.migrate_name(str(d.get("species", ""))))
 		var region: SimRegion = regions.get(str(d.get("region", "")))
 		if species == null or region == null:

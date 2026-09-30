@@ -104,7 +104,7 @@ func _check_species(terrain: String, band: Dictionary, species: SpeciesData) -> 
 ## C. 反推自洽：每地形取首个普通物种作代表——反推区间非空，
 ## 区间中心的 base_strength 实测击杀刀数必须回到带内（P4 数值生成的可信度证明）。
 ## 代表优先取非重甲（重甲走 kill_heavy 带，与反推的普通 kill 带口径不符——
-## 美术 v5 后 lava 首个物种是石像鬼，重甲代表会把承伤下限顶成空区间）
+## 美术 v5 后 lava 首个物种是黑曜牛卫，重甲代表会把承伤下限顶成空区间）
 func _check_derivation(terrain_species: Dictionary) -> void:
 	for terrain: String in terrain_species:
 		var species_arr: Array = terrain_species[terrain]
@@ -141,8 +141,8 @@ func _check_derivation(terrain_species: Dictionary) -> void:
 
 ## D. 经济带：掉落量级 / 强化可负担性（pacing_test 动态闸门的静态对应）
 func _check_economy(by_name: Dictionary) -> void:
-	# 入门经济：西部妖鬼成年单杀 3~10 金（低于 3 无积累感，高于 10 破坏升级节奏）
-	var goblin: SpeciesData = by_name.get("妖鬼")
+	# 入门经济：西部火把哥布林成年单杀 3~10 金（低于 3 无积累感，高于 10 破坏升级节奏）
+	var goblin: SpeciesData = by_name.get("火把哥布林")
 	var inst := MonsterInstance.new()
 	inst.species = goblin
 	inst.age = goblin.maturity_age + CombatBandMath.REF_AGE_OFFSET
@@ -167,7 +167,7 @@ func _check_economy(by_name: Dictionary) -> void:
 	# Boss 经济闸门：长寿 Boss（年龄=寿命上限）单杀 ≤ 1300 金——
 	# 超过全部消费口（商店满配 1950 金）会让击杀一只 Boss 后金币失去意义
 	# （EconomyMath.BOSS_GOLD_AGE_CAP 年龄封顶的守门断言）
-	var king: SpeciesData = by_name.get("龟王")
+	var king: SpeciesData = by_name.get("熔岩龟王")
 	var boss := MonsterInstance.new()
 	boss.species = king
 	boss.age = king.lifespan_max

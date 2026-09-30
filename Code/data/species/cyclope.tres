@@ -5,8 +5,8 @@
 
 [resource]
 script = ExtResource("1_cyc")
-species_name = "独眼巨人"
-visual_scale = 1.0
+species_name = "山岳熊猫"
+visual_scale = 0.5
 body_scale = 0.98
 tint = Color(0.75, 0.6, 0.5, 1)
 frames_override = ExtResource("2_frames")
@@ -30,4 +30,4 @@ attack_cooldown = 1.0
 flee_hp_ratio = 0.1
 defense_reduction = 0.2
 poise = 0.3
-prey = Array[String](["松鼠"])
+prey = Array[String](["山蜂"])

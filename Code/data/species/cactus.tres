@@ -5,9 +5,10 @@
 
 [resource]
 script = ExtResource("1_cac")
-species_name = "仙人掌怪"
+species_name = "投骨豺狼人"
 visual_scale = 0.5
 body_scale = 1.11
+projectile_tex = "bone"
 frames_override = ExtResource("2_frames")
 ai_archetype = "ranged"
 habitats = Array[String](["hill"])

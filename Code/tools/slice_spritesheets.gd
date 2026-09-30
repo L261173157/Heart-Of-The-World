@@ -240,13 +240,14 @@ const CREATURES_NA := {
 }
 
 # ============================ Tiny Swords（美术 v6）============================
-## 五色军团生态（映射真源 Documents/美术方案-v6-TinySwords.md §3）：
-## 蓝=友军/玩家系；敌对军团按群系：plains=红、forest=黑紫、snow=蓝黑、swamp=紫、hill=黄、lava=红黑。
-## 密度：角色/NPC/Boss 原生直出（k=1，2026-09-20「糊」根治；显示端整数 scale ×2 表达
-## 体型档），fx/deco 沿用 h 目标档（fx_scale 消费端语义不变）。
-## 动作补齐（2026-09-28）：裸兵种整体换工具版（武器常驻不闪现），attack=同色
-## Pawn_Interact；Warrior 系/Lancer 系 hurt=同色 Guard/Right_Defence——TS 现成
-## 动作素材全量启用（此前 12 物种战斗静默回退 idle）。羊/鸭无动作条带，不补。
+## 英雄/NPC/fx 仍用免费包五色军团（蓝=友军/玩家系）；怪物 29 物种 2026-09-30 起
+## 换装 Enemy Pack（assets/ts_enemy/，映射真源 Documents/美术方案-v6-TinySwords.md §13）：
+## 21/22 只 EP 怪物直接启用（Paddle Shark 留库），5 组 bake 异色复用（Imp×2/蜂×2/
+## HexShaman×2/Turtle×2/Minotaur×2），被动猎物猪=Extra Pig、羊/鸭留免费包。
+## EP 条带画布按体型 192/256/320/384，一律 res:// 绝对路径；动画名归一：
+## Run/Move/Walk→walk，Shoot/Throw/Attack*→attack，Guard/Hit→hurt，
+## Troll 专属 Windup→windup（冲锋前摇）/Recovery→hurt/Dead→die。
+## 密度政策不变：角色 k=1 原生直出（史莱姆系 k=2 为分裂子代留档），fx/deco 沿用 h 档。
 ## Lancer 右向段：idle from 24 / run from 12（5 方向×12/6 帧分段，2026-09-20 像素实证）。
 const CREATURES_TS := {
 	# --- 英雄三皮肤（Warrior；键名沿用 ninja* 免存档迁移） ---
@@ -317,54 +318,65 @@ const CREATURES_TS := {
 		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle Knife.png", "walk": "Units/Blue Units/Pawn/Pawn_Run Knife.png"},
 		"fps": {"idle": 6.0, "walk": 8.0},
 	},
-	# --- 29 物种（id/存档键不变；显示名迁移见 v6 方案 §3） ---
+	# --- 29 物种（id/存档键不变；Enemy Pack 换装 2026-09-30，显示名同步迁移） ---
+	# plains：火把哥布林/地精矿工/突袭蛇/青甲龟/山猪
 	"oni": {
-		"anims": {"idle": "Units/Red Units/Pawn/Pawn_Idle Axe.png", "walk": "Units/Red Units/Pawn/Pawn_Run Axe.png",
-			"attack": "Units/Red Units/Pawn/Pawn_Interact Axe.png"},
+		"anims": {"idle": "res://assets/ts_enemy/Torch Goblin/Torch Goblin_Idle.png",
+			"walk": "res://assets/ts_enemy/Torch Goblin/Torch Goblin_Run.png",
+			"attack": "res://assets/ts_enemy/Torch Goblin/Torch Goblin_Attack.png"},
 		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"sprout": {
-		"anims": {"idle": "Units/Yellow Units/Pawn/Pawn_Idle Knife.png", "walk": "Units/Yellow Units/Pawn/Pawn_Run Knife.png",
-			"attack": "Units/Yellow Units/Pawn/Pawn_Interact Knife.png"},
+		"anims": {"idle": "res://assets/ts_enemy/Gnome/Gnome_Idle.png",
+			"walk": "res://assets/ts_enemy/Gnome/Gnome_Run.png",
+			"attack": "res://assets/ts_enemy/Gnome/Gnome_Attack.png"},
 		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"boar": {
-		"anims": {"idle": "Units/Red Units/Warrior/Warrior_Idle.png", "walk": "Units/Red Units/Warrior/Warrior_Run.png",
-			"attack": "Units/Red Units/Warrior/Warrior_Attack1.png", "hurt": "Units/Red Units/Warrior/Warrior_Guard.png"},
-		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0, "hurt": 8.0}, "noloop": ["attack", "hurt"],
-	},
-	"turtle": {
-		"anims": {"idle": "Units/Blue Units/Warrior/Warrior_Idle.png", "walk": "Units/Blue Units/Warrior/Warrior_Run.png",
-			"attack": "Units/Blue Units/Warrior/Warrior_Attack1.png", "hurt": "Units/Blue Units/Warrior/Warrior_Guard.png"},
-		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0, "hurt": 8.0}, "noloop": ["attack", "hurt"],
-	},
-	"chicken": {
-		"cell": Vector2i(128, 128),
-		"anims": {"idle": "Terrain/Resources/Meat/Sheep/Sheep_Idle.png", "walk": "Terrain/Resources/Meat/Sheep/Sheep_Move.png"},
-		"fps": {"idle": 4.0, "walk": 6.0},
-	},
-	"slime": {
-		"anims": {"idle": "Units/Red Units/Pawn/Pawn_Idle Knife.png", "walk": "Units/Red Units/Pawn/Pawn_Run Knife.png",
-			"attack": "Units/Red Units/Pawn/Pawn_Interact Knife.png"},
-		## 史莱姆特例 k=2：小体型档最终整数缩放为 1，分裂子代（0.6×）将无处可小；
-		## 折半帧让本体落 2 档、子代落 1 档（果冻无细节损失顾虑）
-		"bake": {"sat": 1.35, "val": 0.92}, "k": 2, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0},
-		"noloop": ["attack"],
-	},
-	"frog": {
-		"anims": {"idle": "Units/Yellow Units/Pawn/Pawn_Idle Knife.png", "walk": "Units/Yellow Units/Pawn/Pawn_Run Knife.png",
-			"attack": "Units/Yellow Units/Pawn/Pawn_Interact Knife.png"},
+		"anims": {"idle": "res://assets/ts_enemy/Snake/Snake_Idle.png",
+			"walk": "res://assets/ts_enemy/Snake/Snake_Run.png",
+			"attack": "res://assets/ts_enemy/Snake/Snake_Attack.png"},
 		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
+	"turtle": {
+		"cell": Vector2i(320, 320),
+		"anims": {"idle": "res://assets/ts_enemy/Turtle/Turtle_Idle.png",
+			"walk": "res://assets/ts_enemy/Turtle/Turtle_Walk.png",
+			"attack": "res://assets/ts_enemy/Turtle/Turtle_Attack.png"},
+		"fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0}, "noloop": ["attack"],
+	},
+	"chicken": {
+		"anims": {"idle": "res://assets/ts_enemy_extra/Pig/Pig_Idle.png",
+			"walk": "res://assets/ts_enemy_extra/Pig/Pig_Run.png"},
+		"fps": {"idle": 5.0, "walk": 8.0},
+	},
+	# forest：赤炎小魔/蜥蜴刀客/弹弓地精/巫毒萨满/山羊
+	"slime": {
+		## 史莱姆特例 k=2 延续：小体型档最终整数缩放无处可小时折半帧留档
+		## （Imp 三段攻击取 Start＝出手前摇+拍击）
+		"anims": {"idle": "res://assets/ts_enemy/Imp/Imp_Idle.png",
+			"walk": "res://assets/ts_enemy/Imp/Imp_Move.png",
+			"attack": "res://assets/ts_enemy/Imp/Imp_Attack_Start.png"},
+		"k": 2, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+	},
+	"frog": {
+		"anims": {"idle": "res://assets/ts_enemy/Lizard/Lizard_Idle.png",
+			"walk": "res://assets/ts_enemy/Lizard/Lizard_Run.png",
+			"attack": "res://assets/ts_enemy/Lizard/Lizard_Attack.png",
+			"hurt": "res://assets/ts_enemy_extra/Lizard Hit/Lizard_Hit.png"},
+		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0, "hurt": 8.0}, "noloop": ["attack", "hurt"],
+	},
 	"mandrake": {
-		"anims": {"idle": "Units/Purple Units/Archer/Archer_Idle.png", "walk": "Units/Purple Units/Archer/Archer_Run.png",
-			"attack": "Units/Purple Units/Archer/Archer_Shoot.png"},
+		"anims": {"idle": "res://assets/ts_enemy/Slingshot Gnome/Slingshot Gnome_Idle.png",
+			"walk": "res://assets/ts_enemy/Slingshot Gnome/Slingshot Gnome_Run.png",
+			"attack": "res://assets/ts_enemy/Slingshot Gnome/Slingshot Gnome_Shoot.png"},
 		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"mushroom": {
-		"anims": {"idle": "Units/Black Units/Archer/Archer_Idle.png", "walk": "Units/Black Units/Archer/Archer_Run.png",
-			"attack": "Units/Black Units/Archer/Archer_Shoot.png"},
-		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+		"anims": {"idle": "res://assets/ts_enemy/Hex Shaman/Hex Shaman_Idle.png",
+			"walk": "res://assets/ts_enemy/Hex Shaman/Hex Shaman_Run.png",
+			"attack": "res://assets/ts_enemy/Hex Shaman/Hex Shaman_Attack.png"},
+		"fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0}, "noloop": ["attack"],
 	},
 	"raccoon": {
 		"cell": Vector2i(128, 128),
@@ -372,52 +384,70 @@ const CREATURES_TS := {
 		"bake": {"sat": 0.45, "val": 0.78}, "fps": {"idle": 4.0, "walk": 6.0},
 	},
 	"treant": {
-		"anims": {"idle": "Units/Black Units/Warrior/Warrior_Idle.png", "walk": "Units/Black Units/Warrior/Warrior_Run.png",
-			"attack": "Units/Black Units/Warrior/Warrior_Attack1.png", "hurt": "Units/Black Units/Warrior/Warrior_Guard.png"},
-		"fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0, "hurt": 8.0}, "noloop": ["attack", "hurt"],
+		## 巨魔王＝Troll 完整 Boss 连招：Windup 冲锋前摇/Attack/Recovery 受击后摇/Dead 死亡
+		"cell": Vector2i(384, 384),
+		"anims": {
+			"idle": "res://assets/ts_enemy/Troll/Troll_Idle.png",
+			"walk": "res://assets/ts_enemy/Troll/Troll_Walk.png",
+			"attack": "res://assets/ts_enemy/Troll/Troll_Attack.png",
+			"windup": "res://assets/ts_enemy/Troll/Troll_Windup.png",
+			"hurt": "res://assets/ts_enemy/Troll/Troll_Recovery.png",
+			"die": "res://assets/ts_enemy_extra/Troll Dead/Troll_Dead.png",
+		},
+		"fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0, "windup": 10.0, "hurt": 8.0, "die": 8.0},
+		"noloop": ["attack", "windup", "hurt", "die"],
 	},
-	"slime_teal": {
-		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle Knife.png", "walk": "Units/Blue Units/Pawn/Pawn_Run Knife.png",
-			"attack": "Units/Blue Units/Pawn/Pawn_Interact Knife.png"},
-		"bake": {"hue": 0.52, "sat": 0.55, "val": 1.05}, "k": 2, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0},
-		"noloop": ["attack"],
-	},
+	# snow：雪原窃贼/白骨兵/冰霜小魔/雪原巨熊
 	"penguin": {
-		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle Pickaxe.png", "walk": "Units/Blue Units/Pawn/Pawn_Run Pickaxe.png",
-			"attack": "Units/Blue Units/Pawn/Pawn_Interact Pickaxe.png"},
+		"anims": {"idle": "res://assets/ts_enemy/Thief/Thief_Idle.png",
+			"walk": "res://assets/ts_enemy/Thief/Thief_Run.png",
+			"attack": "res://assets/ts_enemy/Thief/Thief_Attack.png"},
 		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"ghost": {
-		"anims": {"idle": "Units/Blue Units/Pawn/Pawn_Idle Knife.png", "walk": "Units/Blue Units/Pawn/Pawn_Run Knife.png",
-			"attack": "Units/Blue Units/Pawn/Pawn_Interact Knife.png"},
-		"bake": {"sat": 0.12, "val": 1.1}, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0},
-		"noloop": ["attack"],
-	},
-	"bear": {
-		"anims": {"idle": "Units/Black Units/Warrior/Warrior_Idle.png", "walk": "Units/Black Units/Warrior/Warrior_Run.png",
-			"attack": "Units/Black Units/Warrior/Warrior_Attack1.png", "hurt": "Units/Black Units/Warrior/Warrior_Guard.png"},
+		"anims": {"idle": "res://assets/ts_enemy/Skull/Skull_Idle.png",
+			"walk": "res://assets/ts_enemy/Skull/Skull_Run.png",
+			"attack": "res://assets/ts_enemy/Skull/Skull_Attack.png",
+			"hurt": "res://assets/ts_enemy_extra/Skull Guard/Skull_Guard.png"},
 		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0, "hurt": 8.0}, "noloop": ["attack", "hurt"],
 	},
-	"bat": {
-		"anims": {"idle": "Units/Purple Units/Pawn/Pawn_Idle Knife.png", "walk": "Units/Purple Units/Pawn/Pawn_Run Knife.png",
-			"attack": "Units/Purple Units/Pawn/Pawn_Interact Knife.png"},
+	"slime_teal": {
+		"anims": {"idle": "res://assets/ts_enemy/Imp/Imp_Idle.png",
+			"walk": "res://assets/ts_enemy/Imp/Imp_Move.png",
+			"attack": "res://assets/ts_enemy/Imp/Imp_Attack_Start.png"},
+		"bake": {"hue": 0.55, "sat": 0.65, "val": 1.05}, "k": 2,
 		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
+	"bear": {
+		"cell": Vector2i(256, 256),
+		"anims": {"idle": "res://assets/ts_enemy/Bear/Bear_Idle.png",
+			"walk": "res://assets/ts_enemy/Bear/Bear_Run.png",
+			"attack": "res://assets/ts_enemy/Bear/Bear_Attack.png"},
+		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+	},
+	# swamp：巨蝠/沼泽蛛/炸弹鱼/鱼叉鲨/野鸭
+	"bat": {
+		"anims": {"idle": "res://assets/ts_enemy/Giant Bat/Giant Bat_Idle.png",
+			"walk": "res://assets/ts_enemy/Giant Bat/Giant Bat_Move.png",
+			"attack": "res://assets/ts_enemy/Giant Bat/Giant Bat_Attack.png"},
+		"fps": {"idle": 6.0, "walk": 10.0, "attack": 10.0}, "noloop": ["attack"],
+	},
 	"crab": {
-		"anims": {"idle": "Units/Blue Units/Archer/Archer_Idle.png", "walk": "Units/Blue Units/Archer/Archer_Run.png",
-			"attack": "Units/Blue Units/Archer/Archer_Shoot.png"},
-		"bake": {"hue": 0.45, "sat": 0.95}, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0},
-		"noloop": ["attack"],
+		"anims": {"idle": "res://assets/ts_enemy/Spider/Spider_Idle.png",
+			"walk": "res://assets/ts_enemy/Spider/Spider_Run.png",
+			"attack": "res://assets/ts_enemy/Spider/Spider_Attack.png"},
+		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"octopus": {
-		"anims": {"idle": "Units/Red Units/Archer/Archer_Idle.png", "walk": "Units/Red Units/Archer/Archer_Run.png",
-			"attack": "Units/Red Units/Archer/Archer_Shoot.png"},
-		"bake": {"hue": 0.78}, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0},
-		"noloop": ["attack"],
+		"anims": {"idle": "res://assets/ts_enemy/Bomb Fish/Bomb Fish_Idle.png",
+			"walk": "res://assets/ts_enemy/Bomb Fish/Bomb Fish_Run.png",
+			"attack": "res://assets/ts_enemy/Bomb Fish/Bomb Fish_Shoot.png"},
+		"fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0}, "noloop": ["attack"],
 	},
 	"eye": {
-		"anims": {"idle": "Units/Yellow Units/Archer/Archer_Idle.png", "walk": "Units/Yellow Units/Archer/Archer_Run.png",
-			"attack": "Units/Yellow Units/Archer/Archer_Shoot.png"},
+		"anims": {"idle": "res://assets/ts_enemy/Harpoon Shark/Harpoon Shark_Idle.png",
+			"walk": "res://assets/ts_enemy/Harpoon Shark/Harpoon Shark_Run.png",
+			"attack": "res://assets/ts_enemy/Harpoon Shark/Harpoon Shark_Throw.png"},
 		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"parrot": {
@@ -426,70 +456,81 @@ const CREATURES_TS := {
 			"walk": "Terrain/Decorations/Rubber Duck/Rubber duck.png"},
 		"fps": {"idle": 2.0, "walk": 5.0},
 	},
+	# hill：长矛哥布林/山蜂/投骨豺狼人/山岳熊猫/牛头王
 	"beetle": {
-		"anims": {"idle": "Units/Yellow Units/Warrior/Warrior_Idle.png", "walk": "Units/Yellow Units/Warrior/Warrior_Run.png",
-			"attack": "Units/Yellow Units/Warrior/Warrior_Attack1.png", "hurt": "Units/Yellow Units/Warrior/Warrior_Guard.png"},
-		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0, "hurt": 8.0}, "noloop": ["attack", "hurt"],
+		"cell": Vector2i(256, 256),
+		"anims": {"idle": "res://assets/ts_enemy/Spear Goblin/Spear Goblin_Idle.png",
+			"walk": "res://assets/ts_enemy/Spear Goblin/Spear Goblin_Run.png",
+			"attack": "res://assets/ts_enemy/Spear Goblin/Spear Goblin_Attack Fast.png"},
+		"fps": {"idle": 6.0, "walk": 8.0, "attack": 11.0}, "noloop": ["attack"],
 	},
 	"squirrel": {
-		"anims": {"idle": "Units/Yellow Units/Pawn/Pawn_Idle Knife.png", "walk": "Units/Yellow Units/Pawn/Pawn_Run Knife.png",
-			"attack": "Units/Yellow Units/Pawn/Pawn_Interact Knife.png"},
-		"bake": {"hue": -0.04, "sat": 1.2, "val": 0.95}, "fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0},
-		"noloop": ["attack"],
+		"anims": {"idle": "res://assets/ts_enemy/Bumblebee/Bumblebee_Idle.png",
+			"walk": "res://assets/ts_enemy/Bumblebee/Bumblebee_Move.png",
+			"attack": "res://assets/ts_enemy/Bumblebee/Bumblebee_Attack.png"},
+		"fps": {"idle": 6.0, "walk": 10.0, "attack": 12.0}, "noloop": ["attack"],
 	},
 	"cactus": {
-		"cell": Vector2i(320, 320),
-		"anims": {
-			"idle": "Units/Yellow Units/Lancer/Lancer_Idle.png",
-			"walk": "Units/Yellow Units/Lancer/Lancer_Run.png",
-			"attack": "Units/Yellow Units/Lancer/Lancer_Right_Attack.png",
-			"hurt": "Units/Yellow Units/Lancer/Lancer_Right_Defence.png",
-		},
-		"bake": {"hue": 0.2, "sat": 0.9, "val": 0.95},
+		"anims": {"idle": "res://assets/ts_enemy/Gnoll/Gnoll_Idle.png",
+			"walk": "res://assets/ts_enemy/Gnoll/Gnoll_Walk.png",
+			"attack": "res://assets/ts_enemy/Gnoll/Gnoll_Throw.png",
+			"hurt": "res://assets/ts_enemy_extra/Gnoll Hit/Gnoll_Hit.png"},
 		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0, "hurt": 8.0}, "noloop": ["attack", "hurt"],
 	},
 	"cyclope": {
-		"anims": {"idle": "Units/Purple Units/Warrior/Warrior_Idle.png", "walk": "Units/Purple Units/Warrior/Warrior_Run.png",
-			"attack": "Units/Purple Units/Warrior/Warrior_Attack1.png", "hurt": "Units/Purple Units/Warrior/Warrior_Guard.png"},
-		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0, "hurt": 8.0}, "noloop": ["attack", "hurt"],
+		"cell": Vector2i(256, 256),
+		"anims": {"idle": "res://assets/ts_enemy/Panda/Panda_Idle.png",
+			"walk": "res://assets/ts_enemy/Panda/Panda_Run.png",
+			"attack": "res://assets/ts_enemy/Panda/Panda_Attack.png"},
+		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
 	},
 	"boss_samurai": {
 		"cell": Vector2i(320, 320),
 		"anims": {
-			"idle": {"path": "Units/Black Units/Lancer/Lancer_Idle.png", "step": 2},
-			"walk": "Units/Black Units/Lancer/Lancer_Run.png",
-			"attack": "Units/Black Units/Lancer/Lancer_Right_Attack.png",
-			"hurt": "Units/Black Units/Lancer/Lancer_Right_Defence.png",
+			"idle": "res://assets/ts_enemy/Minotaur/Minotaur_Idle.png",
+			"walk": "res://assets/ts_enemy/Minotaur/Minotaur_Walk.png",
+			"attack": "res://assets/ts_enemy/Minotaur/Minotaur_Attack.png",
+			"hurt": "res://assets/ts_enemy_extra/Minotaur Guard/Minotaur_Guard.png",
 		},
 		"fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0, "hurt": 8.0},
 		"noloop": ["attack", "hurt"],
 	},
+	# lava：火蜂/黑曜牛卫/熔岩萨满/熔岩龟王
 	"phoenix": {
-		"anims": {"idle": "Units/Yellow Units/Archer/Archer_Idle.png", "walk": "Units/Yellow Units/Archer/Archer_Run.png",
-			"attack": "Units/Yellow Units/Archer/Archer_Shoot.png"},
-		"bake": {"hue": -0.07, "sat": 1.3, "val": 1.05},
-		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0}, "noloop": ["attack"],
+		"anims": {"idle": "res://assets/ts_enemy/Bumblebee/Bumblebee_Idle.png",
+			"walk": "res://assets/ts_enemy/Bumblebee/Bumblebee_Move.png",
+			"attack": "res://assets/ts_enemy/Bumblebee/Bumblebee_Attack.png"},
+		"bake": {"hue": -0.10, "sat": 1.35, "val": 1.05},
+		"fps": {"idle": 6.0, "walk": 10.0, "attack": 12.0}, "noloop": ["attack"],
 	},
 	"gargoyle": {
-		"anims": {"idle": "Units/Black Units/Warrior/Warrior_Idle.png", "walk": "Units/Black Units/Warrior/Warrior_Run.png",
-			"attack": "Units/Black Units/Warrior/Warrior_Attack2.png", "hurt": "Units/Black Units/Warrior/Warrior_Guard.png"},
-		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0, "hurt": 8.0},
+		"cell": Vector2i(320, 320),
+		"anims": {
+			"idle": "res://assets/ts_enemy/Minotaur/Minotaur_Idle.png",
+			"walk": "res://assets/ts_enemy/Minotaur/Minotaur_Walk.png",
+			"attack": "res://assets/ts_enemy/Minotaur/Minotaur_Attack.png",
+			"hurt": "res://assets/ts_enemy_extra/Minotaur Guard/Minotaur_Guard.png",
+		},
+		"bake": {"sat": 0.28, "val": 0.60},
+		"fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0, "hurt": 8.0},
 		"noloop": ["attack", "hurt"],
 	},
 	"dragon": {
-		"cell": Vector2i(320, 320),
-		"anims": {
-			"idle": "Units/Red Units/Lancer/Lancer_Idle.png",
-			"walk": "Units/Red Units/Lancer/Lancer_Run.png",
-			"attack": "Units/Red Units/Lancer/Lancer_Right_Attack.png",
-			"hurt": "Units/Red Units/Lancer/Lancer_Right_Defence.png",
-		},
-		"bake": {"sat": 1.1, "val": 0.9},
-		"fps": {"idle": 6.0, "walk": 8.0, "attack": 10.0, "hurt": 8.0}, "noloop": ["attack", "hurt"],
+		"anims": {"idle": "res://assets/ts_enemy/Hex Shaman/Hex Shaman_Idle.png",
+			"walk": "res://assets/ts_enemy/Hex Shaman/Hex Shaman_Run.png",
+			"attack": "res://assets/ts_enemy/Hex Shaman/Hex Shaman_Attack.png"},
+		"bake": {"hue": 0.25, "sat": 1.30, "val": 0.95},
+		"fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0}, "noloop": ["attack"],
 	},
 	"boss_flam": {
-		"anims": {"idle": "Units/Red Units/Warrior/Warrior_Idle.png", "walk": "Units/Red Units/Warrior/Warrior_Run.png",
-			"attack": "Units/Red Units/Warrior/Warrior_Attack2.png", "hurt": "Units/Red Units/Warrior/Warrior_Guard.png"},
+		"cell": Vector2i(320, 320),
+		"anims": {
+			"idle": "res://assets/ts_enemy/Turtle/Turtle_Idle.png",
+			"walk": "res://assets/ts_enemy/Turtle/Turtle_Walk.png",
+			"attack": "res://assets/ts_enemy/Turtle/Turtle_Attack.png",
+			"hurt": "res://assets/ts_enemy_extra/Turtle Guard/Turtle_Guard_In.png",
+		},
+		"bake": {"hue": 0.65, "sat": 1.15, "val": 0.92},
 		"fps": {"idle": 6.0, "walk": 8.0, "attack": 9.0, "hurt": 8.0},
 		"noloop": ["attack", "hurt"],
 	},
@@ -515,6 +556,10 @@ const CREATURES_TS := {
 	"fx_beams": {"cell": Vector2i(96, 96), "anims": {"play": "fx_generated/beams.png"}, "h": 16, "fps": 12.0, "loop": false},
 	# --- 地标动画装饰（精灵泉水花，TS Water Foam 条带） ---
 	"deco_foam": {"cell": Vector2i(192, 192), "anims": {"play": "Terrain/Tileset/Water Foam.png"}, "h": 16, "fps": 8.0, "loop": true},
+	# --- 巢穴动画（Enemy Pack 小屋，nest_node 按群系消费；plains/forest=小屋、swamp=鱼屋、snow/hill/lava=洞穴） ---
+	"nest_hut": {"cell": Vector2i(256, 256), "anims": {"play": "res://assets/ts_enemy_extra/Goblin Hut/Goblin Hut.png"}, "fps": 8.0, "loop": true},
+	"nest_fish_hut": {"cell": Vector2i(192, 192), "anims": {"play": "res://assets/ts_enemy_extra/Fish Hut/Fish Hut.png"}, "fps": 8.0, "loop": true},
+	"nest_cave": {"cell": Vector2i(192, 192), "anims": {"play": "res://assets/ts_enemy_extra/Cave/Cave_Idle.png"}, "fps": 8.0, "loop": true},
 }
 
 
@@ -641,7 +686,9 @@ func _slice_ts(creature: String, cfg: Dictionary) -> void:
 			step = int(spec.get("step", 1))
 		else:
 			rel = spec
-		var img := Image.load_from_file(ProjectSettings.globalize_path(TS_DIR + rel))
+		# EP 等免费包外素材走 res:// 绝对路径（与 NA 管线同口径）
+		var img := Image.load_from_file(ProjectSettings.globalize_path(
+			rel if rel.begins_with("res://") else TS_DIR + rel))
 		if img == null:
 			push_warning("TS 素材缺失，跳过 %s: %s" % [creature, rel])
 			return

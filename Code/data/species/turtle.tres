@@ -5,8 +5,8 @@
 
 [resource]
 script = ExtResource("1_trt")
-species_name = "绿龟"
-visual_scale = 1.0
+species_name = "青甲龟"
+visual_scale = 0.5
 body_scale = 0.83
 tint = Color(0.55, 0.75, 0.5, 1)
 frames_override = ExtResource("2_frames")
@@ -28,4 +28,4 @@ attack_range = 40.0
 attack_cooldown = 1.8
 flee_hp_ratio = 0.2
 offense_scale = 0.9
-prey = Array[String](["萌芽怪"])
+prey = Array[String](["地精矿工"])

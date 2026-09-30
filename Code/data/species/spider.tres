@@ -6,9 +6,10 @@
 [resource]
 script = ExtResource("1_u0al7")
 frames_override = ExtResource("2_frames")
-species_name = "沼泽蟹"
+species_name = "沼泽蛛"
 visual_scale = 1.0
 body_scale = 0.98
+projectile_tex = "spell"
 tint = Color(0.75, 0.85, 0.95, 1)
 ai_archetype = "ranged"
 habitats = Array[String](["swamp"])
@@ -27,6 +28,6 @@ attack_range = 230.0
 attack_cooldown = 2.2
 flee_hp_ratio = 0.4
 poise = 0.1
-prey = Array[String](["红史莱姆", "冰史莱姆"])
+prey = Array[String](["赤炎小魔", "冰霜小魔"])
 element = "ice"
 migrate_count = 2

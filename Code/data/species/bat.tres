@@ -5,7 +5,7 @@
 
 [resource]
 script = ExtResource("1_bat")
-species_name = "蝙蝠"
+species_name = "巨蝠"
 visual_scale = 0.5
 body_scale = 0.9
 frames_override = ExtResource("2_frames")
@@ -25,5 +25,5 @@ detect_radius = 180.0
 attack_range = 30.0
 attack_cooldown = 1.0
 flee_hp_ratio = 0.25
-prey = Array[String](["冰史莱姆"])
+prey = Array[String](["冰霜小魔"])
 assist_radius = 260.0

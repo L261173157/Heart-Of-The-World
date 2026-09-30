@@ -5,8 +5,8 @@
 
 [resource]
 script = ExtResource("1_pho")
-species_name = "火鸟"
-visual_scale = 1.0
+species_name = "火蜂"
+visual_scale = 0.5
 body_scale = 1.18
 frames_override = ExtResource("2_frames")
 ai_archetype = "ranged"
@@ -27,6 +27,6 @@ detect_radius = 270.0
 attack_range = 220.0
 attack_cooldown = 2.0
 flee_hp_ratio = 0.3
-prey = Array[String](["石像鬼"])
+prey = Array[String](["黑曜牛卫"])
 element = "fire"
 migrate_count = 2

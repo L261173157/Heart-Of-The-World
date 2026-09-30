@@ -17,7 +17,7 @@ const BOSS_GOLD_AGE_CAP := 600.0
 ## --- 击杀掉落 ---
 ## 基础掉落随力量线性走（成年强怪更值钱），乘体型（分裂子代缩水）、
 ## 乘区域威胁（深入险地收益更高——风险收益对齐）。
-## 原随机版 randi_range(3,8)*threat 均值 5.5×威胁；本公式妖鬼成年 ≈ 7，量级持平。
+## 原随机版 randi_range(3,8)*threat 均值 5.5×威胁；本公式火把哥布林成年 ≈ 7，量级持平。
 static func kill_gold(inst: MonsterInstance) -> int:
 	var strength := inst.strength()
 	if inst.species.is_boss:
@@ -65,26 +65,26 @@ const ITEM_BUY := {
 	"onigiri": 20, "sushi": 40, "water-pot": 25, "medipack": 80, "life-pot": 150,
 }
 
-## 材料卖价。量级锚定击杀金币的 3~5 成（野猪单杀金 ~7，兽肉 8）——材料是
+## 材料卖价。量级锚定击杀金币的 3~5 成（突袭蛇单杀金 ~7，兽肉 8）——材料是
 ## 击杀收益的补充而非替代；稀有卷轴（2.2+ 威胁区物种）给到 30，风险收益对齐
 const ITEM_SELL := {
 	"beaf": 8, "fish": 8, "shrimp": 8, "octopus": 10, "tea-leaf": 6,
 	"scroll-fire": 30, "scroll-rock": 30, "silver-key": 15, "gold-key": 25,
 }
 
-## 物种 → 掉落材料（确定性；未列出的物种不掉材料——史莱姆/蝙蝠/幽灵等
+## 物种 → 掉落材料（确定性；未列出的物种不掉材料——史莱姆/巨蝠/白骨兵等
 ## 无形体系不给物品收益，宁缺毋滥）。Boss 在 BOSS_MATERIAL 单列（乘数 ×3）
 const SPECIES_MATERIAL := {
-	"野猪": "beaf", "雪熊": "beaf", "鸡": "beaf", "浣熊": "beaf", "鹦鹉": "beaf", "松鼠": "beaf",
-	"企鹅": "fish", "绿龟": "fish",
-	"沼泽蟹": "shrimp",
-	"红章鱼": "octopus",
-	"萌芽怪": "tea-leaf", "仙人掌怪": "tea-leaf", "蘑菇怪": "tea-leaf", "曼德拉草": "tea-leaf",
-	"火鸟": "scroll-fire", "火龙": "scroll-fire",
-	"石像鬼": "scroll-rock", "甲虫": "scroll-rock",
+	"突袭蛇": "beaf", "雪原巨熊": "beaf", "山猪": "beaf", "山羊": "beaf", "野鸭": "beaf", "山蜂": "beaf",
+	"雪原窃贼": "fish", "青甲龟": "fish",
+	"沼泽蛛": "shrimp",
+	"炸弹鱼": "octopus",
+	"地精矿工": "tea-leaf", "投骨豺狼人": "tea-leaf", "巫毒萨满": "tea-leaf", "弹弓地精": "tea-leaf",
+	"火蜂": "scroll-fire", "熔岩萨满": "scroll-fire",
+	"黑曜牛卫": "scroll-rock", "长矛哥布林": "scroll-rock",
 }
 
-const BOSS_MATERIAL := {"树人": "tea-leaf", "锹形虫王": "scroll-rock", "龟王": "fish"}
+const BOSS_MATERIAL := {"巨魔王": "tea-leaf", "牛头王": "scroll-rock", "熔岩龟王": "fish"}
 
 ## Boss 附加消耗品池（击杀必附 1 件，确定性抽取）
 const BOSS_BONUS_POOL := ["onigiri", "sushi", "medipack", "water-pot"]
@@ -96,7 +96,7 @@ const KEY_GOLD := "gold-key"
 ## 城塞地形 → 钥匙 id（"" = 无钥门）；hill 用银（精英可刷）、lava 用金（任务闭环）
 const DUNGEON_KEYS := {"hill": KEY_SILVER, "lava": KEY_GOLD}
 
-## --- collect 交付任务（P1）：材料池避开 beaf——兽肉来源含鸡/浣熊/鹦鹉等
+## --- collect 交付任务（P1）：材料池避开 beaf——兽肉来源含山猪/山羊/野鸭等
 ## 被动动物，悬赏引导会教玩家灭绝生态；高价池（2.2+ 威胁区材料）在 NPC
 ## 已完成 ≥3 单后解锁，与玩家的推进深度对齐
 const COLLECT_POOL := ["fish", "shrimp", "octopus", "tea-leaf"]

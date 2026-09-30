@@ -1,4 +1,4 @@
-## 远程弹幕（沼泽蟹吐息）：直线飞行，命中玩家结算伤害，撞墙消散，超时自毁。
+## 远程弹幕（沼泽蛛吐息）：直线飞行，命中玩家结算伤害，撞墙消散，超时自毁。
 ## 碰撞只检测玩家与地形（均 layer 1）；穿过其它怪物（虫海互相挡弹道会自杀）。
 class_name Projectile
 extends Area2D
@@ -10,22 +10,28 @@ var damage := 5.0
 var speed := 270.0
 ## 射手名（死亡信息归因用）
 var source_name := ""
+## 弹体贴图名（Enemy Pack 弹体烘焙件，空 = 默认箭矢；launch 前赋值）
+var bolt_tex := ""
 
 var _life := LIFE_TIME
 
 
-func launch(dir: Vector2, dmg: float, p_speed := 270.0, p_source := "") -> void:
+func launch(dir: Vector2, dmg: float, p_speed := 270.0, p_source := "", p_bolt := "") -> void:
 	direction = dir.normalized()
 	damage = dmg
 	speed = p_speed
 	source_name = p_source
+	bolt_tex = p_bolt
 	rotation = direction.angle()
 
 
 func _ready() -> void:
 	body_entered.connect(_on_body_entered)
-	# v6 TS 弹道：Archer 箭矢缩图（素材朝右，launch 已按方向设 rotation）
-	($Visual as Sprite2D).texture = load("res://assets/ts/structures_baked/arrow.png")
+	# v6 弹道：EP 弹体首帧烘焙件按物种取图（acorn/bone/harpoon/spell/bomb），
+	# 默认 Archer 箭矢缩图；素材一律朝右，launch 已按方向设 rotation
+	var name := bolt_tex if bolt_tex != "" else "arrow"
+	($Visual as Sprite2D).texture = load(
+		"res://assets/ts/structures_baked/%s.png" % name)
 
 
 func _physics_process(delta: float) -> void:

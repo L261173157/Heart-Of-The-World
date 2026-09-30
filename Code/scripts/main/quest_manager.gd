@@ -11,7 +11,7 @@ extends Node
 
 const MAX_ACTIVE := 3
 
-## game_world 的表现场景登记表（狩猎目标过滤幽灵物种用）
+## game_world 的表现场景登记表（狩猎目标过滤白骨兵物种用）
 const _GameWorld := preload("res://scripts/main/game_world.gd")
 
 

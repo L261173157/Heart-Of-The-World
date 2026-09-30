@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_0vtn4")
 frames_override = ExtResource("2_frames")
-species_name = "锹形虫王"
+species_name = "牛头王"
 tint = Color(0.95, 0.35, 0.15, 1)
 ai_archetype = "soldier"
 habitats = Array[String](["hill"])
@@ -33,5 +33,5 @@ boss_respawn_ticks = 360
 boss_size_scale = 2.2
 element = "fire"
 assist_radius = 200.0
-visual_scale = 0.4545
+visual_scale = 0.5
 body_scale = 1.0

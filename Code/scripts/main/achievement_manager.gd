@@ -7,9 +7,9 @@ extends Node
 const ACHIEVEMENTS := {
 	"first_elite": {"title": "金色猎手", "desc": "首次击杀精英个体"},
 	"first_boss": {"title": "顶点陨落", "desc": "讨伐任一生态位 Boss"},
-	"turtle_king": {"title": "洞窟之主", "desc": "讨伐龟王"},
-	"ant_queen": {"title": "断绝虫巢", "desc": "讨伐锹形虫王"},
-	"treant": {"title": "森林哀歌", "desc": "讨伐树人"},
+	"turtle_king": {"title": "洞窟之主", "desc": "讨伐熔岩龟王"},
+	"ant_queen": {"title": "断绝虫巢", "desc": "讨伐牛头王"},
+	"treant": {"title": "森林哀歌", "desc": "讨伐巨魔王"},
 	"witness_extinct": {"title": "见证灭绝", "desc": "亲历一个物种从世界上消失"},
 	"witness_revive": {"title": "见证复苏", "desc": "亲历灭绝物种重返世界"},
 	"level5": {"title": "初出茅庐", "desc": "达到 5 级"},
@@ -76,11 +76,11 @@ func _on_kill(_xp: int, _gold: int, monster_name: String, species_name: String) 
 		var species: SpeciesData = world._sim.find_species(species_name)
 		if species != null and species.is_boss:
 			unlock("first_boss")
-	if species_name == "锹形虫王":
+	if species_name == "牛头王":
 		unlock("ant_queen")
-	if species_name == "龟王":
+	if species_name == "熔岩龟王":
 		unlock("turtle_king")
-	if species_name == "树人":
+	if species_name == "巨魔王":
 		unlock("treant")
 	if _total_kills() >= 100:
 		unlock("kills100")

@@ -5,9 +5,10 @@
 
 [resource]
 script = ExtResource("1_drg")
-species_name = "火龙"
-visual_scale = 0.5
+species_name = "熔岩萨满"
+visual_scale = 1.0
 body_scale = 1.04
+projectile_tex = "spell"
 tint = Color(0.95, 0.7, 0.25, 1)
 frames_override = ExtResource("2_frames")
 ai_archetype = "ranged"
@@ -28,6 +29,6 @@ attack_cooldown = 2.4
 flee_hp_ratio = 0.1
 defense_reduction = 0.15
 poise = 0.3
-prey = Array[String](["石像鬼"])
+prey = Array[String](["黑曜牛卫"])
 element = "fire"
 migrate_count = 1

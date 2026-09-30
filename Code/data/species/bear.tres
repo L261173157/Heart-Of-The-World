@@ -5,8 +5,8 @@
 
 [resource]
 script = ExtResource("1_ber")
-species_name = "雪熊"
-visual_scale = 1.0
+species_name = "雪原巨熊"
+visual_scale = 0.5
 body_scale = 0.9
 tint = Color(0.85, 0.82, 0.78, 1)
 frames_override = ExtResource("2_frames")
@@ -30,4 +30,4 @@ attack_cooldown = 2.0
 flee_hp_ratio = 0.0
 defense_reduction = 0.15
 poise = 0.4
-prey = Array[String](["冰史莱姆", "幽灵"])
+prey = Array[String](["冰霜小魔", "白骨兵"])

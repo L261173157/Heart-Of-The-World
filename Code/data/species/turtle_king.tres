@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_rca8i")
 frames_override = ExtResource("2_frames")
-species_name = "龟王"
+species_name = "熔岩龟王"
 tint = Color(0.75, 0.55, 0.25, 1)
 ai_archetype = "guardian"
 habitats = Array[String](["lava"])
@@ -28,10 +28,10 @@ flee_hp_ratio = 0.0
 defense_reduction = 0.5
 knockback_resist = 0.95
 poise = 1.0
-prey = Array[String](["石像鬼"])
+prey = Array[String](["黑曜牛卫"])
 is_boss = true
 boss_respawn_ticks = 480
 boss_size_scale = 2.2
 element = "fire"
-visual_scale = 1.591
+visual_scale = 0.7
 body_scale = 1.0

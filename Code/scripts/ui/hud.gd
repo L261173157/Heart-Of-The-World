@@ -111,7 +111,7 @@ var _quick_id := ""
 var _fps_label: Label
 var _fps_accum := 0.0
 
-# --- 触控按钮图标（NA CC0 像素素材，与怪物/道具同风格源） ---
+# --- 触控按钮图标（美术 v6 · TS 烘焙/合成图标，bake_structures 产线） ---
 const ICON_ATTACK := preload("res://assets/ts/icons/attack.png")
 const ICON_DASH := preload("res://assets/ts/icons/dash.png")
 const ICON_HEAVY := preload("res://assets/ts/icons/heavy.png")
@@ -123,12 +123,12 @@ const ICON_SHOP := preload("res://assets/ts/icons/shop.png")
 const ICON_CODEX := preload("res://assets/ts/icons/codex.png")
 const ICON_COIN := preload("res://assets/ts/icons/coin.png")
 const ICON_HEART := preload("res://assets/ts/icons/heart.png")
-## P2 武器图标补位（NA weapons 闲置件）：katana=武器磨刀（刀）、fork=法杖赋能
-## （三叉法器）、sai=蛮力被动（叉手）；lance/bow 无语义位留库
+## 武器图标对位（TS Tools 件）：katana=武器磨刀（刀）、fork=法杖赋能
+## （三叉法器）、sai=蛮力被动（叉手）
 const ICON_KATANA := preload("res://assets/ts/icons/katana.png")
 const ICON_FORK := preload("res://assets/ts/icons/fork.png")
 const ICON_SAI := preload("res://assets/ts/icons/sai.png")
-## 物品栏按钮（v7）：NA jar 罐子 = 收纳意象
+## 物品栏按钮（v7）：TS 皮袋 = 收纳意象
 const ICON_BAG := preload("res://assets/ts/icons/bag.png")
 ## 升级三选一：被动 id → 图标（缺省用空卷轴）
 const PASSIVE_ICONS := {
@@ -213,13 +213,20 @@ func _ready() -> void:
 		_toast("升级！Lv.%d   属性点 +1" % new_level)
 	)
 
-	# P2 面板底：暂停菜单换 NA 对话框九宫格（np_dialogue）——
-	# 覆盖 glass 主题底但保留其按钮样式
-	var pause_panel := get_node("Root/PauseLayer/PausePanel") as PanelContainer
-	var pause_bg := HotwTheme.nine_patch_paper("res://assets/ts/UI Elements/UI Elements/Papers/SpecialPaper.png")
-	if pause_bg != null:
-		pause_panel.add_child(pause_bg)
-		pause_panel.move_child(pause_bg, 0)
+	# 面板底 TS 化（美术 v6 §8 收口）：木桌=交易/收纳（游商/物品栏），
+	# SpecialPaper=阅读/系统（暂停/图鉴/生态）——阅读类浅字在深纸上保对比
+	HotwTheme.paper_panel(get_node("Root/PauseLayer/PausePanel"), HotwTheme.PAPER_SPECIAL)
+	HotwTheme.paper_panel(shop_panel, HotwTheme.WOOD_TILE, 40)
+	HotwTheme.paper_panel(get_node("Root/CodexLayer/CodexPanel"), HotwTheme.PAPER_SPECIAL)
+	HotwTheme.paper_panel(ecology_panel, HotwTheme.PAPER_SPECIAL)
+	# 升级三选一赐福卡：WoodTable_Slots 木瓦底
+	for card: Button in passive_cards:
+		HotwTheme.style_wood_card(card)
+	# 面板标题换 TS 丝带签（原 Label 隐藏保留，场景结构/路径引用不动）
+	_swap_title_ribbon("Root/PauseLayer/PausePanel/Margin/VB/Title", 4)
+	_swap_title_ribbon("Root/ShopPanel/Margin/VB/Title", 2)
+	_swap_title_ribbon("Root/CodexLayer/CodexPanel/Margin/VB/Title", 0)
+	_swap_title_ribbon("Root/PassiveLayer/PassiveVB/PassiveTitle", 3, 360.0)
 
 	toast_label.modulate.a = 0.0
 	_setup_combat_toast()
@@ -266,11 +273,26 @@ func _place_below_modal_layers(node: Control) -> void:
 	root.move_child(node, modal_idx)
 
 
-# ==================== NPC 对话气泡（美术 v5，NA UI 件） ====================
-## NA dialogue-bubble.png 作九宫格底 + faceset-box 立绘框 + yes/no 按钮。
+## 标题 Label 换 TS 丝带签：同容器同位插入、横向收缩居中（全屏面板不拉通整幅）；
+## 原 Label 仅隐藏不删——场景树结构与其余代码的路径引用全部保持
+func _swap_title_ribbon(node_path: String, color_idx: int, min_width := 240.0) -> void:
+	var title := get_node_or_null(node_path) as Label
+	if title == null:
+		return
+	var tag := HotwTheme.ribbon_tag(title.text, color_idx, min_width)
+	tag.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var parent: Control = title.get_parent()
+	parent.add_child(tag)
+	parent.move_child(tag, title.get_index())
+	title.visible = false
+
+
+# ==================== NPC 对话气泡（美术 v6，TS RegularPaper 纸面） ====================
+## RegularPaper 九宫格底 + 合成金边头像框 + TS 方钮 yes/no + 丝带名牌。
 ## 攻击键=确认 / 冲刺键=关闭（player 侧经 dialogue_action 路由，触屏同通道）；
 ## 确认接单经 dialogue_confirmed 信号回到 QuestManager 结算
 var _dialogue_panel: Control
+var _dialogue_tag: Control
 var _dialogue_text: Label
 var _dialogue_name: Label
 var _dialogue_faceset: TextureRect
@@ -281,7 +303,7 @@ var _dialogue_kind := ""
 var _dialogue_timer := 0.0
 ## 对话发起 NPC 的世界位置（走开自动关气泡用；INF = 载荷未带位置不判距）
 var _dialogue_origin := Vector2.INF
-## NA 心形五帧（美术 v5 UI 主题化）：条带 80×16，帧 0-4 = 空→满
+## 心形五帧条带（TS 色板合成件 heart_strip）：条带 80×16，帧 0-4 = 空→满
 const HEART_STRIP := preload("res://assets/ts/icons/heart_strip.png")
 var _heart_icon: TextureRect
 var _heart_cache: Array[AtlasTexture] = []
@@ -344,18 +366,24 @@ func _setup_dialogue_bubble() -> void:
 	_dialogue_faceset.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dialogue_panel.add_child(_dialogue_faceset)
 
-	_dialogue_name = Label.new()
-	_dialogue_name.position = Vector2(130, 22)
-	_dialogue_name.size = Vector2(310, 24)
-	_dialogue_name.add_theme_font_size_override("font_size", 20)
-	_dialogue_name.add_theme_color_override("font_color", Color(1, 0.92, 0.6))
-	_dialogue_panel.add_child(_dialogue_name)
+	# 名牌（v6 TS 丝带）：蓝青签横在气泡上缘，RibbonLabel 即名牌文本位；
+	# 宽度随名字长度撑开（九宫 128 边距下带宽 = 宽 - 256）
+	var name_tag := HotwTheme.ribbon_tag("", 0, 340.0)
+	name_tag.position = Vector2(126, 4)
+	name_tag.size = Vector2(340, 44)
+	_dialogue_panel.add_child(name_tag)
+	_dialogue_tag = name_tag
+	_dialogue_name = name_tag.get_node("RibbonLabel")
+	_dialogue_name.add_theme_font_size_override("font_size", 19)
 
 	_dialogue_text = Label.new()
 	_dialogue_text.position = Vector2(130, 52)
 	_dialogue_text.size = Vector2(396, 84)
 	_dialogue_text.add_theme_font_size_override("font_size", 18)
-	_dialogue_text.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
+	_dialogue_text.add_theme_color_override("font_color", Color(0.16, 0.11, 0.06))
+	# 浅羊皮纸面上深墨字（v6 收口：白字对比不足改墨色，禁改回浅色）
+	_dialogue_text.add_theme_color_override("font_outline_color", Color(1.0, 0.97, 0.9, 0.35))
+	_dialogue_text.add_theme_constant_override("outline_size", 3)
 	_dialogue_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_dialogue_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_dialogue_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -382,6 +410,7 @@ func _setup_dialogue_bubble() -> void:
 	yes_label.size = Vector2(84, 18)
 	yes_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	yes_label.add_theme_font_size_override("font_size", 14)
+	yes_label.add_theme_color_override("font_color", Color(0.16, 0.11, 0.06))
 	yes_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dialogue_panel.add_child(yes_label)
 	var no_label := Label.new()
@@ -390,6 +419,7 @@ func _setup_dialogue_bubble() -> void:
 	no_label.size = Vector2(84, 18)
 	no_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	no_label.add_theme_font_size_override("font_size", 14)
+	no_label.add_theme_color_override("font_color", Color(0.16, 0.11, 0.06))
 	no_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dialogue_panel.add_child(no_label)
 
@@ -402,7 +432,10 @@ func _open_dialogue(payload: Dictionary) -> void:
 	var origin: Variant = payload.get("origin", Vector2.INF)
 	_dialogue_origin = origin if origin is Vector2 else Vector2.INF
 	_dialogue_quest = payload.get("quest", {}) if _dialogue_kind == "quest" else {}
-	_dialogue_name.text = str(payload.get("giver", ""))
+	var giver := str(payload.get("giver", ""))
+	if _dialogue_tag != null:
+		_dialogue_tag.size = Vector2(maxf(340.0, 244.0 + giver.length() * 24.0), 44.0)
+	_dialogue_name.text = giver
 	_dialogue_text.text = str(payload.get("text", ""))
 	var face_path := str(payload.get("faceset", ""))
 	_dialogue_faceset.texture = load(face_path) \
@@ -487,24 +520,37 @@ func _setup_hp_ghost_bar() -> void:
 	hp_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
-## Boss 顶部血条：名字 + 宽红条，顶部居中（战斗播报位下方，y=132 与其
-## 90~122 错开——此前两通道几何重叠，Boss 战中击杀播报直接盖住 Boss 名字）；
+## Boss 顶部血条：砖红丝带名牌 + TS BigBar 宽条，顶部居中（战斗播报位下方，
+## y=132 与其 90~122 错开——此前两通道几何重叠，Boss 战中击杀播报直接盖住 Boss 名字）；
 ## 满血也显示——遭遇即有血量锚点（通用头顶条满血不显示）
 func _setup_boss_bar() -> void:
-	_boss_name_label = Label.new()
-	_boss_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_boss_name_label.add_theme_font_size_override("font_size", 20)
-	_boss_name_label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.6))
-	_boss_bar = ProgressBar.new()
-	_boss_bar.custom_minimum_size = Vector2(520, 18)
-	_boss_bar.show_percentage = false
-	_boss_bar.add_theme_stylebox_override("fill", _bar_fill(Color(0.85, 0.2, 0.15)))
-	var boss_bg := StyleBoxFlat.new()
-	boss_bg.bg_color = Color(0.05, 0.06, 0.08, 0.85)
-	boss_bg.set_corner_radius_all(4)
-	_boss_bar.add_theme_stylebox_override("background", boss_bg)
+	# 名牌走丝带签：RibbonLabel 即文本位（_on_boss_tracked 只写 text 不换节点）
+	var name_tag := HotwTheme.ribbon_tag("", 1, 360.0)
+	_boss_name_label = name_tag.get_node("RibbonLabel")
+	_boss_name_label.add_theme_font_size_override("font_size", 19)
 	_boss_layer = VBoxContainer.new()
-	_boss_layer.add_child(_boss_name_label)
+	_boss_layer.add_child(name_tag)
+	_boss_bar = ProgressBar.new()
+	# 高 24 + 上下边距 8：BigBar_Fill 不透明带仅占纹理中部 ~20px，上下边距
+	# ×2 ≥ 条高时中心拉伸区变负、填充整条消失（隔离探针实证 m14/h22=0 红像素）
+	_boss_bar.custom_minimum_size = Vector2(520, 24)
+	_boss_bar.show_percentage = false
+	# TS BigBar：框=BigBar_Base 九宫（端帽 48 保形），填充=BigBar_Fill 原红横向平铺
+	var fill := StyleBoxTexture.new()
+	fill.texture = load(HotwTheme.TS_UI + "/Bars/BigBar_Fill.png")
+	fill.texture_margin_left = 14.0
+	fill.texture_margin_top = 8.0
+	fill.texture_margin_right = 14.0
+	fill.texture_margin_bottom = 8.0
+	fill.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE
+	_boss_bar.add_theme_stylebox_override("fill", fill)
+	var boss_bg := StyleBoxTexture.new()
+	boss_bg.texture = load(HotwTheme.TS_UI + "/Bars/BigBar_Base.png")
+	boss_bg.texture_margin_left = 48.0
+	boss_bg.texture_margin_top = 8.0
+	boss_bg.texture_margin_right = 48.0
+	boss_bg.texture_margin_bottom = 8.0
+	_boss_bar.add_theme_stylebox_override("background", boss_bg)
 	_boss_layer.add_child(_boss_bar)
 	_boss_layer.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	_boss_layer.grow_horizontal = Control.GROW_DIRECTION_BOTH
@@ -585,14 +631,15 @@ func _ts_bar_base() -> StyleBoxTexture:
 ## 触控按钮图形化（MOBA 布局）：攻击大圆钮 + 五技能圆钮 + 冷却遮罩/数字/
 ## 蓝耗角标，右上功能钮改小圆图标钮。节点名与 button_down 触发全保留，
 ## 只换视觉层——图标/遮罩子节点全部鼠标穿透，不挡按钮命中。
+## 底座 v6 起为 TS 圆钮两态（攻击=红、技能/功能=蓝），替代玻璃拟态圆。
 func _setup_icon_buttons() -> void:
-	HotwTheme.style_circle_button(%AttackBtn)
+	HotwTheme.style_ts_round_button(%AttackBtn, true)
 	HotwTheme.add_icon(%AttackBtn, ICON_ATTACK, 32.0)
 	var skill_btns: Array = [%DashBtn, %HeavyBtn, %BoltBtn, %HealBtn, %EmpowerBtn]
 	var skill_icons: Array = [ICON_DASH, ICON_HEAVY, ICON_BOLT, ICON_HEAL, ICON_EMPOWER]
 	for i in skill_btns.size():
 		var btn: Button = skill_btns[i]
-		HotwTheme.style_circle_button(btn)
+		HotwTheme.style_ts_round_button(btn)
 		var icon := HotwTheme.add_icon(btn, skill_icons[i], 22.0)
 		var cd_parts := HotwTheme.add_cd_overlay(btn)
 		HotwTheme.add_badge(btn, str(int(skill_cds[i]["mp"])))
@@ -603,10 +650,10 @@ func _setup_icon_buttons() -> void:
 	for pair: Array in [[%BtnEco, ICON_ECO], [%BtnCodex, ICON_CODEX], [%BtnShop, ICON_SHOP],
 			[%BtnBag, ICON_BAG]]:
 		var btn: Button = pair[0]
-		HotwTheme.style_circle_button(btn)
+		HotwTheme.style_ts_round_button(btn)
 		btn.text = ""
 		HotwTheme.add_icon(btn, pair[1], 18.0)
-	HotwTheme.style_circle_button(%PauseBtn)
+	HotwTheme.style_ts_round_button(%PauseBtn)
 	# 暂停面板/商店/三选一的图标走 Button.icon（文字说明保留，图标辅助扫读）
 	%ResumeBtn.icon = preload("res://assets/ts/icons/play.png")
 	%SaveBtn.icon = preload("res://assets/ts/icons/save.png")
@@ -635,7 +682,7 @@ func _setup_stats_row() -> void:
 	parent.move_child(row, stats_label.get_index())
 	stats_label.reparent(row)
 	# 血条前的心形：TopLeft 左移让位，图标绝对定位贴条头；
-	# NA heart 五帧条带（80×16）按血量比例换帧（0=空心 … 4=满心）
+	# TS 合成心形五帧条带（80×16）按血量比例换帧（0=空心 … 4=满心）
 	parent.offset_left += 30.0
 	var heart := TextureRect.new()
 	heart.texture = _heart_frame(4)
@@ -927,7 +974,7 @@ func _toggle_codex() -> void:
 		return
 	codex_layer.visible = not codex_layer.visible
 	if codex_layer.visible:
-		# 图鉴是 22 物种 + 成就的长列表阅读界面：读条时被围殴不是乐趣是干扰，
+		# 图鉴是 29 物种 + 成就的长列表阅读界面：读条时被围殴不是乐趣是干扰，
 		# 与升级三选一同口径（暂停 + 清触屏队列）；商店维持打开不暂停（已拍板）
 		get_tree().paused = true
 		TouchInput.clear_queues()
@@ -1120,6 +1167,23 @@ func _setup_shop_tabs() -> void:
 	tabs.name = "ShopTabs"
 	tabs.custom_minimum_size = Vector2(0, 336)
 	tabs.add_theme_font_size_override("font_size", 18)
+	# 页签木色化（配合木桌面板底）：选中亮木金边、未选暗木；内容区透明浮于木桌
+	var tab_un := StyleBoxFlat.new()
+	tab_un.bg_color = Color(0.24, 0.17, 0.12, 0.95)
+	tab_un.border_color = Color(0.5, 0.37, 0.24, 0.9)
+	tab_un.set_border_width_all(1)
+	tab_un.set_corner_radius_all(4)
+	tab_un.set_content_margin_all(10)
+	var tab_sel := tab_un.duplicate()
+	tab_sel.bg_color = Color(0.38, 0.27, 0.15, 0.98)
+	tab_sel.border_color = Color(1.0, 0.82, 0.45, 0.9)
+	tabs.add_theme_stylebox_override("tab_unselected", tab_un)
+	tabs.add_theme_stylebox_override("tab_selected", tab_sel)
+	tabs.add_theme_color_override("font_selected_color", Color(1, 0.95, 0.8))
+	tabs.add_theme_color_override("font_unselected_color", Color(0.82, 0.76, 0.66))
+	var tabs_panel := StyleBoxFlat.new()
+	tabs_panel.bg_color = Color(0, 0, 0, 0)
+	tabs.add_theme_stylebox_override("panel", tabs_panel)
 
 	var tab_up := VBoxContainer.new()
 	tab_up.name = "强化"
@@ -1229,6 +1293,8 @@ func _setup_inventory_layer() -> void:
 	panel.offset_right = 280.0
 	panel.offset_bottom = 290.0
 	_inv_layer.add_child(panel)
+	# 木瓦底 + 芥末黄丝带标题（与游商营地同属交易/收纳意象）
+	HotwTheme.paper_panel(panel, HotwTheme.WOOD_TILE, 40)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 20)
 	margin.add_theme_constant_override("margin_top", 14)
@@ -1238,11 +1304,8 @@ func _setup_inventory_layer() -> void:
 	var vb := VBoxContainer.new()
 	margin.add_child(vb)
 
-	var title := Label.new()
-	title.text = "物品栏"
-	title.add_theme_font_size_override("font_size", 22)
-	title.add_theme_color_override("font_color", Color(1, 0.9, 0.6))
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var title := HotwTheme.ribbon_tag("物品栏", 2, 200.0)
+	title.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	vb.add_child(title)
 
 	_inv_hint = Label.new()
@@ -1335,7 +1398,7 @@ func _on_inv_cell(id: String) -> void:
 ## 显示持有数；点击经 item_use_requested 交 player（满血满蓝拦截在 player 侧）
 func _setup_quick_slot() -> void:
 	_quick_btn = %QuickSlotBtn
-	HotwTheme.style_circle_button(_quick_btn)
+	HotwTheme.style_ts_round_button(_quick_btn)
 	_quick_icon = HotwTheme.add_icon(_quick_btn, ICON_HEART, 18.0)
 	_quick_badge = HotwTheme.add_badge(_quick_btn, "")
 	_quick_btn.pressed.connect(_on_quick_slot)
@@ -1366,7 +1429,7 @@ func _on_hp_changed(current: float, maximum: float) -> void:
 	hp_bar.max_value = maximum
 	_hp_max_cache = maximum
 	_hp_full = current >= maximum - 0.5
-	# NA 心形图标按血量换帧（美术 v5 UI 主题化：0=空心 … 4=满心）
+	# 心形图标按血量换帧（TS 合成条带：0=空心 … 4=满心）
 	if _heart_icon != null and maximum > 0.0:
 		_heart_icon.texture = _heart_frame(int(round(
 			clampf(current / maximum, 0.0, 1.0) * 4.0)))
