@@ -11,6 +11,7 @@ config_version=5
 [application]
 
 config/name="Heart Of The World"
+boot_splash/show_image=false
 run/main_scene="res://scenes/ui/main_menu.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://assets/icon/appicon_1024.png"
