@@ -80,7 +80,8 @@ assets/      creatures/sheets/（na_tileset.png=448×640 瓦片真源（地表/�
 ## 约定与注意事项
 
 - 注释与文档用中文；Godot 4 GDScript 语法（`@onready`/`@export`/typed signals）
-- 仓库位于 iCloud Drive 路径（含空格与中文）：shell 命令中的路径必须加引号；`.godot/` 缓存受同步干扰导致异常时先清理再重试
+- 仓库位于本地路径 `~/dev/Heart-Of-The-World`（2026-09-30 自 iCloud Drive 迁出，根治同步蒸发/「␣N」冲突副本/`.godot` 缓存干扰三类事故；备份走 GitHub 远端）；shell 命令中的路径仍建议加引号
+- GitHub 推送需显式走本地代理（系统代理 git 不自动读取）：`git -c http.proxy=http://127.0.0.1:7890 push ...`
 - `.godot/`、`build/`、`*.csproj`、`*.sln` 均被忽略；`.uid` 文件由编辑器生成，随代码提交
 - 行尾 LF；远程 github.com/L261173157/Heart-Of-The-World，主分支 `main`
 - 新想法一律写入 `Documents/开发计划.md` 的"待定池"，不得直接进当前里程碑代码
