@@ -8,6 +8,15 @@ const SKIN_LABELS := {"blue": "蓝忍", "dark": "黑忍", "white": "白忍"}
 
 
 func _ready() -> void:
+	# TS 纸面底 + 蓝青丝带标题签（v6 §8）：深纸保浅字对比，主菜单/暂停共用
+	HotwTheme.paper_panel(self, HotwTheme.PAPER_SPECIAL)
+	var title := get_node("Margin/VB/Title") as Label
+	if title != null:
+		var tag := HotwTheme.ribbon_tag(title.text, 0, 200.0)
+		tag.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		title.get_parent().add_child(tag)
+		title.get_parent().move_child(tag, title.get_index())
+		title.visible = false
 	%VolumeSlider.value = float(GameState.settings.get("volume", 0.8))
 	%MusicSlider.value = float(GameState.settings.get("music_volume", 1.0))
 	%SfxSlider.value = float(GameState.settings.get("sfx_volume", 1.0))

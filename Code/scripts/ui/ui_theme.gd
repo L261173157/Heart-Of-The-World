@@ -1,4 +1,5 @@
-## 共享 UI 主题工具：深色玻璃拟态 + 金色强调（HUD 与主菜单共用）。
+## 共享 UI 主题工具（美术 v6 · Tiny Swords 全套）：TS 方钮/圆钮两态、
+## Paper 纸面九宫、丝带标题签。HUD 与主菜单共用。
 ## 圆形图标按钮（MOBA 风格）也在这一站式构造：样式盒 + 图标层 +
 ## 冷却遮罩层 + 冷却数字，调用方只管订阅刷新。
 ## 纯静态方法、不持状态——可被任意 Control 场景零成本引用。
@@ -6,12 +7,21 @@ class_name HotwTheme
 
 const GOLD := Color(1.0, 0.85, 0.45)
 
+## TS UI 元素真源目录（免 preload：多数面板只加载一次，惰性 load 即可）
+const TS_UI := "res://assets/ts/UI Elements/UI Elements"
+const PAPER_REGULAR := TS_UI + "/Papers/RegularPaper.png"
+const PAPER_SPECIAL := TS_UI + "/Papers/SpecialPaper.png"
+const WOOD_TABLE := TS_UI + "/Wood Table/WoodTable.png"
+const WOOD_TILE := TS_UI + "/Wood Table/WoodTable_Slots.png"
+const RIBBONS := TS_UI + "/Ribbons/SmallRibbons.png"
+## 丝带色序（SmallRibbons 320×640 十行 ×64px，每色长短尾两条，这里取长尾）：
+## 0=蓝青 1=砖红 2=芥末黄 3=紫 4=蓝灰
+const RIBBON_ROW := {0: 0, 1: 2, 2: 4, 3: 6, 4: 8}
 
-## 深色玻璃主题：PanelContainer 深底金边、Button 三态 + 字色。
-## 与 HUD 原 _apply_theme 生成的完全同款，抽出来给主菜单复用。
-## 美术 v5 借鉴①：面板底色调向 NA 官方九宫格 np_6 的暗蓝灰（纹理九宫格在
-## 4.7 的 StyleBoxTexture 边距 API 缺失，改用同色系 StyleBoxFlat；对话气泡
-## 则直接用九宫格件——见 hud._setup_dialogue_bubble）
+
+## 全局主题：PanelContainer 保留深色底（各面板单独叠 TS 纸面/木桌九宫），
+## Button 统一 TS 蓝方钮两态（美术 v6 §8「StyleBox/Theme 统一」收口），
+## CheckButton 统一「暗槽 ↔ TS 蓝瓦」开关两态。
 static func glass_theme() -> Theme:
 	var theme := Theme.new()
 	var panel := StyleBoxFlat.new()
@@ -22,60 +32,177 @@ static func glass_theme() -> Theme:
 	panel.set_content_margin_all(8)
 	theme.set_stylebox("panel", "PanelContainer", panel)
 
-	var btn := StyleBoxFlat.new()
-	btn.bg_color = Color(0.13, 0.16, 0.2, 0.92)
-	btn.border_color = Color(GOLD.r, GOLD.g, GOLD.b, 0.5)
-	btn.set_border_width_all(1)
-	btn.set_corner_radius_all(6)
-	btn.set_content_margin_all(6)
+	# TS 方钮：128px 源四态两套纹理，角框 36 内缩保形，中段拉伸适配长按钮
+	var btn := _texture_box(_sq_btn("Blue", "Regular"), 36.0, 12.0)
+	var btn_hover := _texture_box(_sq_btn("Blue", "Regular"), 36.0, 12.0)
+	btn_hover.modulate_color = Color(1.15, 1.15, 1.15)
+	var btn_pressed := _texture_box(_sq_btn("Blue", "Pressed"), 36.0, 12.0)
+	var btn_disabled := _texture_box(_sq_btn("Blue", "Regular"), 36.0, 12.0)
+	btn_disabled.modulate_color = Color(0.45, 0.45, 0.5, 0.8)
 	theme.set_stylebox("normal", "Button", btn)
-
-	var btn_hover := btn.duplicate()
-	btn_hover.bg_color = Color(0.2, 0.24, 0.3, 0.95)
-	btn_hover.border_color = Color(GOLD.r, GOLD.g, GOLD.b, 0.9)
 	theme.set_stylebox("hover", "Button", btn_hover)
-
-	var btn_disabled := btn.duplicate()
-	btn_disabled.bg_color = Color(0.09, 0.1, 0.12, 0.7)
-	btn_disabled.border_color = Color(0.5, 0.5, 0.5, 0.3)
+	theme.set_stylebox("pressed", "Button", btn_pressed)
 	theme.set_stylebox("disabled", "Button", btn_disabled)
 
-	theme.set_color("font_color", "Button", Color(1.0, 0.94, 0.8))
+	# CheckButton（设置面板开关行）：关=暗槽、开=TS 蓝瓦（Tiny 方钮件）
+	var ck_off := StyleBoxFlat.new()
+	ck_off.bg_color = Color(0.14, 0.12, 0.1, 0.9)
+	ck_off.border_color = Color(0.42, 0.33, 0.24, 0.9)
+	ck_off.set_border_width_all(2)
+	ck_off.set_corner_radius_all(4)
+	ck_off.set_content_margin_all(10)
+	var ck_on := _texture_box(TS_UI + "/Buttons/TinySquareBlueButton.png", 20.0, 10.0)
+	theme.set_stylebox("normal", "CheckButton", ck_off)
+	theme.set_stylebox("hover", "CheckButton", ck_off)
+	theme.set_stylebox("pressed", "CheckButton", ck_on)
+	theme.set_stylebox("hover_pressed", "CheckButton", ck_on)
+	theme.set_stylebox("disabled", "CheckButton", ck_off)
+
+	theme.set_color("font_color", "Button", Color(1.0, 0.96, 0.86))
+	theme.set_color("font_hover_color", "Button", Color(1.0, 1.0, 0.95))
+	theme.set_color("font_pressed_color", "Button", Color(0.95, 0.92, 0.8))
 	theme.set_color("font_disabled_color", "Button", Color(0.55, 0.55, 0.55))
+	theme.set_color("font_color", "CheckButton", Color(0.94, 0.94, 0.9))
+	theme.set_color("font_pressed_color", "CheckButton", Color(1.0, 0.95, 0.8))
 	theme.set_color("font_color", "Label", Color(0.94, 0.94, 0.9))
 	return theme
 
 
-## 把按钮改造成圆形（MOBA 触控钮）：按当前尺寸取圆角半径，
-## 覆盖 normal/hover/pressed/disabled 四态样式盒。要求按钮是正方形。
-static func style_circle_button(btn: Button) -> void:
-	var radius: float = minf(btn.size.x, btn.size.y) / 2.0
-	if radius <= 0.0:
-		radius = minf(btn.custom_minimum_size.x, btn.custom_minimum_size.y) / 2.0
+static func _sq_btn(kind: String, state: String) -> String:
+	return "%s/Buttons/Small%sSquareButton_%s.png" % [TS_UI, kind, state]
+
+
+## 纹理样式盒：四向边距保角框、内容边距定文字内缩（TS 按钮通用底座）
+static func _texture_box(path: String, tex_margin: float, content_margin: float) -> StyleBoxTexture:
+	var sb := StyleBoxTexture.new()
+	sb.texture = load(path)
+	sb.texture_margin_left = tex_margin
+	sb.texture_margin_top = tex_margin
+	sb.texture_margin_right = tex_margin
+	sb.texture_margin_bottom = tex_margin
+	sb.set_content_margin_all(content_margin)
+	return sb
+
+
+## 触控圆钮 TS 化（MOBA 布局）：Small 圆钮两态逐钮覆盖样式盒。
+## 替代 v5 深色玻璃 style_circle_button——节点/信号/图标层结构全不变，只换底。
+static func style_ts_round_button(btn: Button, red := false) -> void:
+	var kind := "Red" if red else "Blue"
 	for state: String in ["normal", "hover", "pressed", "disabled"]:
-		var sb := StyleBoxFlat.new()
-		sb.corner_radius_top_left = int(radius)
-		sb.corner_radius_top_right = int(radius)
-		sb.corner_radius_bottom_left = int(radius)
-		sb.corner_radius_bottom_right = int(radius)
-		sb.border_width_left = 2
-		sb.border_width_top = 2
-		sb.border_width_right = 2
-		sb.border_width_bottom = 2
+		var file := "Pressed" if state == "pressed" else "Regular"
+		var sb := _texture_box("%s/Buttons/Small%sRoundButton_%s.png" % [TS_UI, kind, file], 34.0, 12.0)
 		match state:
-			"normal":
-				sb.bg_color = Color(0.13, 0.16, 0.2, 0.92)
-				sb.border_color = Color(GOLD.r, GOLD.g, GOLD.b, 0.55)
 			"hover":
-				sb.bg_color = Color(0.22, 0.26, 0.32, 0.95)
-				sb.border_color = Color(GOLD.r, GOLD.g, GOLD.b, 0.95)
-			"pressed":
-				sb.bg_color = Color(0.28, 0.24, 0.16, 0.95)
-				sb.border_color = Color(GOLD.r, GOLD.g, GOLD.b, 1.0)
+				sb.modulate_color = Color(1.14, 1.14, 1.14)
 			"disabled":
-				sb.bg_color = Color(0.09, 0.1, 0.12, 0.75)
-				sb.border_color = Color(0.5, 0.5, 0.5, 0.3)
+				sb.modulate_color = Color(0.5, 0.5, 0.55, 0.85)
 		btn.add_theme_stylebox_override(state, sb)
+
+
+## 方钮逐钮换色（危险动作=红）：全局主题是蓝方钮，退出/清档确认等用红
+static func style_ts_square_button(btn: Button, red := false) -> void:
+	var kind := "Red" if red else "Blue"
+	for state: String in ["normal", "hover", "pressed", "disabled"]:
+		var file := "Pressed" if state == "pressed" else "Regular"
+		var sb := _texture_box(_sq_btn(kind, file), 36.0, 12.0)
+		match state:
+			"hover":
+				sb.modulate_color = Color(1.15, 1.15, 1.15)
+			"disabled":
+				sb.modulate_color = Color(0.45, 0.45, 0.5, 0.8)
+		btn.add_theme_stylebox_override(state, sb)
+
+
+## 木瓦卡片底（三选一赐福卡）：WoodTable_Slots 单瓦拉伸，木色中棕配浅字
+static func style_wood_card(btn: Button) -> void:
+	for state: String in ["normal", "hover", "pressed", "disabled"]:
+		var sb := _texture_box(WOOD_TILE, 26.0, 10.0)
+		match state:
+			"hover":
+				sb.modulate_color = Color(1.18, 1.18, 1.18)
+			"pressed":
+				sb.modulate_color = Color(0.82, 0.82, 0.88)
+		btn.add_theme_stylebox_override(state, sb)
+
+
+## TS 纸面/木桌九宫铺进面板：叠在原 stylebox 之上、内容之下
+## （add_child 后 move_child(0)；纹理不缩放，Paper 细节原尺寸最干净）
+static func paper_panel(panel: Control, path: String, margin := 56) -> void:
+	if panel == null:
+		return
+	var tex: Texture2D = load(path)
+	if tex == null:
+		return
+	var np := NinePatchRect.new()
+	np.texture = tex
+	np.patch_margin_left = margin
+	np.patch_margin_top = margin
+	np.patch_margin_right = margin
+	np.patch_margin_bottom = margin
+	np.set_anchors_preset(Control.PRESET_FULL_RECT)
+	np.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(np)
+	panel.move_child(np, 0)
+
+
+## 丝带标题签（TS SmallRibbons 图集）：燕尾端帽与两侧缺口共 128px 保形、
+## 中段横带（源 64px）横向拉伸成连续色带——边距小于 128 会把缺口也拉开
+## 出「空洞带」（2026-09-30 像素实证）。返回自持 Control（带 + 居中浅字深描边）
+static func ribbon_tag(text: String, color_idx := 0, min_width := 200.0) -> Control:
+	var atlas: Texture2D = load(RIBBONS)
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if atlas != null:
+		var at := AtlasTexture.new()
+		at.atlas = atlas
+		at.region = Rect2(0.0, RIBBON_ROW.get(color_idx, 0) * 64.0, 320.0, 64.0)
+		var np := NinePatchRect.new()
+		np.texture = at
+		np.patch_margin_left = 128
+		np.patch_margin_right = 128
+		np.patch_margin_top = 8
+		np.patch_margin_bottom = 8
+		np.set_anchors_preset(Control.PRESET_FULL_RECT)
+		np.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		holder.add_child(np)
+	var label := Label.new()
+	label.name = "RibbonLabel"
+	label.text = text
+	label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_color_override("font_color", Color(1.0, 0.98, 0.92))
+	label.add_theme_color_override("font_outline_color", Color(0.13, 0.09, 0.05, 0.85))
+	label.add_theme_constant_override("outline_size", 4)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(label)
+	holder.custom_minimum_size = Vector2(maxf(min_width, 256.0 + text.length() * 22.0), 44.0)
+	return holder
+
+
+## 丝带横幅裸底（主菜单标题等大尺度场景）：无文字，调用方自行铺 Label。
+## 注意 store 页 Banner/WoodTable 是带大透明区的形状件，不能整幅垫底
+static func ribbon_banner(width: float, height: float, color_idx := 0) -> Control:
+	var holder := Control.new()
+	holder.custom_minimum_size = Vector2(width, height)
+	holder.size = Vector2(width, height)
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var atlas: Texture2D = load(RIBBONS)
+	if atlas != null:
+		var at := AtlasTexture.new()
+		at.atlas = atlas
+		at.region = Rect2(0.0, RIBBON_ROW.get(color_idx, 0) * 64.0, 320.0, 64.0)
+		var np := NinePatchRect.new()
+		np.texture = at
+		np.patch_margin_left = 128
+		np.patch_margin_right = 128
+		np.patch_margin_top = 10
+		np.patch_margin_bottom = 10
+		np.set_anchors_preset(Control.PRESET_FULL_RECT)
+		np.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		holder.add_child(np)
+	return holder
 
 
 ## 圆形按钮内铺图标：等比居中、内缩 margin、不挡点击。
@@ -139,40 +266,3 @@ static func add_badge(btn: Control, text: String) -> Label:
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(badge)
 	return badge
-
-
-## NA 官方九宫格件作面板底（玩法 v7 P2）：4.7 无 StyleBoxTexture 边距 API，
-## 用 NinePatchRect 铺满面板覆盖原 stylebox（调用方 add_child 后 move_child(0)
-## 压到内容之下）。纹理 64×64 NEAREST 放大保像素、边距带 20（与对话气泡同款）
-static func nine_patch_bg(path: String) -> NinePatchRect:
-	var tex: Texture2D = load(path)
-	if tex == null:
-		return null
-	var img: Image = tex.get_image()
-	img.resize(64, 64, Image.INTERPOLATE_NEAREST)
-	var np := NinePatchRect.new()
-	np.texture = ImageTexture.create_from_image(img)
-	np.patch_margin_left = 20
-	np.patch_margin_top = 20
-	np.patch_margin_right = 20
-	np.patch_margin_bottom = 20
-	np.set_anchors_preset(Control.PRESET_FULL_RECT)
-	np.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return np
-
-
-## TS Paper 纸面九宫（美术 v6）：320 原生纹理、边饰带宽约 1/5.7≈56；
-## 不缩放（Paper 细节在原尺寸最干净），用法同 nine_patch_bg
-static func nine_patch_paper(path: String) -> NinePatchRect:
-	var tex: Texture2D = load(path)
-	if tex == null:
-		return null
-	var np := NinePatchRect.new()
-	np.texture = tex
-	np.patch_margin_left = 56
-	np.patch_margin_top = 56
-	np.patch_margin_right = 56
-	np.patch_margin_bottom = 56
-	np.set_anchors_preset(Control.PRESET_FULL_RECT)
-	np.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return np

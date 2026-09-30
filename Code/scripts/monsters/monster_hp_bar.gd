@@ -5,8 +5,11 @@
 class_name MonsterHpBar
 extends Node2D
 
-const BAR_WIDTH := 56.0
-const BAR_HEIGHT := 8.0
+## TS 色板合成条框（bake_structures 产线，64×12 原生绘制免缩放）
+const FRAME := preload("res://assets/ts/icons/monster_bar.png")
+## 框内可用填充区（框 64×12：端帽 3px + 上下边框 2px → 内腔 58×8，居中于 -32,0）
+const BAR_INNER_W := 58.0
+const BAR_INNER_H := 8.0
 const OFFSET_Y := -26.0
 
 var _monster: MonsterBase
@@ -38,6 +41,7 @@ func _draw() -> void:
 	var ratio: float = clampf(_monster.current_hp / max_hp, 0.0, 1.0)
 	if ratio >= 0.999:
 		return
-	draw_rect(Rect2(-BAR_WIDTH * 0.5, 0.0, BAR_WIDTH, BAR_HEIGHT), Color(0, 0, 0, 0.6))
-	var color := Color(0.9, 0.25, 0.2) if ratio < 0.3 else Color(0.35, 0.8, 0.3)
-	draw_rect(Rect2(-BAR_WIDTH * 0.5 + 1.0, 1.0, (BAR_WIDTH - 2.0) * ratio, BAR_HEIGHT - 2.0), color)
+	# TS 木框暗槽 + 血量填充（残血转 TS 红），框原生尺寸绘制保像素脆度
+	draw_texture_rect(FRAME, Rect2(-32.0, -2.0, 64.0, 12.0), false)
+	var color := Color(0.86, 0.12, 0.13) if ratio < 0.3 else Color(0.35, 0.8, 0.3)
+	draw_rect(Rect2(-BAR_INNER_W * 0.5, 0.0, BAR_INNER_W * ratio, BAR_INNER_H), color)

@@ -8,7 +8,6 @@ const ICON_START := preload("res://assets/ts/icons/attack.png")
 const ICON_NEW := preload("res://assets/ts/icons/play.png")
 const ICON_ARCHIVE := preload("res://assets/ts/icons/save.png")
 const ICON_SETTINGS := preload("res://assets/ts/icons/star_gold.png")
-const ICON_QUIT := preload("res://assets/ts/UI Elements/UI Elements/Buttons/SmallRedSquareButton_Regular.png")
 ## 底部群系地平线装饰条（六群系地表图，与游戏内同源素材）
 const REGION_TERRAINS: Array[String] = [
 	"res://assets/terrain/region_center.png",
@@ -25,14 +24,12 @@ var _species_total := -1
 
 func _ready() -> void:
 	_apply_style()
-	# P2 面板底：冒险档案面板换 NA 档案卷轴九宫格（np_archive），
-	# 覆盖 glass 主题底但保留按钮样式（与暂停面板 np_dialogue 同款手法）。
-	# ArchivePanel 无唯一名登记，走路径定位
-	var archive_panel := get_node("ArchiveLayer/ArchivePanel") as PanelContainer
-	var archive_bg := HotwTheme.nine_patch_paper("res://assets/ts/UI Elements/UI Elements/Papers/RegularPaper.png")
-	if archive_panel != null and archive_bg != null:
-		archive_panel.add_child(archive_bg)
-		archive_panel.move_child(archive_bg, 0)
+	# 面板底 TS 化（v6 §8 收口）：档案=WoodTable 木桌（浅字在木色上保对比；
+	# 原 RegularPaper 太浅、金字对比不足），新冒险确认=SpecialPaper 深纸
+	HotwTheme.paper_panel(get_node("ArchiveLayer/ArchivePanel"), HotwTheme.WOOD_TILE, 40)
+	HotwTheme.paper_panel(get_node("NewGameConfirm/NewPanel"), HotwTheme.PAPER_SPECIAL)
+	# 危险动作红色方钮：清档确认（退出钮 iOS 隐藏，桌面端见 _apply_style）
+	HotwTheme.style_ts_square_button(%NewConfirmBtn, true)
 	# iOS 刘海/圆角：菜单根整体收进安全区。Bg 随之缩进后，边带露出的是
 	# project.godot 的 default_clear_color（已设为同色），视觉无缝
 	SafeAreaRoot.apply_to(self)
@@ -70,19 +67,36 @@ func _on_viewport_resized() -> void:
 	SafeAreaRoot.apply_to(self)
 
 
-## 视觉：与游戏内 HUD 同款深色玻璃金边主题；菜单按钮图形化（图标+文字），
+## 视觉：与游戏内 HUD 同款 TS 主题；标题区垫 TS 布幡、菜单按钮图形化（图标+文字），
 ## 底部铺六群系地平线装饰条点题"心之世界"的多群系荒野。
 func _apply_style() -> void:
 	theme = HotwTheme.glass_theme()
+	# 标题横幅（TS SmallRibbons 芥末黄丝带九宫拉伸；store 页 Banner 为
+	# 大透明区形状件不能整幅垫底），标题深棕字浮于丝带上
+	var banner := HotwTheme.ribbon_banner(720.0, 88.0, 2)
+	banner.name = "TitleBanner"
+	banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	banner.position = Vector2(-360, 96)
+	add_child(banner)
+	move_child(banner, get_node("Title").get_index())
+	var title := get_node("Title") as Label
+	title.add_theme_color_override("font_color", Color(0.33, 0.21, 0.09))
+	title.add_theme_color_override("font_outline_color", Color(1.0, 0.96, 0.88, 0.85))
+	title.add_theme_constant_override("outline_size", 6)
 	for pair: Array in [[%StartBtn, ICON_START], [%NewBtn, ICON_NEW],
-			[%ArchiveBtn, ICON_ARCHIVE], [%SettingsBtn, ICON_SETTINGS],
-			[%QuitBtn, ICON_QUIT]]:
+			[%ArchiveBtn, ICON_ARCHIVE], [%SettingsBtn, ICON_SETTINGS]]:
 		var btn: Button = pair[0]
 		btn.icon = pair[1]
 		btn.expand_icon = true
 		btn.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		# 图标与文字之间留出呼吸位（展开图标默认贴文字）
 		btn.add_theme_constant_override("h_separation", 14)
+	# 退出钮（仅桌面）：红色方钮警示，配 Swords 交叉剑图标
+	HotwTheme.style_ts_square_button(%QuitBtn, true)
+	%QuitBtn.icon = preload("res://assets/ts/UI Elements/UI Elements/Swords/Swords.png")
+	%QuitBtn.expand_icon = true
+	%QuitBtn.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	%QuitBtn.add_theme_constant_override("h_separation", 14)
 	%StartBtn.add_theme_font_size_override("font_size", 22)
 	# 档案面板网格标签（真源在 tscn 无字号覆写）：iOS 上默认 16 号≈8.7pt 不可读
 	for grid_label: Label in %InfoGrid.get_children():
