@@ -5,8 +5,8 @@
 ##   水岸 2px 描边 + 边缘渐暗 + 簇状散点（沿用 v1 质感层）。
 ## v4（2026-09-08 世界大地图重构）起游戏内地表改为运行时分块绘制
 ## （scripts/main/terrain/terrain_painter.gd，同源算法），本工具的 6 张
-## 1100×700 PNG 仅剩主菜单底部地平线装饰条一个消费方（main_menu.gd）——
-## 保留不动；小地图底图用 tools/generate_world_map.gd。
+## 1100×700 PNG 现为保留的离线预览工具产物；新版主菜单使用独立 vignette，
+## 已无运行时消费方。本次只同步映射表，不更新闲置 PNG；小地图另用世界总览。
 ## 美术 v6（2026-09-20）贴图源换 Tiny Swords tilemap（÷4 保网格数学 + HSV 六群系）。
 extends SceneTree
 
@@ -17,26 +17,29 @@ const TS := 16
 ## 图集源（美术 v6 TS，与 terrain_painter 同表）：源瓦 64px ÷4 → 16px 网格
 const SOURCES := {
 	"main": "res://assets/ts/Terrain/Tileset/Tilemap_color1.png",
+	"earth": "res://assets/ts/Terrain/Tileset/Tilemap_color4.png",
 	"cold": "res://assets/ts/Terrain/Tileset/Tilemap_color5.png",
 	"water": "res://assets/ts/Terrain/Tileset/Water Background color.png",
 }
 const ATLAS_COLS := 12
 
-## 瓦片格序 [源,(列,行)]（像素统计定档，2026-09-20；布局=六组按序拼接进 12 列图集）
-const GRASS_FILL := [["main", Vector2i(1, 0)], ["main", Vector2i(6, 0)],
+## 瓦片格序与 TerrainPainter 保持一致：只取 (1,1)/(6,1) 平面内部，
+## 不能把上下轮廓/窄岛/竖直悬崖当随机填充；土斑取现有 color4 橄榄色平面。
+## 保留六组槽位数量与哈希索引，避免触碰材质分区/网格语义。
+const GRASS_FILL := [["main", Vector2i(1, 1)], ["main", Vector2i(6, 1)],
 	["main", Vector2i(1, 1)], ["main", Vector2i(6, 1)],
-	["main", Vector2i(1, 2)], ["main", Vector2i(6, 2)]]
-const GRASS_DETAIL := [["main", Vector2i(3, 0)], ["main", Vector2i(8, 0)],
-	["main", Vector2i(3, 1)], ["main", Vector2i(8, 1)],
-	["main", Vector2i(3, 3)], ["main", Vector2i(8, 3)]]
-const DIRT_FILL := [["main", Vector2i(5, 4)], ["main", Vector2i(6, 4)],
-	["main", Vector2i(7, 4)], ["main", Vector2i(8, 4)],
-	["main", Vector2i(5, 5)], ["main", Vector2i(7, 5)], ["main", Vector2i(8, 5)]]
+	["main", Vector2i(1, 1)], ["main", Vector2i(6, 1)]]
+const GRASS_DETAIL := [["main", Vector2i(1, 1)], ["main", Vector2i(6, 1)],
+	["main", Vector2i(1, 1)], ["main", Vector2i(6, 1)],
+	["main", Vector2i(1, 1)], ["main", Vector2i(6, 1)]]
+const DIRT_FILL := [["earth", Vector2i(1, 1)], ["earth", Vector2i(6, 1)],
+	["earth", Vector2i(1, 1)], ["earth", Vector2i(6, 1)],
+	["earth", Vector2i(1, 1)], ["earth", Vector2i(6, 1)], ["earth", Vector2i(1, 1)]]
 const WATER_FILL := [["water", Vector2i(0, 0)]]
-const ICE_FILL := [["cold", Vector2i(1, 0)], ["cold", Vector2i(6, 0)],
+const ICE_FILL := [["cold", Vector2i(1, 1)], ["cold", Vector2i(6, 1)],
 	["cold", Vector2i(1, 1)], ["cold", Vector2i(6, 1)]]
-const ICE_DETAIL := [["cold", Vector2i(3, 0)], ["cold", Vector2i(8, 0)],
-	["cold", Vector2i(3, 1)]]
+const ICE_DETAIL := [["cold", Vector2i(1, 1)], ["cold", Vector2i(6, 1)],
+	["cold", Vector2i(1, 1)]]
 
 ## 群系规则：base/patch=材质（grass/dirt/water/ice），thr=斑块噪声阈值；
 ## water/water_thr=独立水池层；bake=色桶 HSV 重映射（键：grass/water/ice/dirt）
