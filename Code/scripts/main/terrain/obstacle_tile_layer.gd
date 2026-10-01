@@ -36,6 +36,28 @@ var _lay_queue: Array[Dictionary] = []  # [{origin, cell, atlas, r}]
 ## origin → {body, shapes, remaining}（铺设中；remaining 归零转 _bodies）
 var _laying := {}
 
+## 出窗擦格分帧（真机卡顿修复 2026-10-01）：_on_chunk_freed 曾同帧 erase
+## 整块 16×16=256 格×最多 5 块=1280 次 erase_cell（对齐 nav 层 _clearing 模式）。
+## 碰撞 body 仍同帧 queue_free（碰撞先消失、视觉晚 1-2 帧——不会出现
+## "看不见却撞得到"；出窗块在 1536px 外玩家不可见，短暂不一致无感）。
+## 块级队列带擦除游标（边界抖动回窗时整块撤销清除，保住已重铺的格）
+const CLEAR_BUDGET := 96
+var _clearing: Array[Dictionary] = []  # [{origin, next}]（next=块内游标 0..255）
+
+## 圆形碰撞形状按半径共享（2026-10-01）：Shape2D 是 Resource，半径只有
+## KIND_INFO 的少数几档，逐格 new CircleShape2D 是跨界物理尖峰的组成部分
+## （每个 shape 构造+物理服务器上传）；共享后每格只造便宜的节点壳
+var _shape_cache := {}  # radius: float -> CircleShape2D
+
+
+func _shared_circle(radius: float) -> CircleShape2D:
+	var shape: CircleShape2D = _shape_cache.get(radius)
+	if shape == null:
+		shape = CircleShape2D.new()
+		shape.radius = radius
+		_shape_cache[radius] = shape
+	return shape
+
 
 func _ready() -> void:
 	y_sort_enabled = true
@@ -56,9 +78,7 @@ func _process(_delta: float) -> void:
 			continue  # 排队期间块已出窗被释放
 		set_cell(item["cell"], 0, item["atlas"], 0)
 		var shape := CollisionShape2D.new()
-		var circle := CircleShape2D.new()
-		circle.radius = float(item["r"])
-		shape.shape = circle
+		shape.shape = _shared_circle(float(item["r"]))
 		shape.position = (Vector2(item["cell"]) + Vector2(0.5, 0.5)) * ObstacleField.CELL
 		(entry["body"] as StaticBody2D).add_child(shape)
 		(entry["shapes"] as Dictionary)[item["cell"]] = shape
@@ -68,6 +88,20 @@ func _process(_delta: float) -> void:
 			_bodies[origin] = {"body": entry["body"], "shapes": entry["shapes"]}
 			_laying.erase(origin)
 		budget -= 1
+	var clear_budget := CLEAR_BUDGET
+	while clear_budget > 0 and not _clearing.is_empty():
+		var entry: Dictionary = _clearing[0]
+		var base := Vector2i(entry["origin"].x >> 5, entry["origin"].y >> 5)
+		var next: int = entry["next"]
+		while clear_budget > 0 and next < ObstacleField.CHUNK_CELLS * ObstacleField.CHUNK_CELLS:
+			erase_cell(base + Vector2i(next % ObstacleField.CHUNK_CELLS,
+					next / ObstacleField.CHUNK_CELLS))
+			next += 1
+			clear_budget -= 1
+		if next >= ObstacleField.CHUNK_CELLS * ObstacleField.CHUNK_CELLS:
+			_clearing.pop_front()
+		else:
+			entry["next"] = next
 
 
 ## 静态碰撞体工厂：圆形形状按类型半径（KIND_INFO.r），墙层 layer 1
@@ -126,9 +160,29 @@ class DebrisBurst extends Node2D:
 		dying.timeout.connect(queue_free)
 
 
+func _on_chunk_freed(origin: Vector2i) -> void:
+	# 视觉格分帧擦（_clearing 带游标），碰撞 body 同帧释放防泄漏
+	# （碰撞先消失、视觉晚 1-2 帧——不会出现"看不见却撞得到"）
+	_clearing.append({"origin": origin, "next": 0})
+	var entry: Dictionary = _bodies.get(origin, {})
+	if not entry.is_empty():
+		(entry["body"] as Node).queue_free()
+		_bodies.erase(origin)
+	# 铺设中即被回收：body 直接释放，队列残留格子消费时按 _laying 缺失跳过
+	var laying: Dictionary = _laying.get(origin, {})
+	if not laying.is_empty():
+		(laying["body"] as Node).queue_free()
+		_laying.erase(origin)
+
+
 func _on_chunk_ready(origin: Vector2i) -> void:
 	if _bodies.has(origin) or _laying.has(origin):
 		return
+	# 边界抖动回窗：撤销该块的待清（擦格游标后与重铺的格会互相打架）
+	for i in _clearing.size():
+		if (_clearing[i] as Dictionary)["origin"] == origin:
+			_clearing.remove_at(i)
+			break
 	var cells: Array = ObstacleField.cells_of_chunk(origin)
 	var body := _make_obstacle_body()
 	if cells.is_empty():
@@ -141,19 +195,3 @@ func _on_chunk_ready(origin: Vector2i) -> void:
 	for c: Dictionary in cells:
 		_lay_queue.append({"origin": origin, "cell": c["cell"],
 			"atlas": ObstacleField.KIND_ATLAS[c["kind"]], "r": c["r"]})
-
-
-func _on_chunk_freed(origin: Vector2i) -> void:
-	var base := Vector2i(origin.x >> 5, origin.y >> 5)
-	for dy in ObstacleField.CHUNK_CELLS:
-		for dx in ObstacleField.CHUNK_CELLS:
-			erase_cell(base + Vector2i(dx, dy))
-	var entry: Dictionary = _bodies.get(origin, {})
-	if not entry.is_empty():
-		(entry["body"] as Node).queue_free()
-		_bodies.erase(origin)
-	# 铺设中即被回收：body 直接释放，队列残留格子消费时按 _laying 缺失跳过
-	var laying: Dictionary = _laying.get(origin, {})
-	if not laying.is_empty():
-		(laying["body"] as Node).queue_free()
-		_laying.erase(origin)

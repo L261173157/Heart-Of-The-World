@@ -13,8 +13,12 @@ extends TileMapLayer
 
 const NAV_TILESET := preload("res://data/nav_tileset.tres")
 const WINDOW_CHUNKS := 6
-## 每帧最多补铺的地形块数（跨界瞬间欠 15 块，~5 帧铺满）
-const FILL_BUDGET := 3
+## 每帧最多补铺的地形块数（跨界瞬间欠 15 块）。
+## 3→1（真机卡顿修复 2026-10-01，perf_probe 桌面实测三方全面更优）：
+## NavigationServer 同步成本随单帧变更格数超线性增长——摊到 1 块/帧后
+## proc 占空比 60.6→33.0ms/0.5s（-46%）、proc_max 104→57（-45%）、
+## fps_min 13→36。窗口补齐 15 帧仅 0.25s，导航晚到无害（怪走直线兜底）
+const FILL_BUDGET := 1
 const CHUNK_PX := 512
 
 ## 已铺块集合（chunk 坐标 → true）
