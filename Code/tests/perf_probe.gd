@@ -33,6 +33,7 @@ var _rows: Array = []
 func _ready() -> void:
 	GameState.save_enabled = false
 	GameState.ecology_snapshot = null
+	MonsterBase.profiling = true  # 差分表数据源（正常游戏默认关，2026-10-01 加闸）
 	# 游戏锁 60 帧（run/max_fps），探针解除限制以测真实余量（帧率上限本身
 	# 也是性能口径的一部分——锁帧前真机实测 80~120）
 	Engine.max_fps = 0
