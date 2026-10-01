@@ -2,14 +2,15 @@
 # 《心之世界》iOS TestFlight/App Store 上传通道（Release 构建 + 分发签名）
 # 与 ios-run.sh（开发签名真机试玩）互补：
 #   Godot --export-release 生成 Xcode 工程 → xcodebuild archive（自动签名，首次自动注册
-#   App ID 并生成描述文件）→ exportArchive 以 app-store 方式重签出 ipa → 可选 altool 上传。
+#   App ID 并生成描述文件）→ exportArchive 以 app-store 方式重签出 ipa → altool 免登录上传。
 # 前置：
 #   - Xcode 已登录团队成员账号（开发者后台注册 App ID 用）
 #   - App Store Connect 已创建 App 记录（首次上传前必须，否则 altool 报
 #     "No suitable application record found"）
 # 用法：
-#   ./ios-upload.sh    # 一条龙：导出 → 签名 → 校验 → 经 Xcode 会话上传（无需密码）
-# 前置：Xcode 已登录团队成员账号（上传认证走该会话，2026-09-04 实证可行）
+#   ./ios-upload.sh    # 一条龙：导出 → 签名 → 校验 → altool 免登录上传（不依赖 Xcode 会话）
+# 前置：ASC API Key 在 ~/.appstoreconnect/private_keys/AuthKey_BQSLFKJH4X.p8
+#   （2026-10-02 用户指示：上传固定走命令行 altool，绕过 Xcode 会话——09-13 起事实主通道）
 # 安全约束：对外上传属发布操作，Agent 不得自动执行，每次须用户当次确认。
 # build 号自动递增（build-output/upload_build_number），同版本号下每次上传统计唯一。
 set -e
@@ -91,34 +92,13 @@ echo "  描述文件: $PROFILE_NAME (get-task-allow=$GET_TASK)"
 [ "$GET_TASK" = "false" ] || { echo "✗ 仍是开发签名，不能上传 App Store Connect。"; exit 3; }
 echo "  ipa: $IPA (dSYM 在 $UPLOAD_DIR/dSYMs，TestFlight 崩溃符号化用)"
 
-echo "[6/6] 上传（经 Xcode 已登录会话，无需 App 专用密码）…"
-cat > "$TMP_ROOT/upload_opts.plist" <<'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>method</key><string>app-store-connect</string>
-	<key>destination</key><string>upload</string>
-	<key>teamID</key><string>3FD979T5VV</string>
-	<key>signingStyle</key><string>automatic</string>
-	<key>uploadSymbols</key><true/>
-	<key>compileBitcode</key><false/>
-</dict>
-</plist>
-EOF
-xcodebuild -exportArchive \
-	-archivePath "$ARCHIVE" \
-	-exportOptionsPlist "$TMP_ROOT/upload_opts.plist" \
-	-exportPath "$TMP_ROOT/upload_out" \
-	-allowProvisioningUpdates \
+echo "[6/6] 上传（altool + ASC API Key 免登录，2026-10-02 起固定主通道）…"
+xcrun altool --upload-app --type ios --file "$IPA" \
+	--apiKey "BQSLFKJH4X" --apiIssuer "e208d863-8c3f-42d6-a169-48aa65d450df" \
 	> /tmp/hotw_upload.log 2>&1 || {
-		if grep -q "Failed to Use Accounts" /tmp/hotw_upload.log; then
-			echo "✗ Xcode 无 App Store Connect 登录会话（2026-09-13 实证：账号被登出后 keychain 连 Xcode-Token 都没有）。"
-			echo "  修复：打开 Xcode → Settings… → Apple Accounts 重新登录 Apple ID（密码+双重认证），"
-			echo "  然后只需重跑第 6 步（archive 与 ipa 都已就绪，不必整体重来）。"
-		else
-			tail -30 /tmp/hotw_upload.log
-		fi
+		tail -30 /tmp/hotw_upload.log
+		echo "✗ altool 上传失败（Key 应在 ~/.appstoreconnect/private_keys/AuthKey_BQSLFKJH4X.p8）。"
 		exit 3
 	}
+tail -6 /tmp/hotw_upload.log
 echo "✓ 上传完成。ASC 处理 10–30 分钟后出现在 TestFlight，内部测试组自动分发。"
