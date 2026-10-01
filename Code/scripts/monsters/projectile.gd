@@ -13,6 +13,8 @@ const POOL_MAX := 32
 
 ## 空闲池（static：跨场景生命周期，怪物表现节点流式进出不回收池）
 static var _pool: Array[Projectile] = []
+## 世界退场时递增；尚未执行的延迟归还不能把旧世界弹幕塞回新池。
+static var _pool_epoch := 0
 
 
 ## 发射入口（池化）：从池取或新建，挂到发射者父节点并初始化
@@ -29,19 +31,37 @@ static func spawn(parent: Node, pos: Vector2, dir: Vector2, dmg: float,
 
 ## 归还池（命中/撞墙/超时统一出口）：摘树入池；超上限直接释放
 func _release() -> void:
-	if _pool.size() >= POOL_MAX:
+	# 同一次物理同步可能先后派发多个 body_entered。必须在回调内同步关闸，
+	# 否则同一节点会重复入池，世界退场时重复 free 甚至令引擎崩溃。
+	if _retiring or is_queued_for_deletion():
+		return
+	_retiring = true
+	set_physics_process(false)
+	hide()
+	# CollisionObject 不能在物理查询派发中摘树。归还前仍归父节点所有，
+	# 延迟阶段完成摘树后才可被 spawn 复用，避免“仍在旧父节点就借出”的竞态。
+	_finish_release.call_deferred(_spawn_epoch)
+
+
+func _finish_release(epoch: int) -> void:
+	var parent := get_parent()
+	if is_queued_for_deletion():
+		return
+	if epoch != _pool_epoch or parent == null or not is_inside_tree() \
+			or parent.is_queued_for_deletion() or _pool.size() >= POOL_MAX:
 		queue_free()
 		return
-	var parent := get_parent()
-	if parent != null:
-		parent.remove_child(self)
+	monitoring = false
+	parent.remove_child(self)
 	_pool.append(self)
 
 
 ## 世界退场清池（game_world._exit_tree 调用）：静态池节点无树宿主，显式释放
 static func clear_pool() -> void:
+	_pool_epoch += 1
 	for p in _pool:
-		p.free()
+		if is_instance_valid(p):
+			p.free()
 	_pool.clear()
 
 var direction := Vector2.RIGHT
@@ -53,9 +73,16 @@ var source_name := ""
 var bolt_tex := ""
 
 var _life := LIFE_TIME
+var _retiring := false
+var _spawn_epoch := 0
 
 
 func launch(dir: Vector2, dmg: float, p_speed := 270.0, p_source := "", p_bolt := "") -> void:
+	_retiring = false
+	_spawn_epoch = _pool_epoch
+	monitoring = true
+	set_physics_process(true)
+	show()
 	direction = dir.normalized()
 	damage = dmg
 	speed = p_speed
@@ -83,9 +110,11 @@ func _physics_process(delta: float) -> void:
 
 
 func _on_body_entered(body: Node2D) -> void:
+	if _retiring or is_queued_for_deletion():
+		return
 	if body.is_in_group("player") and body.has_method("take_damage"):
-		body.take_damage(damage, global_position, source_name)
 		_release()
+		body.take_damage(damage, global_position, source_name)
 		return
 	# 撞墙消散（不再穿地形，与玩家法弹对称；巢穴在独立层 4 不被检测）。
 	# 障碍瓦片（TileMapLayer）同样消散——怪物弹幕不能替玩家开路

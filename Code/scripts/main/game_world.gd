@@ -133,12 +133,14 @@ var _landmark_root: Node2D
 var _npc_interact_fn: Callable
 
 
-func _ready() -> void:
-	# 世界 v5：先按存档种子配置 BiomeMap（每档全新世界）——必须先于一切
-	# BiomeMap 派生（区域装配/地形绘制/总览任务），此后会话内种子不变。
-	# 已摧毁障碍格随后灌回（configure 已重置 ObstacleField 运行态）
+func _enter_tree() -> void:
+	# 父节点先入树、子节点先 ready：必须在 Player 恢复坐标并 nudge_free 之前
+	# 配好种子和摧毁覆盖层，否则会按上一世界的墙把合法存档位置挤走。
 	BiomeMap.configure(GameState.world_seed)
 	ObstacleField.restore_destroyed(GameState.destroyed_cells)
+
+
+func _ready() -> void:
 	# 复位触屏输入残留（按住摇杆退出/死亡瞬间的场景切换会丢失 release 事件）
 	TouchInput.reset()
 	stream_all = OS.get_environment("HOTW_TEST_STREAM_ALL") == "1"
@@ -148,6 +150,7 @@ func _ready() -> void:
 	_sim.instance_migrated.connect(_on_instance_migrated)
 	_sim.corpse_expired.connect(_on_corpse_expired)
 	_sim.nest_changed.connect(_on_nest_changed)
+	_sim.boss_respawned.connect(_on_boss_respawned)
 	EventBus.damage_number.connect(_on_damage_number)
 	EventBus.hit_stop_requested.connect(_on_hit_stop)
 	# "本局击杀"按进入世界清零（ autoload 计数不跨局累计）
@@ -171,6 +174,7 @@ func _ready() -> void:
 		# 属于旧世界线（实例已不在新 sim 里，留着会变成打不死的残桩），一并清场；
 		# setup 随后重建模拟状态并重放信号，表现层从零接新世界
 		_discard_streamed_world()
+		GameState.clear_chest_claims()
 		_sim.setup(regions, species_list, WorldConfig.initial_population())
 	else:
 		# 读档续玩：首个区域提交只静默切 BGM 不播报（见 _process 提交分支）
@@ -552,11 +556,6 @@ const DUNGEON_ZONE_HALF := Vector2(6.0 * 32.0 + 16.0, 4.0 * 32.0 + 16.0)
 ## 宝箱刷新半径（走进城塞才生成实体）
 const CHEST_STREAM_RADIUS := 1400.0
 var _chests := {}  # patch_id → DungeonChest
-## 已开标记（patch_id → true）：Boss 死亡窗口内开过的箱，流式离场（>1400px
-## 节点回收）后重进不得重置成未开——否则走远回来可反复开箱刷奖励；Boss 复活
-## 时清除（下一轮可再开）。会话级状态不进存档（与节点 taken 旧语义同生命周期，
-## 只是活过流式回收）
-var _chest_taken := {}
 var _in_dungeon := false
 var _dungeon_announced := {}
 ## 城塞表缓存（ObstacleField.dungeons 每次调用新分配数组+逐城 duplicate；
@@ -589,24 +588,33 @@ func _update_dungeons() -> void:
 			chest.boss_name = boss_name
 			chest.key_id = EconomyMath.DUNGEON_KEYS.get(dg["terrain"], "")
 			chest.notify_taken = _mark_chest_taken.bind(patch_id)
+			chest.refresh_state = _refresh_chest_state.bind(patch_id, boss_name)
 			_landmark_root.add_child(chest)
 			_chests[patch_id] = chest
 		elif not near and _chests.has(patch_id):
 			_chests[patch_id].queue_free()
 			_chests.erase(patch_id)
 		if _chests.has(patch_id):
-			# boss_name 查空（地形没配 Boss）视为无主宝箱直接解锁，防永久锁死
-			var boss_dead: bool = boss_name == "" \
-					or (_sim != null and _sim.boss_respawn_timers.get(boss_name, 0) > 0)
-			var chest_node: DungeonChest = _chests[patch_id]
-			chest_node.locked = not boss_dead
-			if not boss_dead:
-				_chest_taken.erase(patch_id)  # Boss 复活 → 宝箱重置（下一轮可再开）
-			chest_node.taken = _chest_taken.has(patch_id)
+			_refresh_chest_state(_chests[patch_id], patch_id, boss_name)
+
+
+func _refresh_chest_state(chest: DungeonChest, patch_id: String, boss_name: String) -> void:
+	# 活体是真源：Boss 活着时计时器同样为满值，正数不能表示死亡。
+	# 无主宝箱沿用直接解锁语义；真实 Boss 缺模拟时保守锁住。
+	chest.locked = boss_name != "" and (_sim == null \
+			or _sim.alive_count_of_species(boss_name) > 0)
+	chest.taken = GameState.chest_claims.has(patch_id)
+
+
+func _on_boss_respawned(species_name: String) -> void:
+	# 只消费模拟层实际重生事件：不依赖宝箱实体/玩家距离，不把读档重放当重生。
+	for dg: Dictionary in _dungeon_list():
+		if WorldConfig.TERRAIN_BOSSES.get(dg["terrain"], "") == species_name:
+			GameState.reset_chest_claim(dg["patch_id"])
 
 
 func _mark_chest_taken(patch_id: String) -> void:
-	_chest_taken[patch_id] = true
+	GameState.mark_chest_taken(patch_id)
 
 
 ## 进出城塞（内腔矩形）：地牢 BGM 与首发现播报
@@ -699,7 +707,8 @@ class DungeonChest extends Node2D:
 	var key_id := ""
 	var locked := true
 	var taken := false
-	## 开箱回调（game_world 绑定，记录进 _chest_taken 活过流式回收）
+	## 表现态每次交互前向世界刷新；已开真源在 GameState，跨菜单/冷启动保留。
+	var refresh_state: Callable
 	var notify_taken: Callable
 	var _sprite: Sprite2D
 	var _key_hint: Sprite2D
@@ -729,12 +738,14 @@ class DungeonChest extends Node2D:
 			_key_hint.modulate = Color(1, 0.85, 0.5, 0.7 + 0.3 * sin(Time.get_ticks_msec() * 0.004))
 
 	func interact() -> void:
+		if refresh_state.is_valid():
+			refresh_state.call(self)
 		if taken:
 			return
 		if locked:
 			EventBus.hint_requested.emit("🔒 宝箱被城主的力量封印着——讨伐%s再说" % boss_name)
 			return
-		if key_id != "" and not GameState.remove_item(key_id, 1):
+		if key_id != "" and GameState.count_item(key_id) < 1:
 			EventBus.hint_requested.emit("🗝 需要%s才能打开（%s）" % [
 				ItemCatalog.name_of(key_id),
 				"完成收集委托获得" if key_id == EconomyMath.KEY_GOLD else "击败精英怪有几率掉落"])
@@ -742,6 +753,9 @@ class DungeonChest extends Node2D:
 		taken = true
 		if notify_taken.is_valid():
 			notify_taken.call()
+		# 已开标记先于库存/奖励信号提交，订阅者重入交互也不能重复领取。
+		if key_id != "":
+			GameState.remove_item(key_id, 1)
 		var gold: int = EconomyMath.bounty_gold(8, GameState.stats.level)
 		GameState.add_gold(gold)
 		# 双件物品奖励（hash 确定性，无 RNG）：补给 1 件 + 稀有材料 1 件
@@ -1528,6 +1542,8 @@ func _exit_tree() -> void:
 	var player := get_node_or_null("Player")
 	if player != null and player.has_method("save_snapshot"):
 		GameState.player_snapshot = player.save_snapshot()
+	# 菜单保存与同会话继续共用这份覆盖层；不能只写磁盘却把内存缓存留在旧档。
+	GameState.destroyed_cells.assign(ObstacleField.destroyed_list())
 	# 弹幕池清场：Projectile 静态池跨场景持有摘树节点，随世界退场释放
 	Projectile.clear_pool()
 	WorldSim.stop()

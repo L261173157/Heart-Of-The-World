@@ -1,0 +1,51 @@
+name: Godot regression tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: godot-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  headless:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: logic
+            tests: sim,frames,balance
+          - suite: flows
+            tests: smoke,save,save_lifecycle,combat,ui_flow,projectile,world,pacing
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install official Godot 4.7
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/godot"
+          cd "$RUNNER_TEMP/godot"
+          curl --fail --location --retry 3 \
+            https://github.com/godotengine/godot-builds/releases/download/4.7-stable/Godot_v4.7-stable_linux.x86_64.zip \
+            --output godot.zip
+          echo 'b639ca9c1ddea39bb3df89bd5283a51ca6047467abe6b25e9436566f2b2082ede633025073989ecf39c7d5d3c2493d80ea13e3af6dd5e261bbf89e462d6d2214  godot.zip' | sha512sum --check
+          unzip -q godot.zip
+          echo "GODOT=$RUNNER_TEMP/godot/Godot_v4.7-stable_linux.x86_64" >> "$GITHUB_ENV"
+      - name: Run ${{ matrix.suite }} regressions
+        run: python3 Code/tests/run_headless.py --only '${{ matrix.tests }}' --log-dir 'test-results/${{ matrix.suite }}'
+      - name: Preserve test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-${{ matrix.suite }}-logs
+          path: test-results/${{ matrix.suite }}
+          if-no-files-found: warn

@@ -17,6 +17,11 @@ signal leveled_up(new_level: int, levels_gained: int)
 var level: int = 1
 var xp: int = 0
 var pending_points: int = 0
+## 升级赐福属于角色进度，不能由随场景销毁的 HUD 持有。
+## 当前三张卡一起入档；offer_id 拒绝旧按钮/重复回调再次领取。
+var pending_passive_picks: int = 0
+var passive_choices: Array[String] = []
+var passive_offer_id: int = 0
 
 var strength: int = 5
 var agility: int = 5
@@ -106,6 +111,34 @@ func add_passive(id: String) -> void:
 	changed.emit()
 
 
+## 当前可选卡只生成一次：暂停/回菜单/冷启动均沿用，不得读档重抽。
+func ensure_passive_choices() -> void:
+	if pending_passive_picks <= 0:
+		passive_choices.clear()
+		return
+	if not passive_choices.is_empty():
+		return
+	var pool: Array[String] = []
+	for entry: Dictionary in PASSIVE_POOL:
+		pool.append(entry["id"])
+	pool.shuffle()
+	passive_choices.assign(pool.slice(0, mini(3, pool.size())))
+	passive_offer_id += 1
+
+
+## 先完成「消耗一次资格 + 发放被动 + 下一组卡」，再通知观察者。
+## changed 的订阅者即使同步保存，也只能看见完整事务，不会漏奖/重复发奖。
+func claim_passive(id: String, offer_id: int) -> bool:
+	if pending_passive_picks <= 0 or offer_id != passive_offer_id or not passive_choices.has(id):
+		return false
+	pending_passive_picks -= 1
+	passives[id] = passive_level(id) + 1
+	passive_choices.clear()
+	ensure_passive_choices()
+	changed.emit()
+	return true
+
+
 func passive_mult(id: String, per_level: float) -> float:
 	return pow(per_level, passive_level(id))
 
@@ -154,6 +187,9 @@ func reset() -> void:
 	level = 1
 	xp = 0
 	pending_points = 0
+	pending_passive_picks = 0
+	passive_choices.clear()
+	passive_offer_id = 0
 	strength = 5
 	agility = 5
 	intellect = 5
@@ -193,6 +229,9 @@ func add_xp(amount: int) -> void:
 		lifespan_days += LEVELED_LIFESPAN_GAIN
 		levels_gained += 1
 	if levels_gained > 0:
+		# 发信号前兑现全部跨级资格：UI 不在树内、或订阅者同步保存也不会漏发。
+		pending_passive_picks += levels_gained
+		ensure_passive_choices()
 		leveled_up.emit(level, levels_gained)
 	changed.emit()
 

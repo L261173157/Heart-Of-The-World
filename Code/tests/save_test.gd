@@ -19,6 +19,8 @@ func _ready() -> void:
 	_test_world_v5()
 	_test_quests_and_settings()
 	_test_corrupted_file()
+	_test_passive_rewards()
+	_test_save_failures()
 	# 收尾清档，不把测试数据留给真实游戏
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(GameState.SAVE_PATH))
 	if _fails == 0:
@@ -91,12 +93,19 @@ func _test_world_v5() -> void:
 	_check(GameState.discovered_landmarks == ["lm_p_3_4_0"], "读档恢复已发现地标")
 	# 摧毁格走真实流：运行期覆盖层（damage_cell 灌入）→ save_now 序列化
 	ObstacleField.restore_destroyed(["100,200", "-5,7"])
+	WorldSim.start(EcologySim.new())
 	GameState.save_now()
+	WorldSim.stop()
 	GameState.destroyed_cells = []
 	ObstacleField.restore_destroyed([])
 	GameState._load()
 	_check(GameState.destroyed_cells == ["100,200", "-5,7"],
 			"读档恢复已摧毁障碍格（%d 条）" % GameState.destroyed_cells.size())
+	# 冷启动停在菜单，运行态覆盖层为空；菜单保存不得抹掉刚读出的障碍进度。
+	GameState.save_now()
+	GameState.destroyed_cells = []
+	GameState._load()
+	_check(GameState.destroyed_cells == ["100,200", "-5,7"], "菜单保存保留尚未装配的摧毁覆盖层")
 	# ObstacleField 覆盖层灌回（game_world 装配路径的纯逻辑部分）
 	ObstacleField.restore_destroyed(GameState.destroyed_cells)
 	_check(ObstacleField.sample_cell(Vector2i(100, 200)).is_empty()
@@ -519,3 +528,135 @@ func _check(cond: bool, msg: String) -> void:
 	else:
 		_fails += 1
 		print("  FAIL  %s" % msg)
+
+
+## 存档 v7：连升资格先记账；同一组卡跨后台/读档不变；消费与发奖不可分割。
+func _test_passive_rewards() -> void:
+	GameState.reset_all()
+	var original_stats := GameState.stats
+	var on_level := func(_level: int, _gained: int) -> void: GameState.save_now()
+	GameState.stats.leveled_up.connect(on_level)
+	GameState.add_xp(500)
+	GameState.stats.leveled_up.disconnect(on_level)
+	var earned := GameState.stats.level - 1
+	var data := _read_save()
+	_check(earned > 1 and int(data.get("pending_passive_picks", -1)) == earned,
+			"连升发信号前记完全部资格（同步保存也不漏奖）")
+	var choices := GameState.stats.passive_choices.duplicate()
+	var offer_id := GameState.stats.passive_offer_id
+	GameState._notification(NOTIFICATION_APPLICATION_PAUSED)
+	GameState.stats.reset()
+	GameState._load()
+	_check(GameState.stats == original_stats and GameState.stats.pending_passive_picks == earned,
+			"后台保存/读档恢复待领次数且不替换 stats 对象")
+	_check(GameState.stats.passive_choices == choices and choices.size() == 3 \
+			and GameState.stats.passive_offer_id == offer_id, "后台重载保持原三张卡与领取凭证")
+	var chosen: String = choices[0]
+	var on_change := func() -> void: GameState.save_now()
+	GameState.stats.changed.connect(on_change)
+	_check(GameState.stats.claim_passive(chosen, offer_id), "合法赐福领取成功")
+	GameState.stats.changed.disconnect(on_change)
+	data = _read_save()
+	_check(int(data["pending_passive_picks"]) == earned - 1 \
+			and int(data["passives"].get(chosen, 0)) == 1, "同步保存只看见完整的扣资格+发奖励事务")
+	_check(not GameState.stats.claim_passive(chosen, offer_id), "重复/旧卡凭证不能再次领取")
+	GameState.stats.reset()
+	GameState._load()
+	_check(GameState.stats.pending_passive_picks == earned - 1 \
+			and GameState.stats.passive_level(chosen) == 1, "领奖后重载不回滚资格或重复奖励")
+	while GameState.stats.pending_passive_picks > 0:
+		GameState.stats.claim_passive(GameState.stats.passive_choices[0], GameState.stats.passive_offer_id)
+	GameState.save_now()
+	GameState._load()
+	_check(GameState.stats.pending_passive_picks == 0 and GameState.stats.passive_choices.is_empty() \
+			and not GameState.stats.claim_passive(chosen, offer_id), "全部领取后读档不重发奖励")
+	# v6 旧档补差额而非重发：3 次已领 + 3 次未领；其余进度保持原样。
+	var legacy := {"version": 6, "level": 7, "xp": 55, "pending_points": 2,
+		"strength": 9, "gold": 321, "passives": {"hp": 2, "cdr": 1},
+		"inventory": {"medipack": 2}, "destroyed": ["100,200"]}
+	_write_save(legacy)
+	GameState._load()
+	_check(GameState.stats.pending_passive_picks == 3 and GameState.stats.passives == legacy["passives"],
+			"旧档只补未领取赐福且不改已有被动")
+	_check(GameState.stats.level == 7 and GameState.stats.xp == 55 \
+			and GameState.stats.pending_points == 2 and GameState.stats.strength == 9 \
+			and GameState.gold == 321 and int(GameState.inventory.get("medipack", 0)) == 2 \
+			and GameState.destroyed_cells == ["100,200"] and GameState.chest_claims.is_empty(),
+			"v6 迁移保留角色/金币/物品/障碍进度，新宝箱状态默认空")
+	legacy["passives"] = {"hp": 6}
+	_write_save(legacy)
+	GameState._load()
+	_check(GameState.stats.pending_passive_picks == 0, "旧档全部领取过的等级不会重复补奖")
+	legacy["pending_passive_picks"] = 2
+	legacy["passive_choices"] = ["bad_id", "hp", "hp"]
+	legacy["chest_claims"] = {"p_1_2": true, "p_2_3": false, "bad": 1, "": true}
+	_write_save(legacy)
+	GameState._load()
+	_check(GameState.stats.pending_passive_picks == 2 and GameState.stats.passive_choices.size() == 3 \
+			and not GameState.stats.passive_choices.has("bad_id"), "显式待领次数为真源，坏卡组安全重建")
+	_check(GameState.chest_claims == {"p_1_2": true}, "宝箱状态字段只接受非空键与布尔 true")
+	GameState.save_now()
+	GameState.chest_claims.clear()
+	GameState._load()
+	_check(GameState.chest_claims == {"p_1_2": true}, "宝箱领取标记存档往返")
+	GameState._ecology_cache = {"old_cycle": true}
+	GameState.reset_chest_claim("unclaimed_patch")
+	_check(GameState._ecology_cache == null and GameState._save_timer > 0.0,
+			"未领取过宝箱的 Boss 重生也作废旧周期生态缓存")
+	GameState._ecology_cache = {"old_world": true}
+	GameState.clear_chest_claims()
+	_check(GameState.chest_claims.is_empty() and GameState._ecology_cache == null,
+			"新建世界清宝箱时同时清生态缓存")
+	GameState.reset_all()
+	_check(GameState.stats.pending_passive_picks == 0 and GameState.stats.passive_choices.is_empty() \
+			and GameState.chest_claims.is_empty() and ObstacleField.destroyed_list().is_empty(),
+			"新冒险清空赐福/宝箱/运行态障碍覆盖层")
+
+
+## IO 失败不得报成功/提前刷新时间/损坏上一份档，恢复可写后按防抖节奏重试。
+func _test_save_failures() -> void:
+	var path := GameState.SAVE_PATH
+	GameState.gold = 17
+	_check(GameState.save_now(), "save_now 成功返回 true")
+	var good_bytes := FileAccess.get_file_as_bytes(path)
+	var good_time := GameState.last_save_unix
+	GameState.gold = 29
+	# 用目录占住临时文件位置，稳定触发 open 失败，不依赖权限/磁盘余量。
+	var tmp_path := ProjectSettings.globalize_path(path + ".tmp")
+	DirAccess.make_dir_absolute(tmp_path)
+	_check(not GameState.save_now(), "临时档无法打开时返回 false")
+	_check(GameState.last_save_unix == good_time and FileAccess.get_file_as_bytes(path) == good_bytes \
+			and GameState._save_timer > 0.0, "写入失败保留旧档/成功时间并安排重试")
+	DirAccess.remove_absolute(tmp_path)
+	GameState._process(GameState.SAVE_DEBOUNCE + 0.01)
+	_check(int(_read_save()["gold"]) == 29 and GameState._save_timer == 0.0,
+			"恢复可写后自动重试成功保存新进度")
+	good_time = GameState.last_save_unix
+	# 非空目标目录不可由文件替换，稳定触发 rename 失败；目录内容保持不动。
+	GameState.SAVE_PATH = "user://save_rename_blocked"
+	var blocked := ProjectSettings.globalize_path(GameState.SAVE_PATH)
+	DirAccess.make_dir_absolute(blocked)
+	var marker := FileAccess.open(GameState.SAVE_PATH + "/keep", FileAccess.WRITE)
+	marker.store_string("previous-data")
+	marker.close()
+	_check(not GameState.save_now() and GameState.last_save_unix == good_time \
+			and GameState._save_timer > 0.0, "原子替换失败不刷新成功时间且安排重试")
+	_check(FileAccess.get_file_as_string(GameState.SAVE_PATH + "/keep") == "previous-data" \
+			and not FileAccess.file_exists(GameState.SAVE_PATH + ".tmp"), "替换失败保留原内容并清理临时文件")
+	DirAccess.remove_absolute(blocked + "/keep")
+	DirAccess.remove_absolute(blocked)
+	GameState.SAVE_PATH = path
+	GameState.save_enabled = false
+	_check(not GameState.save_now() and GameState.last_save_unix == good_time \
+			and GameState._save_timer == 0.0, "测试禁用写盘明确返回 false，不假报成功或重试")
+	GameState.save_enabled = true
+
+
+func _read_save() -> Dictionary:
+	return JSON.parse_string(FileAccess.get_file_as_string(GameState.SAVE_PATH))
+
+
+func _write_save(data: Dictionary) -> void:
+	var file := FileAccess.open(GameState.SAVE_PATH, FileAccess.WRITE)
+	file.store_string(JSON.stringify(data))
+	file.close()

@@ -10,6 +10,7 @@ const MAIN_SCENE := preload("res://scenes/main/main.tscn")
 const TARGET_ORDER := ["火把哥布林", "赤炎小魔", "突袭蛇", "沼泽蛛", "长矛哥布林", "黑曜牛卫"]
 const STEP_INTERVAL := 0.12
 const TIME_LIMIT := 150.0
+const TEST_RANDOM_SEED := 20261001
 
 var _sim: EcologySim
 var _player: Player
@@ -88,6 +89,13 @@ var _cover_timer := -1.0
 var _cover_phase := 0
 var _cover_target: MonsterBase = null
 var _cover_setup_tries := 0
+var _cover_invalid_retries := 0
+var _cover_ecology_frozen := false
+var _cover_ecology_was_processing := false
+var _cover_stand_pos := Vector2.INF
+var _cover_physics_ready := false
+var _cover_prepare_time := 0.0
+const COVER_PREPARE_BUDGET := 2.0
 var _cover_rock_cell := Vector2i(-999999, -999999)  # 布阵岩石格（超时取证用）
 const COVER_BUDGET := 13.0
 const COVER_SETUP_MAX := 25
@@ -692,6 +700,8 @@ func _windup_check(delta: float) -> void:
 
 
 func _ready() -> void:
+	# 地图夹具固定 world_seed；另固定个体年龄/营地散布/被动抽取等运行期 RNG。
+	seed(TEST_RANDOM_SEED)
 	# 升级三选一会暂停世界，测试节点必须 ALWAYS 才能代选赐福并推进流程
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	# 沙盒隔离（add_child 前）：不消费真实存档的生态快照（否则世界恢复旧生态
@@ -1096,14 +1106,19 @@ func _verify_audit_regressions() -> void:
 		var pid: String = dg["patch_id"]
 		var boss_name: String = WorldConfig.TERRAIN_BOSSES.get(dg["terrain"], "")
 		if boss_name != "":
-			_sim.boss_respawn_timers[boss_name] = 999.0  # 伪造 Boss 死亡窗口
+			_sim.tick()  # 活 Boss 的计时器为满值，不代表死亡
 			_player.global_position = dg["center"]
 			_world._update_dungeons()
 			var chest = _world._chests.get(pid)
 			if chest != null:
+				_check(_sim.alive_count_of_species(boss_name) > 0 and chest.locked,
+						"Boss 活着且计时器为正时宝箱保持锁定")
+				for inst: MonsterInstance in _sim.instances.values():
+					if inst.is_alive and inst.species.species_name == boss_name:
+						_sim.report_killed(inst.id)
 				chest.key_id = ""  # 测试免消耗真钥匙
-				chest.interact()
-				_check(_world._chest_taken.has(pid), "开箱写入已开标记")
+				chest.interact()  # 不等流式轮询，交互现场读取真实死亡状态
+				_check(GameState.chest_claims.has(pid), "开箱写入持久化已开标记")
 				_player.global_position = dg["center"] + Vector2(9999.0, 9999.0)
 				_world._update_dungeons()
 				var gone: bool = not _world._chests.has(pid)
@@ -1112,11 +1127,12 @@ func _verify_audit_regressions() -> void:
 				var chest2 = _world._chests.get(pid)
 				_check(gone and chest2 != null and chest2.taken,
 						"流式离场重进后宝箱保持已开（不可重复开刷奖励）")
-				_sim.boss_respawn_timers[boss_name] = 0.0  # Boss 复活
+				_sim.tick()
 				_world._update_dungeons()
-				_check(not _world._chest_taken.has(pid) and _world._chests[pid].locked,
-						"Boss 复活重置宝箱（下一轮可再开）")
-				_sim.boss_respawn_timers.erase(boss_name)
+				_check(_sim.alive_count_of_species(boss_name) == 0
+						and GameState.chest_claims.has(pid) and _world._chests[pid].taken,
+						"死亡倒计时推进不能提前重置已开箱")
+				# 完整的自然倒计时→实际离屏重生→下一次击杀由 world_persistence_test 验证。
 			else:
 				_check(false, "玩家就位后城塞宝箱生成")
 	# ③ 音乐优先级：Boss 临场中跨区不被群系曲抢占（旧实现换区监听在
@@ -1144,6 +1160,7 @@ func _verify_audit_regressions() -> void:
 
 
 func _finish() -> void:
+	_resume_cover_ecology()
 	set_process(false)
 	print("\n=== 战斗验证汇总（%.0fs） ===" % _elapsed)
 	_check(_kills.size() >= 6, "六物种全部被击杀（%s）" % str(_kills.keys()))
@@ -1188,12 +1205,13 @@ func _check(cond: bool, msg: String) -> void:
 
 ## 布阵：在靶怪附近找一块孤立障碍岩，玩家站到岩背面（视线被挡、攻击圈外、
 ## 侦测圈内），逼出"绕障"行为。找不到合适岩石返回 INF（下轮换点重扫）
-func _cover_setup(target: MonsterBase, _min_dist: float, _max_dist: float) -> Vector2:
+func _cover_setup(target: MonsterBase) -> Vector2:
 	# 围绕"玩家当前位置"找孤立岩石，把靶怪/玩家分置两侧（靶怪自家营地附近没有
 	# 合适岩石是常态——营地常落在障碍稀疏带，水晶/树墙又天然成簇不孤立；
-	# 怪的位置测试可控，岩石才是不可造的自然资源）。布距 130+85=215：
-	# <= 蜥蜴刀客侦测 180x1.3（不脱战）、<= 弹弓地精攻击圈 230（逼出吐息分支）、
-	# > 近战攻击圈（必须移动）
+	# 怪的位置测试可控，岩石才是不可造的自然资源）。按物种真实侦测圈留绕行余量：
+	# 旧215px布距距蜥蜴刀客170×1.3脱战线仅6px，首段绕行就可能正常脱战。
+	# 远程保持原布距上限；近战仍在攻击圈外，两个成功门槛与13s预算不变。
+	var spacing := minf(215.0, target.inst.species.detect_radius * 0.8)
 	var center := _player.global_position
 	var c0 := Vector2i(floori((center.x - 900.0) / 32.0), floori((center.y - 900.0) / 32.0))
 	var c1 := Vector2i(floori((center.x + 900.0) / 32.0), floori((center.y + 900.0) / 32.0))
@@ -1213,8 +1231,10 @@ func _cover_setup(target: MonsterBase, _min_dist: float, _max_dist: float) -> Ve
 			for k in 8:
 				var ang := TAU * float(k) / 8.0 + 0.35
 				var dir := Vector2(cos(ang), sin(ang))
-				var mpos := rock - dir * 130.0
-				var ppos := rock + dir * 85.0
+				var mpos := rock - dir * spacing * (130.0 / 215.0)
+				var ppos := rock + dir * spacing * (85.0 / 215.0)
+				if _cover_phase == 0 and mpos.distance_to(ppos) <= target.inst.species.attack_range * 1.25:
+					continue  # 数据变化也不能让布阵直接落进近战成功圈
 				if ObstacleField.blocks(mpos, 10.0) or ObstacleField.blocks(ppos, 8.0):
 					continue
 				# 落点须在导航层可走：玩家落进死点填充格/水缓冲格时近战只能停
@@ -1242,21 +1262,42 @@ func _los_blocked_pure(a: Vector2, b: Vector2) -> bool:
 	return false
 
 
+func _resume_cover_ecology() -> void:
+	if _cover_ecology_frozen:
+		WorldSim.set_process(_cover_ecology_was_processing)
+		_cover_ecology_frozen = false
+
+
+func _cover_setup_failed(message: String) -> void:
+	_check(false, message)
+	_cover_timer = -1.0
+	_cover_verified = true
+	_resume_cover_ecology()
+
+
 func _verify_cover() -> void:
+	# 本段只测实际导航/碰撞/AI。生态老化、捕食、迁徙另由sim_test验证，
+	# 不能把随机移除靶怪当作本段通过；观察结束恢复原驱动状态。
+	if not _cover_ecology_frozen:
+		_cover_ecology_was_processing = WorldSim.is_processing()
+		WorldSim.set_process(false)
+		_cover_ecology_frozen = true
 	if _cover_phase == 0 or _cover_phase == 2:
 		# 靶种取自 TARGET_ORDER 之外（六物种段已把它们清光，找不到活体布阵会轮空）
 		var species := "蜥蜴刀客" if _cover_phase == 0 else "弹弓地精"
 		var target := _find_alive(species)
 		if target == null:
+			_cover_setup_tries += 1
+			if _cover_setup_tries >= COVER_SETUP_MAX:
+				_cover_setup_failed("掩体布阵失败：%s未能流式入场" % species)
+				return
 			_teleport_to_species(species)
 			return  # 流式供给未到，下轮重试
-		# 侦测圈内 (≤380px) 才能逼出稳定追击；近战攻击圈外 (>80px)
-		var ppos := _cover_setup(target, 90.0, 400.0)
+		var ppos := _cover_setup(target)
 		if ppos == Vector2.INF:
 			_cover_setup_tries += 1
 			if _cover_setup_tries >= COVER_SETUP_MAX:
-				print("  PASS  掩体博弈跳过（25 轮未遇合适孤岩，非机制问题）")
-				_cover_verified = true
+				_cover_setup_failed("掩体布阵失败：25轮未遇合适孤岩")
 				return
 			_teleport_to_any_populated()
 			return
@@ -1265,8 +1306,28 @@ func _verify_cover() -> void:
 		target._hunt_mode = false
 		if target._nav != null:
 			target._nav.avoidance_enabled = false
+		# 人工瞬移后旧导航速度/路径/卡死计时器不再对应位置；重置缓存，
+		# 随后的每一步仍走生产NavigationAgent和碰撞，不能继承上段巡逻向量。
+		target._navq_ms = 0
+		target._navq_velocity = Vector2.INF
+		target._navq_target = Vector2.INF
+		target._nav_target = Vector2.INF
+		target._nav_stuck_pos = Vector2.INF
+		target._nav_stuck_until_ms = 0
+		target._los_cache_ms = -1000
+		target._knockback = Vector2.ZERO
+		target.current_hp = target.inst.max_hp()
 		target.state = MonsterBase.S_CHASE
 		target.velocity = Vector2.ZERO
+		target.set_physics_process(false)
+		# 跨图瞬移不同于真实步行：异步地表队列可能还在绘制上一处营地。
+		# 通过生产预热入口准备被测障碍块，仍由真实铺格预算/物理射线验收。
+		var streamer := _world.get_node("ChunkStreamer") as ChunkStreamer
+		streamer._spawn_sync(Vector2i(_cover_rock_cell.x >> 4, _cover_rock_cell.y >> 4) * 512)
+		_cover_physics_ready = false
+		_cover_prepare_time = 0.0
+		_cover_stand_pos = ppos
+		_cover_setup_tries = 0
 		_cover_target = target
 		_cover_timer = 0.0
 		_cover_phase += 1
@@ -1275,13 +1336,40 @@ func _verify_cover() -> void:
 
 
 func _cover_check(delta: float) -> void:
-	_cover_timer += delta
 	var target := _cover_target
 	if target == null or not is_instance_valid(target) or target.state == MonsterBase.S_CORPSE:
-		print("  PASS  掩体博弈跳过（靶怪被活世界生态/环境移除，非机制问题）")
+		_cover_invalid_retries += 1
 		_cover_timer = -1.0
-		_cover_verified = true
+		_cover_phase -= 1
+		if _cover_invalid_retries >= 3:
+			_cover_setup_failed("掩体观察失败：靶怪连续3次在窗口内被移除")
 		return
+	# 玩家布阵固定，外部围攻的击退不应把导航终点拖出脱战圈。
+	_player.global_position = _cover_stand_pos
+	_player._knockback = Vector2.ZERO
+	if not _cover_physics_ready:
+		# 逻辑岩石存在不代表流式碰撞体已挂载。先锁住靶怪，物理射线确认被挡
+		# 后才起13s观察，避免远程在碰撞未铺好时以0.0s直接假通过。
+		_cover_prepare_time += delta
+		target._los_cache_ms = -1000
+		if not target._has_los(_player.global_position):
+			_cover_physics_ready = true
+			target.set_physics_process(true)
+			_check(true, "%s掩体布阵物理视线确实被挡" % ("近战" if _cover_phase == 1 else "远程"))
+		elif _cover_prepare_time >= COVER_PREPARE_BUDGET:
+			var origin := Vector2i(_cover_rock_cell.x >> 4, _cover_rock_cell.y >> 4) * 512
+			for layer in _world.get_children():
+				if layer is ObstacleTileLayer:
+					print("DBG cover prepare: phase=", _cover_phase, " rock=", _cover_rock_cell,
+							" mpos=", target.global_position, " ppos=", _player.global_position,
+							" placed=", layer._bodies.has(origin), " laying=", layer._laying.has(origin),
+							" tile=", layer.get_cell_source_id(_cover_rock_cell),
+							" logical=", ObstacleField.sample_cell(_cover_rock_cell),
+							" pure_los_blocked=", _los_blocked_pure(target.global_position, _player.global_position))
+			target.set_physics_process(true)
+			_cover_setup_failed("掩体布阵失败：逻辑障碍未能形成物理遮挡")
+		return
+	_cover_timer += delta
 	if _cover_phase == 1:
 		var dist := target.global_position.distance_to(_player.global_position)
 		if dist <= target.inst.species.attack_range * 1.25:
@@ -1322,10 +1410,12 @@ func _cover_check(delta: float) -> void:
 			_check(true, "远程怪绕掩体重取视线（%.1fs）" % _cover_timer)
 			_cover_timer = -1.0
 			_cover_verified = true
+			_resume_cover_ecology()
 		elif _cover_timer >= COVER_BUDGET:
 			_check(false, "远程怪 %.1fs 未重取视线" % _cover_timer)
 			_cover_timer = -1.0
 			_cover_verified = true
+			_resume_cover_ecology()
 
 
 # --- 世界 v5 交互段 ---

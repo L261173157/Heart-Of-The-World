@@ -198,9 +198,9 @@ func _refresh_archive() -> void:
 
 
 func _manual_save() -> void:
-	GameState.save_now()
+	var saved := GameState.save_now()
 	%SaveTimeValue.text = _format_save_time()
-	_toast("已保存")
+	_toast("已保存" if saved else ("存档已禁用" if not GameState.save_enabled else "保存失败，请重试"))
 
 
 func _species_count() -> int:

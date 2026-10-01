@@ -12,6 +12,8 @@ signal instance_died(inst: MonsterInstance, cause: String)
 signal instance_migrated(inst: MonsterInstance, to_region_id: String)
 signal corpse_expired(inst: MonsterInstance)
 signal tick_completed(summary: Dictionary)
+## 仅实际 tick 重生成功时发出；setup/读档重放 instance_spawned 不代表新一轮。
+signal boss_respawned(species_name: String)
 ## 巢穴状态变化（active=true 建立/重建，false 移除）——表现层据此增删巢体；
 ## p_ransacked=true 表示"被玩家捣毁"（激怒播报），false 表示种群灭绝后的自然荒废
 signal nest_changed(region_id: String, species_name: String, active: bool, p_ransacked: bool)
@@ -668,6 +670,7 @@ func _process_boss_respawn(global_totals: Dictionary) -> void:
 			spawn_instance(species, region.id, species.maturity_age, 0,
 					species.boss_size_scale, false, region.center)
 			boss_respawn_timers[species.species_name] = species.boss_respawn_ticks
+			boss_respawned.emit(species.species_name)
 			break
 
 
