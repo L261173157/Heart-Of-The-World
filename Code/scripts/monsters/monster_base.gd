@@ -7,6 +7,8 @@
 class_name MonsterBase
 extends CharacterBody2D
 
+const SpritePlayback := preload("res://scripts/animation/sprite_playback.gd")
+
 const S_PATROL := 0
 const S_CHASE := 1
 const S_ATTACK := 2
@@ -133,10 +135,9 @@ var _squash_tween: Tween
 ## 非循环动作动画（attack/hurt）压制窗：> 0 期间 _update_anim 不做状态切换，
 ## 到期自动回归状态机动画（英雄 _attack_anim_linger 同法）
 var _action_anim_timer := 0.0
+var _action_visual_flip := false
 ## 受击动画最小间隔（防高频多段伤害下 hurt 循环重启抽搐成定格）
 var _hurt_anim_cd := 0.0
-## 行走浮动计时（_update_anim 的 bob 相位）
-var _anim_time := 0.0
 ## 玩家引用缓存：替代每物理帧的组查询（失效置空重查）
 var _player_ref: Node2D
 ## 头顶血条（事件驱动重绘的宿主）
@@ -272,6 +273,9 @@ func _ready() -> void:
 
 
 func _on_nest_ransacked(species_name: String) -> void:
+	# 尸体仍可留在流式场景中；迟到的捣巢广播不能再闪红并恢复活体颜色。
+	if state == S_CORPSE:
+		return
 	if inst != null and inst.species.species_name == species_name and not inst.species.is_boss:
 		_enrage_timer = ENRAGE_TIME
 		_pulse_red()
@@ -504,9 +508,8 @@ func _post_move_and_anim(delta: float) -> void:
 	# （状态 match 在 move 之前执行，读到的是上一物理帧的残留数据）
 	_post_move_hook(delta)
 	# 素材默认朝右，横向移动时翻转（纵向移动保持上一朝向）
-	if absf(velocity.x) > 5.0:
+	if _action_anim_timer <= 0.0 and absf(velocity.x) > 5.0:
 		visual.flip_h = velocity.x < 0.0
-	_anim_time += delta
 	_update_anim()
 
 
@@ -607,7 +610,7 @@ func _has_los(target_pos: Vector2) -> bool:
 
 
 ## 状态机 → 帧动画的统一映射（纯表现，不影响逻辑判定）：
-## 尸体→die（无该动画则回退 idle）；其余按速度切 walk/idle。
+## 活体按速度切 walk/idle；尸体仅由死亡事件定姿/播放一次。
 ## 攻击/受击不走状态映射——出招/受击瞬间经 _play_action_anim 定点播放并
 ## 短暂压制状态切换，帧与伤害同相位（2026-09-28 动作补齐；旧法 S_ATTACK
 ## 常驻循环 attack，出招挥刀与冷却站桩无法区分）。
@@ -616,36 +619,48 @@ func _update_anim() -> void:
 	var _ta := 0
 	if profiling:
 		_ta = Time.get_ticks_usec()
-	if visual == null:
+	if visual == null or visual.sprite_frames == null or state == S_CORPSE:
+		# 尸体由 on_sim_death 定姿；尤其不能在 die 播完后重启第一帧。
 		return
-	var want := "idle"
-	if _action_anim_timer <= 0.0:
-		match state:
-			S_CORPSE:
-				want = "die"
-			_:
-				want = "walk" if velocity.length() > 5.0 else "idle"
-		if visual.sprite_frames == null or not visual.sprite_frames.has_animation(want):
+	var walking := false
+	if _action_anim_timer > 0.0:
+		visual.flip_h = _action_visual_flip
+	else:
+		var want := "walk" if velocity.length() > 5.0 else "idle"
+		if not visual.sprite_frames.has_animation(want):
 			want = "idle"
 		if visual.animation != want or not visual.is_playing():
 			visual.play(want)
-	# 像素稳定：bob 与精灵世界坐标都吸附整数（相机画布吸附只稳世界不动精灵，
-	# 移动中的精灵在浮点坐标上逐帧跳格采样=边缘毛刺闪动，2026-09-20 实测反馈）
-	visual.offset.y = roundf(sin(_anim_time * 13.0) * 0.9) if want == "walk" else 0.0
+		walking = want == "walk"
+		# 慢巡逻与冲锋不能踩同一步频；只改变视觉，不改 AI/移动速度。
+		visual.speed_scale = clampf(velocity.length() / maxf(inst.move_speed(), 1.0),
+			0.65, 1.8) if walking and inst != null else 1.0
+	# bob 与真实条带步相锁定，不再用独立时钟在脚落地时把身体提起。
+	var cycle := float(visual.frame + visual.frame_progress) / maxf(
+		float(visual.sprite_frames.get_frame_count(visual.animation)), 1.0)
+	visual.offset.y = roundf(sin(TAU * cycle * 2.0) * 0.9) if walking else 0.0
 	visual.global_position = visual.global_position.round()
 	if profiling:
 		prof_anim_ms += (Time.get_ticks_usec() - _ta) * 0.001
 		prof_anim_n += 1
 
 
-## 非循环动作动画（attack/hurt）定点播放：dur 秒内压制状态动画切换，播完
-## （非循环停在末帧）自动回归状态机映射。帧表缺该动画返回 false 静默跳过
+## 动作事件显式重播并按真实条带时长适配现有表现窗（EP 为 2~12 帧不等）。
+## 朝向取出手时的目标并保持到收招，防后退吐弹/击退/RVO 让武器突然翻背。
 func _play_action_anim(anim: String, dur: float) -> bool:
-	if visual == null or visual.sprite_frames == null \
+	if state == S_CORPSE or visual == null or visual.sprite_frames == null \
 			or not visual.sprite_frames.has_animation(anim):
 		return false
-	visual.play(anim)
-	_action_anim_timer = maxf(_action_anim_timer, dur)
+	if anim == "attack" or anim == "windup":
+		var target := _get_player()
+		if target != null and target.visible:
+			var dx := target.global_position.x - global_position.x
+			if absf(dx) > 1.0:
+				visual.flip_h = dx < 0.0
+	_action_visual_flip = visual.flip_h
+	SpritePlayback.restart(visual, anim,
+		SpritePlayback.speed_for_window(visual.sprite_frames, anim, dur))
+	_action_anim_timer = dur
 	return true
 
 
@@ -654,7 +669,7 @@ func _play_action_anim(anim: String, dur: float) -> bool:
 func _squash(amount: Vector2, dur := 0.16) -> void:
 	if visual == null:
 		return
-	var base := _visual_base()
+	var base := _visual_base().round()
 	if _squash_tween != null and _squash_tween.is_valid():
 		_squash_tween.kill()
 	_squash_tween = visual.create_tween()
@@ -757,14 +772,23 @@ func on_sim_death() -> void:
 	_action_anim_timer = 0.0  # 让出招/受击压制立即让位给尸体表现
 	set_deferred("collision_layer", 0)
 	set_deferred("collision_mask", 0)
-	# 有死亡帧则播（玩家侧骑士才有 die 行）；怪物无死亡帧回退 idle 后由侧倒+灰化表达
-	if visual != null and visual.sprite_frames != null and visual.sprite_frames.has_animation(&"die"):
+	if _squash_tween != null and _squash_tween.is_valid():
+		_squash_tween.kill()
+	_apply_size_visual()
+	visual.offset = Vector2.ZERO
+	visual.rotation = 0.0
+	# Troll Dead 自带跌倒：保留原生方向与原速；无死亡素材才使用静止侧倒。
+	var has_death := visual.sprite_frames != null and visual.sprite_frames.has_animation(&"die")
+	if has_death:
+		SpritePlayback.restart(visual, &"die")
+	else:
+		visual.animation = &"idle"
 		visual.stop()
-		visual.play(&"die")
+		visual.speed_scale = 1.0
 	if _shadow != null:
 		_shadow.visible = false  # 侧倒尸体不再踩影子
-	rotation = PI / 2.0
-	modulate = Color(0.45, 0.45, 0.45, 0.7)
+	rotation = 0.0 if has_death else PI / 2.0
+	set_tint(Color(0.45, 0.45, 0.45, 0.7))  # 杀掉受击闪色，避免旧 tween 将尸体染回活体色
 	if _hp_bar != null:
 		_hp_bar.notify_change()
 	# 死亡消散烟（美术 v5 fx 全量）：Boss 用暗烟加强份量感

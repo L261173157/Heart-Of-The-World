@@ -9,6 +9,7 @@ extends CharacterBody2D
 ## 技能数值（费用/冷却/倍率/持续）的真源在 CharacterStats（v2 数值框架），
 ## 这里只留表现层手感常量：判定框几何 / 输入窗 / 物理参数 / 残影节奏。
 const Skill := preload("res://scripts/character/character_stats.gd")
+const SpritePlayback := preload("res://scripts/animation/sprite_playback.gd")
 
 const ATTACK_WINDOW := 0.18
 ## 攻击动画收尾残留：判定窗结束后攻击动画再停留片刻播完收招段再回 walk/idle。
@@ -26,7 +27,7 @@ const RESPAWN_PROTECT := 1.0
 const LAVA_TICK := 0.5
 const LAVA_DAMAGE_FRAC := 0.03
 const HURT_IFRAME := 0.35
-## 受击动画残留：hurt 段展示时长（素材 4帧@12fps≈0.33s，取 0.3s 收掉不拖节奏）
+## 受击动画展示时长；素材实际帧数/逐帧时长经 SpritePlayback 适配此窗
 const HURT_ANIM_TIME := 0.3
 ## 冲刺期间只与墙壁碰撞（穿透怪物）：被围时的核心逃生手段
 const MASK_NORMAL := 3
@@ -78,7 +79,9 @@ var facing: Vector2 = Vector2.RIGHT
 
 var _attack_cooldown := 0.0
 var _attack_timer := 0.0
+## 从出招起算的总表现窗 = 判定窗 + 收招窗；两者不能并行倒计时。
 var _attack_anim_linger := 0.0
+var _attack_visual_flip := false
 var _respawn_timer := 0.0
 var _is_dead := false
 ## 熔岩池灼烧（世界 v5）：站立每 LAVA_TICK 结算 LAVA_DAMAGE_FRAC 最大生命
@@ -114,12 +117,15 @@ const ATTACK_BUFFER_TIME := 0.12
 var _last_hit_stop := -9999.0
 ## 受击白闪 tween（新的受击到来先杀旧的，避免旧 tween 把颜色拉错）
 var _hurt_tween: Tween
+var _death_tween: Tween
 ## 最近一次致死伤害来源名（死亡信息用）
 var last_killed_by := ""
 ## HeroMotion v2：平滑后的移动分量（击退/冲刺直接写 velocity，不经此变量）
 var _move_vel := Vector2.ZERO
 ## 上一帧是否处于 walk 态（起停过渡反馈用）
 var _was_walking := false
+## 插值保留浮点累积，只在最终绘制取整；逐帧取整反馈会把 1px bob 永远锁在零。
+var _visual_bob := 0.0
 
 
 func _ready() -> void:
@@ -313,7 +319,7 @@ func _physics_process(delta: float) -> void:
 	if dir != Vector2.ZERO:
 		facing = dir.normalized()
 		# 素材朝右基准（AI 英雄与骑士包一致）：左右移动翻转即可，攻击方向由挥砍特效表达
-		if absf(dir.x) > 0.1:
+		if absf(dir.x) > 0.1 and _attack_anim_linger <= 0.0:
 			visual.flip_h = dir.x < 0.0
 		_spawn_dust(delta)
 	move_and_slide()
@@ -380,18 +386,18 @@ func _dir_anims() -> Dictionary:
 
 
 func _update_anim(delta := 0.0) -> void:
-	if visual == null or visual.sprite_frames == null:
+	if visual == null or visual.sprite_frames == null or _is_dead:
+		# 死亡由 _die 一次性定姿/播放，不能逐帧重启或回退到活体 idle。
 		return
 	var want := "idle"
-	if _is_dead:
-		want = "die"
-	elif _attack_timer > 0.0 or _attack_anim_linger > 0.0:
-		# 三段连击各播各的招式：attack1=横斩 attack2=上挑 attack3=重击；
-		# 素材缺分段动画时回退通用 attack（martial_hero 双段/hero_pilot 单段均兼容）
+	if _attack_timer <= 0.0 and _attack_anim_linger <= 0.0 and absf(facing.x) > 0.1:
+		visual.flip_h = facing.x < 0.0
+	if _attack_timer > 0.0 or _attack_anim_linger > 0.0:
+		# 三段连击消费实际素材：TS attack1 横斩、attack2/3 共用第二种挥斩；
+		# 第三段的重击由既有特效表达，缺分段动画时回退通用 attack
 		# linger 窗内维持收招段（判定窗已关，纯表现）
-		want = "attack" + str(mini(_combo, 3))
-		if not visual.sprite_frames.has_animation(want):
-			want = "attack"
+		want = _attack_animation()
+		visual.flip_h = _attack_visual_flip
 	elif _hurt_anim_timer > 0.0 and visual.sprite_frames.has_animation("hurt"):
 		# 受击段：不出招时压过走/站让"挨打"可读；不打断攻击窗（出招优先）
 		want = "hurt"
@@ -410,7 +416,7 @@ func _update_anim(delta := 0.0) -> void:
 	# 重启会闪回首帧（出招姿势），linger 收招段正是要停在读招帧上
 	if visual.animation != want or (visual.sprite_frames.get_animation_loop(want) and not visual.is_playing()):
 		visual.play(want)
-	var walking := want == "walk"
+	var walking := want.begins_with("walk")
 	if walking:
 		# 步频同步：speed_scale=1 时步频 = 12fps/3 帧·步 = 4 步/s（步幅 40px ⇒ 160px/s）；
 		# 冲刺按冲刺速度取值（620px/s→吃满 1.8 上限，步频疾促的冲刺语言）
@@ -418,22 +424,23 @@ func _update_anim(delta := 0.0) -> void:
 		visual.speed_scale = clampf(
 			(ground_speed / STRIDE_PX) / (12.0 / 3.0), 0.75, 1.8)
 	elif want.begins_with("attack"):
-		# 攻击条带全长 0.4s（4 帧@10fps）> 判定窗 0.32s（0.18 出招 + 0.14 收招）：
-		# 纯视觉 1.3× 提速让动作完整走完再切段，手感/输入窗口数值不动
-		visual.speed_scale = 1.3
+		visual.speed_scale = SpritePlayback.speed_for_window(
+			visual.sprite_frames, want, ATTACK_WINDOW + ATTACK_ANIM_LINGER)
 	elif want == "hurt":
-		# 受击条带全长 0.75s（6 帧@8fps）> 受击窗 0.3s：2.5× 收进窗口完整可读
-		visual.speed_scale = 2.5
+		visual.speed_scale = SpritePlayback.speed_for_window(
+			visual.sprite_frames, want, HURT_ANIM_TIME)
 	else:
 		visual.speed_scale = 1.0
 	# 锁相 bob：6 帧循环 = 两步，相位 = (帧序 + 帧内进度)/3 步取整圈
 	var bob_target := 0.0
-	if walking and visual.animation == "walk":
-		bob_target = sin(TAU * float(visual.frame + visual.frame_progress) / 3.0) * BOB_AMPLITUDE
+	if walking:
+		var cycle := float(visual.frame + visual.frame_progress) / maxf(
+			float(visual.sprite_frames.get_frame_count(want)), 1.0)
+		bob_target = sin(TAU * cycle * 2.0) * BOB_AMPLITUDE
 	if delta > 0.0:
-		# 像素稳定：bob 目标与实际偏移取整（亚像素抖动=毛刺闪动）
-		visual.offset.y = roundf(lerpf(visual.offset.y, bob_target,
-			1.0 - exp(-16.0 * delta)))
+		# 逻辑插值连续、最终绘制吸附整数：既保持步相又避免亚像素毛刺。
+		_visual_bob = lerpf(_visual_bob, bob_target, 1.0 - exp(-16.0 * delta))
+		visual.offset.y = roundf(_visual_bob)
 	# 起停过渡反馈（死亡态不给——倒地帧不该被挤压）
 	if delta > 0.0 and walking != _was_walking and not _is_dead:
 		if walking:
@@ -478,7 +485,7 @@ func _try_dash() -> void:
 	_dash_cd = Skill.DASH_COOLDOWN * stats.cooldown_mult()
 	# 冲刺起手同步翻面（朝向可能来自攻击吸附的斜向向量，移动分支的
 	# absf(dir.x) 阈值判不到小横分量时，向左冲却仍面朝右）
-	if absf(facing.x) > 0.1:
+	if absf(facing.x) > 0.1 and _attack_anim_linger <= 0.0:
 		visual.flip_h = facing.x < 0.0
 	_afterimage_accum = 0.0
 	# 只重置冷却、不关闭进行中的攻击判定窗：普攻→冲刺取消后摇时判定框仍
@@ -711,7 +718,7 @@ func _try_attack() -> void:
 		return
 	_attack_cooldown = stats.attack_interval()
 	_attack_timer = ATTACK_WINDOW
-	_attack_anim_linger = ATTACK_ANIM_LINGER
+	_attack_anim_linger = ATTACK_WINDOW + ATTACK_ANIM_LINGER
 	_hit_this_swing.clear()
 	# 连击推进：窗口内连续攻击累积段位 1→2→3，第三段为重击（1.5×伤害 2×击退）
 	_combo = _combo % 3 + 1
@@ -720,12 +727,26 @@ func _try_attack() -> void:
 	var aim: Variant = _aim_assist()
 	if aim != null:
 		facing = aim
+	# 只锁精灵朝向，不锁移动/下一招的逻辑 facing；侧向素材必须与吸附后的出刀一致。
+	_attack_visual_flip = visual.flip_h if absf(facing.x) <= 0.1 else facing.x < 0.0
+	visual.flip_h = _attack_visual_flip
+	_hurt_anim_timer = 0.0
+	var anim := _attack_animation()
+	if visual.sprite_frames.has_animation(anim):
+		SpritePlayback.restart(visual, anim, SpritePlayback.speed_for_window(
+			visual.sprite_frames, anim, ATTACK_WINDOW + ATTACK_ANIM_LINGER))
 	attack_shape.disabled = false
 	attack_hitbox.position = facing * ATTACK_REACH
 	attack_hitbox.rotation = facing.angle()
 	_damage_obstacle_ray()
 	_play_slash(_combo)
 	_squash(Vector2(1.1, 0.9), 0.16)
+
+
+## 同名连击/单攻击素材回退共用选择器；启动事件与状态映射必须使用同一段。
+func _attack_animation() -> StringName:
+	var anim := StringName("attack" + str(clampi(_combo, 1, 3)))
+	return anim if visual.sprite_frames.has_animation(anim) else &"attack"
 
 
 ## 最近的可交互地标 NPC（96px 内；无则 null）
@@ -832,7 +853,12 @@ func take_damage(amount: float, from_position := Vector2.INF, source_name := "")
 		return
 	current_hp = maxf(0.0, current_hp - amount)
 	_hurt_iframes = HURT_IFRAME
-	_hurt_anim_timer = HURT_ANIM_TIME
+	# 出招时以白闪表达受击；不排队一段即将过期的 hurt 截断残片。
+	if _attack_anim_linger <= 0.0 and _attack_timer <= 0.0 \
+			and visual.sprite_frames.has_animation(&"hurt"):
+		_hurt_anim_timer = HURT_ANIM_TIME
+		SpritePlayback.restart(visual, &"hurt", SpritePlayback.speed_for_window(
+			visual.sprite_frames, &"hurt", HURT_ANIM_TIME))
 	# 受击白闪 + 极短顿帧：围攻时"被谁打中"必须可读（此前只有震屏，方向感缺失）
 	if _hurt_tween != null and _hurt_tween.is_valid():
 		_hurt_tween.kill()
@@ -856,17 +882,33 @@ func take_damage(amount: float, from_position := Vector2.INF, source_name := "")
 
 
 func _die() -> void:
+	if _is_dead:
+		return
 	_is_dead = true
 	_respawn_timer = RESPAWN_DELAY
 	# 致死一击的受击白闪 tween 会与死亡淡出并发写 modulate（约 0.12s 的 alpha 闪跳），先杀
 	if _hurt_tween != null and _hurt_tween.is_valid():
 		_hurt_tween.kill()
-	# 死亡动画（骑士死亡帧）播 0.5s 淡出后再隐藏本体
+	if _squash_tween != null and _squash_tween.is_valid():
+		_squash_tween.kill()
+	visual.scale = _visual_base_scale
+	visual.offset = Vector2.ZERO
+	_visual_bob = 0.0
+	visual.rotation = 0.0
+	# TS Warrior 没有死亡条带：冻结中性姿势淡出，不能继续 idle/挥刀。
+	# 回退素材若有 die，则留足原生动作时长后隐藏（复活延时不变）。
+	var fade_time := 0.5
 	if visual.sprite_frames != null and visual.sprite_frames.has_animation(&"die"):
-		visual.play(&"die")
-	var fade := visual.create_tween()
-	fade.tween_property(visual, "modulate:a", 0.0, 0.5)
-	fade.tween_callback(func(): visible = false)
+		SpritePlayback.restart(visual, &"die")
+		fade_time = minf(RESPAWN_DELAY, maxf(fade_time,
+			SpritePlayback.duration(visual.sprite_frames, &"die")))
+	else:
+		visual.animation = &"idle"
+		visual.stop()
+		visual.speed_scale = 1.0
+	_death_tween = visual.create_tween()
+	_death_tween.tween_property(visual, "modulate:a", 0.0, fade_time)
+	_death_tween.tween_callback(func(): visible = false)
 	if _shadow != null:
 		_shadow.visible = false
 	# set_deferred：弹幕击杀路径的调用栈在 Area2D body_entered 回调内
@@ -890,6 +932,8 @@ func _respawn() -> void:
 	# 狂点的攻击/技能会在复活第一帧全部兑现（蓝量蒸发 + CD 全开）——
 	# _die() 只清了死亡瞬间的旧队列，这里补上"死亡期间持续积压"的口子
 	TouchInput.clear_queues()
+	if _death_tween != null and _death_tween.is_valid():
+		_death_tween.kill()
 	_is_dead = false
 	# v4 大世界（端到端 1 小时+）：复活在最近的低威胁群系（平原/林地）斑块中心，
 	# 而非固定出生角——死亡惩罚保留（走回战斗地点要时间），但不再摧毁整局体验
@@ -898,6 +942,7 @@ func _respawn() -> void:
 	current_mp = stats.max_mp()
 	visual.modulate = Color.WHITE
 	visual.offset.y = 0.0
+	_visual_bob = 0.0
 	visible = true
 	if _shadow != null:
 		_shadow.visible = true
@@ -914,6 +959,10 @@ func _respawn() -> void:
 	_attack_buffer_timer = 0.0
 	_hurt_iframes = 0.0
 	_attack_timer = 0.0
+	_attack_anim_linger = 0.0
+	_hurt_anim_timer = 0.0
+	_was_walking = false
+	SpritePlayback.restart(visual, &"idle")
 	_attack_cooldown = 0.0
 	_dash_cd = 0.0
 	_heavy_cd = 0.0

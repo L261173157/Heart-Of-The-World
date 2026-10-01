@@ -6,8 +6,11 @@
 ##      覆盖：29 物种 frames_override、英雄三皮肤、6 NPC、18 组 fx
 ##   B. 字面资产路径存在性：扫描 scripts/scenes/autoload/tools 里的 res:// 字面
 ##      路径（跳过注释行），逐一验证存在——烘焙产物缺失/忘跑 --import 都会现形
+##   C. 地表填充契约：运行时/菜单映射同源，填充格不含透明、外轮廓或竖直悬崖
 ## 约定：切帧器/烘焙工具改表重跑后必跑本测试；退出码非 0 = 失败。
 extends SceneTree
+
+const TERRAIN_GENERATOR := preload("res://tools/generate_terrain.gd")
 
 ## 帧尺寸界（粗闸：防横带级超宽帧——事故时帧宽 219/236px；格心对称锚定后最大
 ## = Lancer 系 147×113（含对称留边），160 留余量。精确守卫见 EXPECTED_SIZES 白名单）
@@ -107,6 +110,8 @@ func _init() -> void:
 		_test_frames_dir(nest, ["play"], "巢穴")
 	print("=== B. 字面资产路径存在性 ===")
 	_test_literal_paths()
+	print("=== C. 地表填充契约 ===")
+	_test_terrain_tiles()
 	print("=== 帧资产验收：%d 项断言（通过 %d / 失败 %d）===" % [_pass + _fail, _pass, _fail])
 	if _fail > 0:
 		print("!!! 存在失败项：先跑 tools/slice_spritesheets.gd + bake_structures.gd，")
@@ -259,3 +264,41 @@ func _collect(dir_path: String, re: RegEx, out: Dictionary) -> void:
 						out[p] = true
 		fn = dir.get_next()
 	dir.list_dir_end()
+
+
+## 地表只能消费平面内填充：TS 外轮廓/悬崖格随机铺地会生成假裂缝/假墙。
+## 检查原始源格而非截图均值，防止少量深描边被草色均值掩盖。
+func _test_terrain_tiles() -> void:
+	_check(TerrainPainter.TS == 16, "地表网格保持 16px")
+	_check(TerrainPainter.SOURCES == TERRAIN_GENERATOR.SOURCES, "运行时/菜单生成器源表同源")
+	for key: String in ["GRASS_FILL", "GRASS_DETAIL", "DIRT_FILL", "WATER_FILL", "ICE_FILL", "ICE_DETAIL"]:
+		var runtime: Array = (TerrainPainter as GDScript).get_script_constant_map()[key]
+		var offline: Array = (TERRAIN_GENERATOR as GDScript).get_script_constant_map()[key]
+		_check(runtime == offline, "%s 运行时/菜单生成器坐标同源" % key)
+	var sources := {}
+	for key: String in TerrainPainter.SOURCES:
+		var img := Image.load_from_file(ProjectSettings.globalize_path(TerrainPainter.SOURCES[key]))
+		img.resize(img.get_width() / 4, img.get_height() / 4, Image.INTERPOLATE_NEAREST)
+		sources[key] = img
+	var cells := TerrainPainter._atlas_cells()
+	_check(cells.size() == 27, "地表图集槽位保持 27 格（不改材质/哈希布局）")
+	for i in cells.size():
+		var spec: Array = cells[i]
+		if spec[0] == "water":
+			continue
+		var source: Image = sources[spec[0]]
+		var pos: Vector2i = spec[1] * TerrainPainter.TS
+		var flat := true
+		for y in TerrainPainter.TS:
+			for x in TerrainPainter.TS:
+				var color := source.get_pixelv(pos + Vector2i(x, y))
+				# 当前三套平面草色均为不透明的绿/橄榄/冷绿；悬崖为青灰，
+				# 外轮廓则含透明及深描边。不能把这些当作无碰撞的平地。
+				if color.a < 0.999 or color.v < 0.4 or color.g <= color.b:
+					flat = false
+		_check(flat, "地表槽 %d 为不透明平面内填充（无悬崖/轮廓）" % i)
+	TerrainPainter.ensure_atlases()
+	var chunk := TerrainPainter.paint_chunk(Vector2i(21504, 59904), 32)
+	var repeat := TerrainPainter.paint_chunk(Vector2i(21504, 59904), 32)
+	_check(chunk.get_size() == Vector2i(512, 512), "分块像素尺寸保持 512×512")
+	_check(chunk.get_data() == repeat.get_data(), "同世界坐标地表像素确定性不变")

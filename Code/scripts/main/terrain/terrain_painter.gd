@@ -14,6 +14,7 @@ extends RefCounted
 ## 源瓦 64px → ÷4 缩到 16px 世界网格（保持全部网格数学不变）。
 const SOURCES := {
 	"main": "res://assets/ts/Terrain/Tileset/Tilemap_color1.png",
+	"earth": "res://assets/ts/Terrain/Tileset/Tilemap_color4.png",
 	"cold": "res://assets/ts/Terrain/Tileset/Tilemap_color5.png",
 	"water": "res://assets/ts/Terrain/Tileset/Water Background color.png",
 }
@@ -24,23 +25,24 @@ const BLEND_PX := 72.0
 const OVERLAY_ALPHAS := [0.38, 0.68]
 const ATLAS_COLS := 12
 
-## 瓦片坐标 [源, (列,行)]——像素统计定档（2026-09-20，G/D/B/V 四指标）：
-## 纯草填充=方差<250 的 c2/c7 列；装饰草=c4/c9（暗点+亮点+高方差）；
-## 泥地=r5c6~r6c9 低绿高暗行；c5 列与 r5c2/3/5 为黑填充勿用；雪原= color5 同版式
-const GRASS_FILL := [["main", Vector2i(1, 0)], ["main", Vector2i(6, 0)],
+## 地表只取平面内部格（零起点 (1,1)/(6,1)）：r0/r2 是上下轮廓，
+## c3/c8 是窄岛边缘，r4/r5 是竖直悬崖，随机铺地会形成无碰撞的假裂缝/假墙。
+## 土斑改取现有 color4 橄榄色平面，保留材质分区；不新增美术或更改地形逻辑。
+## 保留既有槽位数量/哈希索引；源图无独立花簇格，detail 槽同样只能选内部。
+const GRASS_FILL := [["main", Vector2i(1, 1)], ["main", Vector2i(6, 1)],
 	["main", Vector2i(1, 1)], ["main", Vector2i(6, 1)],
-	["main", Vector2i(1, 2)], ["main", Vector2i(6, 2)]]
-const GRASS_DETAIL := [["main", Vector2i(3, 0)], ["main", Vector2i(8, 0)],
-	["main", Vector2i(3, 1)], ["main", Vector2i(8, 1)],
-	["main", Vector2i(3, 3)], ["main", Vector2i(8, 3)]]
-const DIRT_FILL := [["main", Vector2i(5, 4)], ["main", Vector2i(6, 4)],
-	["main", Vector2i(7, 4)], ["main", Vector2i(8, 4)],
-	["main", Vector2i(5, 5)], ["main", Vector2i(7, 5)], ["main", Vector2i(8, 5)]]
+	["main", Vector2i(1, 1)], ["main", Vector2i(6, 1)]]
+const GRASS_DETAIL := [["main", Vector2i(1, 1)], ["main", Vector2i(6, 1)],
+	["main", Vector2i(1, 1)], ["main", Vector2i(6, 1)],
+	["main", Vector2i(1, 1)], ["main", Vector2i(6, 1)]]
+const DIRT_FILL := [["earth", Vector2i(1, 1)], ["earth", Vector2i(6, 1)],
+	["earth", Vector2i(1, 1)], ["earth", Vector2i(6, 1)],
+	["earth", Vector2i(1, 1)], ["earth", Vector2i(6, 1)], ["earth", Vector2i(1, 1)]]
 const WATER_FILL := [["water", Vector2i(0, 0)]]
-const ICE_FILL := [["cold", Vector2i(1, 0)], ["cold", Vector2i(6, 0)],
+const ICE_FILL := [["cold", Vector2i(1, 1)], ["cold", Vector2i(6, 1)],
 	["cold", Vector2i(1, 1)], ["cold", Vector2i(6, 1)]]
-const ICE_DETAIL := [["cold", Vector2i(3, 0)], ["cold", Vector2i(8, 0)],
-	["cold", Vector2i(3, 1)]]
+const ICE_DETAIL := [["cold", Vector2i(1, 1)], ["cold", Vector2i(6, 1)],
+	["cold", Vector2i(1, 1)]]
 
 ## 素材种类 id（材质图 0=base 1=patch 2=water 按规则映射）
 const KIND_GRASS := 0

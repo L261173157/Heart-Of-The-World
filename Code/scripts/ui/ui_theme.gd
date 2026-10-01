@@ -5,7 +5,45 @@
 ## 纯静态方法、不持状态——可被任意 Control 场景零成本引用。
 class_name HotwTheme
 
-const GOLD := Color(1.0, 0.85, 0.45)
+const GOLD := Color("e7c785")
+const INK := Color("17232c")
+const TEXT := Color("f4ecd8")
+const MUTED := Color("b4c3c5")
+static var _texture_cache: Dictionary = {}
+
+
+## 先裁掉源图透明留白再做九宫；边角必须小于目标尺寸的一半。
+## 旧版 128px 整图 + 36px 上下边距，在 56px 按钮里会把可见面压成细线。
+## 缓存为独立纹理，保证切片坐标一致且不在每帧复制图片。
+static func cropped_texture(path: String, rect: Rect2i = Rect2i()) -> Texture2D:
+	var key := path + str(rect)
+	if _texture_cache.has(key):
+		return _texture_cache[key]
+	var source: Texture2D = load(path)
+	if source == null:
+		return null
+	var img := source.get_image()
+	if img == null or img.is_empty():
+		return source
+	if img.is_compressed():
+		img.decompress()
+	var region := rect if rect.has_area() else img.get_used_rect()
+	var tex := ImageTexture.create_from_image(img.get_region(region))
+	_texture_cache[key] = tex
+	return tex
+
+
+static func panel_style() -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color("17232cf5")
+	box.border_color = Color("788575")
+	box.set_border_width_all(2)
+	box.set_corner_radius_all(3)
+	box.set_content_margin_all(12)
+	box.shadow_color = Color(0.02, 0.025, 0.035, 0.4)
+	box.shadow_size = 8
+	box.shadow_offset = Vector2(0, 4)
+	return box
 
 ## TS UI 元素真源目录（免 preload：多数面板只加载一次，惰性 load 即可）
 const TS_UI := "res://assets/ts/UI Elements/UI Elements"
@@ -24,21 +62,16 @@ const RIBBON_ROW := {0: 0, 1: 2, 2: 4, 3: 6, 4: 8}
 ## CheckButton 统一「暗槽 ↔ TS 蓝瓦」开关两态。
 static func glass_theme() -> Theme:
 	var theme := Theme.new()
-	var panel := StyleBoxFlat.new()
-	panel.bg_color = Color(0.09, 0.11, 0.16, 0.92)
-	panel.border_color = Color(0.32, 0.36, 0.45, 0.9)
-	panel.set_border_width_all(2)
-	panel.set_corner_radius_all(4)
-	panel.set_content_margin_all(8)
+	var panel := panel_style()
 	theme.set_stylebox("panel", "PanelContainer", panel)
 
-	# TS 方钮：128px 源四态两套纹理，角框 36 内缩保形，中段拉伸适配长按钮
-	var btn := _texture_box(_sq_btn("Blue", "Regular"), 36.0, 12.0)
-	var btn_hover := _texture_box(_sq_btn("Blue", "Regular"), 36.0, 12.0)
+	# TS 方钮裁掉透明边，12px 角框保形；最小48px控件仍有完整可见面
+	var btn := _texture_box(_sq_btn("Blue", "Regular"), 12.0, 12.0)
+	var btn_hover := _texture_box(_sq_btn("Blue", "Regular"), 12.0, 12.0)
 	btn_hover.modulate_color = Color(1.15, 1.15, 1.15)
-	var btn_pressed := _texture_box(_sq_btn("Blue", "Pressed"), 36.0, 12.0)
-	var btn_disabled := _texture_box(_sq_btn("Blue", "Regular"), 36.0, 12.0)
-	btn_disabled.modulate_color = Color(0.45, 0.45, 0.5, 0.8)
+	var btn_pressed := _texture_box(_sq_btn("Blue", "Pressed"), 12.0, 12.0)
+	var btn_disabled := _texture_box(_sq_btn("Blue", "Regular"), 12.0, 12.0)
+	btn_disabled.modulate_color = Color(0.55, 0.60, 0.63, 0.85)
 	theme.set_stylebox("normal", "Button", btn)
 	theme.set_stylebox("hover", "Button", btn_hover)
 	theme.set_stylebox("pressed", "Button", btn_pressed)
@@ -64,7 +97,33 @@ static func glass_theme() -> Theme:
 	theme.set_color("font_disabled_color", "Button", Color(0.55, 0.55, 0.55))
 	theme.set_color("font_color", "CheckButton", Color(0.94, 0.94, 0.9))
 	theme.set_color("font_pressed_color", "CheckButton", Color(1.0, 0.95, 0.8))
-	theme.set_color("font_color", "Label", Color(0.94, 0.94, 0.9))
+	theme.set_color("font_color", "Label", TEXT)
+	theme.set_color("font_outline_color", "Button", Color("20363d"))
+	theme.set_constant("outline_size", "Button", 2)
+	theme.set_constant("h_separation", "Button", 12)
+	theme.set_constant("icon_max_width", "Button", 34)
+	theme.set_font_size("font_size", "Button", 18)
+	theme.set_font_size("font_size", "Label", 18)
+	theme.set_constant("separation", "VBoxContainer", 10)
+	theme.set_constant("separation", "HBoxContainer", 10)
+	var focus := StyleBoxFlat.new()
+	focus.bg_color = Color.TRANSPARENT
+	focus.border_color = GOLD
+	focus.set_border_width_all(2)
+	focus.set_corner_radius_all(3)
+	focus.set_expand_margin_all(3)
+	theme.set_stylebox("focus", "Button", focus)
+	var rail := StyleBoxFlat.new()
+	rail.bg_color = Color("0c161f")
+	rail.border_color = Color("617780")
+	rail.set_border_width_all(1)
+	rail.content_margin_top = 5
+	rail.content_margin_bottom = 5
+	theme.set_stylebox("slider", "HSlider", rail)
+	var progress := rail.duplicate() as StyleBoxFlat
+	progress.bg_color = Color("78afae")
+	theme.set_stylebox("grabber_area", "HSlider", progress)
+	theme.set_stylebox("grabber_area_highlight", "HSlider", progress)
 	return theme
 
 
@@ -75,7 +134,7 @@ static func _sq_btn(kind: String, state: String) -> String:
 ## 纹理样式盒：四向边距保角框、内容边距定文字内缩（TS 按钮通用底座）
 static func _texture_box(path: String, tex_margin: float, content_margin: float) -> StyleBoxTexture:
 	var sb := StyleBoxTexture.new()
-	sb.texture = load(path)
+	sb.texture = cropped_texture(path)
 	sb.texture_margin_left = tex_margin
 	sb.texture_margin_top = tex_margin
 	sb.texture_margin_right = tex_margin
@@ -90,7 +149,7 @@ static func style_ts_round_button(btn: Button, red := false) -> void:
 	var kind := "Red" if red else "Blue"
 	for state: String in ["normal", "hover", "pressed", "disabled"]:
 		var file := "Pressed" if state == "pressed" else "Regular"
-		var sb := _texture_box("%s/Buttons/Small%sRoundButton_%s.png" % [TS_UI, kind, file], 34.0, 12.0)
+		var sb := _texture_box("%s/Buttons/Small%sRoundButton_%s.png" % [TS_UI, kind, file], 0.0, 10.0)
 		match state:
 			"hover":
 				sb.modulate_color = Color(1.14, 1.14, 1.14)
@@ -104,19 +163,19 @@ static func style_ts_square_button(btn: Button, red := false) -> void:
 	var kind := "Red" if red else "Blue"
 	for state: String in ["normal", "hover", "pressed", "disabled"]:
 		var file := "Pressed" if state == "pressed" else "Regular"
-		var sb := _texture_box(_sq_btn(kind, file), 36.0, 12.0)
+		var sb := _texture_box(_sq_btn(kind, file), 12.0, 12.0)
 		match state:
 			"hover":
 				sb.modulate_color = Color(1.15, 1.15, 1.15)
 			"disabled":
-				sb.modulate_color = Color(0.45, 0.45, 0.5, 0.8)
+				sb.modulate_color = Color(0.55, 0.60, 0.63, 0.85)
 		btn.add_theme_stylebox_override(state, sb)
 
 
 ## 木瓦卡片底（三选一赐福卡）：WoodTable_Slots 单瓦拉伸，木色中棕配浅字
 static func style_wood_card(btn: Button) -> void:
 	for state: String in ["normal", "hover", "pressed", "disabled"]:
-		var sb := _texture_box(WOOD_TILE, 26.0, 10.0)
+		var sb := _texture_box(WOOD_TILE, 16.0, 16.0)
 		match state:
 			"hover":
 				sb.modulate_color = Color(1.18, 1.18, 1.18)
@@ -130,38 +189,52 @@ static func style_wood_card(btn: Button) -> void:
 static func paper_panel(panel: Control, path: String, margin := 56) -> void:
 	if panel == null:
 		return
-	var tex: Texture2D = load(path)
+	var tex: Texture2D = cropped_texture(path)
 	if tex == null:
 		return
 	var np := NinePatchRect.new()
 	np.texture = tex
-	np.patch_margin_left = margin
-	np.patch_margin_top = margin
-	np.patch_margin_right = margin
-	np.patch_margin_bottom = margin
+	np.patch_margin_left = mini(margin, 24)
+	np.patch_margin_top = mini(margin, 24)
+	np.patch_margin_right = mini(margin, 24)
+	np.patch_margin_bottom = mini(margin, 24)
+	# 纹理只提供边缘触感，深底承担阅读对比，避免棕色噪点抢文字。
+	np.modulate = Color(0.28, 0.34, 0.39, 0.42)
 	np.set_anchors_preset(Control.PRESET_FULL_RECT)
 	np.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(np)
 	panel.move_child(np, 0)
 
 
-## 丝带标题签（TS SmallRibbons 图集）：燕尾端帽与两侧缺口共 128px 保形、
-## 中段横带（源 64px）横向拉伸成连续色带——边距小于 128 会把缺口也拉开
-## 出「空洞带」（2026-09-30 像素实证）。返回自持 Control（带 + 居中浅字深描边）
+## SmallRibbons 的每行是「左端64 + 空64 + 中段64 + 空64 + 右端64」，
+## 不是连续横幅。先拼成192px完整带，再缩放；不能把空白当成九宫边距。
+static func ribbon_texture(color_idx: int) -> Texture2D:
+	var key := "ribbon_%d" % color_idx
+	if _texture_cache.has(key):
+		return _texture_cache[key]
+	var source: Texture2D = load(RIBBONS)
+	var src := source.get_image()
+	if src.is_compressed():
+		src.decompress()
+	var strip := Image.create(192, 64, false, Image.FORMAT_RGBA8)
+	var row: int = RIBBON_ROW.get(color_idx, 0) * 64
+	for i in 3:
+		strip.blit_rect(src, Rect2i(i * 128, row, 64, 64), Vector2i(i * 64, 0))
+	var tex := ImageTexture.create_from_image(strip)
+	_texture_cache[key] = tex
+	return tex
+
+
 static func ribbon_tag(text: String, color_idx := 0, min_width := 200.0) -> Control:
 	var atlas: Texture2D = load(RIBBONS)
 	var holder := Control.new()
 	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if atlas != null:
-		var at := AtlasTexture.new()
-		at.atlas = atlas
-		at.region = Rect2(0.0, RIBBON_ROW.get(color_idx, 0) * 64.0, 320.0, 64.0)
-		var np := NinePatchRect.new()
+		var at := ribbon_texture(color_idx)
+		var np := TextureRect.new()
+		np.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		np.stretch_mode = TextureRect.STRETCH_SCALE
 		np.texture = at
-		np.patch_margin_left = 128
-		np.patch_margin_right = 128
-		np.patch_margin_top = 8
-		np.patch_margin_bottom = 8
 		np.set_anchors_preset(Control.PRESET_FULL_RECT)
 		np.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		holder.add_child(np)
@@ -177,7 +250,7 @@ static func ribbon_tag(text: String, color_idx := 0, min_width := 200.0) -> Cont
 	label.add_theme_constant_override("outline_size", 4)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	holder.add_child(label)
-	holder.custom_minimum_size = Vector2(maxf(min_width, 256.0 + text.length() * 22.0), 44.0)
+	holder.custom_minimum_size = Vector2(maxf(min_width, 96.0 + text.length() * 22.0), 44.0)
 	return holder
 
 
@@ -190,15 +263,11 @@ static func ribbon_banner(width: float, height: float, color_idx := 0) -> Contro
 	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var atlas: Texture2D = load(RIBBONS)
 	if atlas != null:
-		var at := AtlasTexture.new()
-		at.atlas = atlas
-		at.region = Rect2(0.0, RIBBON_ROW.get(color_idx, 0) * 64.0, 320.0, 64.0)
-		var np := NinePatchRect.new()
+		var at := ribbon_texture(color_idx)
+		var np := TextureRect.new()
+		np.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		np.stretch_mode = TextureRect.STRETCH_SCALE
 		np.texture = at
-		np.patch_margin_left = 128
-		np.patch_margin_right = 128
-		np.patch_margin_top = 10
-		np.patch_margin_bottom = 10
 		np.set_anchors_preset(Control.PRESET_FULL_RECT)
 		np.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		holder.add_child(np)
@@ -210,13 +279,13 @@ static func ribbon_banner(width: float, height: float, color_idx := 0) -> Contro
 static func add_icon(btn: Control, texture: Texture2D, margin := 16.0) -> TextureRect:
 	var icon := TextureRect.new()
 	icon.name = "Icon"
-	icon.texture = texture
 	icon.set_anchors_preset(Control.PRESET_FULL_RECT)
 	icon.offset_left = margin
 	icon.offset_top = margin
 	icon.offset_right = -margin
 	icon.offset_bottom = -margin
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.texture = texture
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(icon)
@@ -224,12 +293,16 @@ static func add_icon(btn: Control, texture: Texture2D, margin := 16.0) -> Textur
 
 
 ## 冷却遮罩 + 数字（画在图标之上、点击穿透）：
-## 返回 {"overlay": ColorRect, "cd": Label}，调用方控制 visible / text。
+## 返回 {"overlay": Control, "cd": Label}，调用方控制 visible / text。
 static func add_cd_overlay(btn: Control) -> Dictionary:
-	var overlay := ColorRect.new()
+	var overlay := Control.new()
+	overlay.set_script(preload("res://scripts/ui/cooldown_mask.gd"))
 	overlay.name = "CdOverlay"
-	overlay.color = Color(0, 0, 0, 0.55)
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.offset_left = 14
+	overlay.offset_top = 14
+	overlay.offset_right = -14
+	overlay.offset_bottom = -14
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.visible = false
 	btn.add_child(overlay)
