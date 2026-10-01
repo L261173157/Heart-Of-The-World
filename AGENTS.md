@@ -32,7 +32,7 @@ HOTW_TEST_SAVE="res://tests/fixtures/test_save.json" "$GODOT" --headless --path 
 "$GODOT" --headless --path Code -s tools/obstacle_probe.gd                        # 障碍覆盖率探针（调 RECIPES 阈值后看各群系实测%；sim_test 分带守闸）
 "$GODOT" --headless --path Code -s tools/slice_spritesheets.gd                    # ★ 全家切帧（双风格：STYLE=ts 为 v6 Tiny Swords 现行真源/na 为 v5 回滚线；改表后重跑，tres 自包含免 import）
 "$GODOT" --headless --path Code -s tools/generate_fx.gd                             # TS 色板特效合成（v6：slash 弧光/闪光4色/光束/光柱/散射/法弹球 → assets/ts/fx_generated，切帧表消费）
-"$GODOT" --headless --path Code -s tools/bake_structures.gd                         # v6 烘焙全家（TS 建筑/宝箱/箭矢/14 件世界装饰/41 件 UI 图标（含怪物条框 monster_bar）/血条贴图/室内件 → structures_baked+deco+ts/icons）
+"$GODOT" --headless --path Code -s tools/bake_structures.gd                         # v6 烘焙全家（TS 建筑/宝箱/箭矢/14 件世界装饰/41 件 UI 图标（含怪物条框 monster_bar）/血条贴图/室内件 → ts/structures_baked + assets/deco + ts/icons）
 "$GODOT" --headless --path Code -s tools/numbers_audit.gd                        # 数值全盘量化审计（构筑/对刀/经济/生态/寿命基线表）
 "$GODOT" --headless --path Code -s tools/eco_probe.gd                            # 生态长程探针（2000 tick 逐物种存活占比/灭绝次数/死因——捕食结构调参的实证工具）
 python3 Code/tools/subset_font.py    # 重新生成内嵌中文字体 assets/fonts/（iOS 26 系统字体回退失效须自带 CJK 字体；游戏文案缺字变豆腐块时重跑，桌面端缺字静默回退看不出来）

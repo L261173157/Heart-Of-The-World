@@ -66,8 +66,9 @@ const HERO_SKINS := {
 
 ## 视觉基础缩放（挤压回弹的恢复基准，_ready 时从场景读）
 var _visual_base_scale := Vector2.ONE
-## 落地阴影 / 挤压 tween / 行走浮动相位
+## 落地阴影 / 脚点 y（尘土等脚下元素共用，_ready 按帧脚点 meta 定） / 挤压 tween / 行走浮动相位
 var _shadow: ShadowBlob
+var _feet_y := 0.0
 var _squash_tween: Tween
 
 var stats: CharacterStats
@@ -145,8 +146,12 @@ func _ready() -> void:
 	_visual_base_scale = visual.scale
 	_shadow = ShadowBlob.new()
 	_shadow.z_index = -1
-	_shadow.shadow_scale = Vector2.ONE * _visual_base_scale.x
-	_shadow.position.y = 9.0 * _visual_base_scale.y
+	# 阴影贴真实脚点（与怪物侧同源公式；2026-10-01 修复：60ea6d7 帧重切
+	# 21×19→67×60 后旧 9.0×scale 常量悬在小腿高度，与动画分离）
+	var layout := MonsterBase.shadow_layout(visual.sprite_frames, _visual_base_scale)
+	_feet_y = layout["y"]
+	_shadow.position.y = _feet_y
+	_shadow.shadow_scale = layout["s"]
 	add_child(_shadow)
 	_add_player_marker()
 	attack_shape.disabled = true
@@ -504,7 +509,7 @@ func _spawn_dust(delta: float) -> void:
 		get_parent().add_child(dust)
 	dust.scale = Vector2.ONE
 	dust.modulate.a = 1.0
-	dust.global_position = global_position + Vector2(randf_range(-4.0, 4.0), 12.0)
+	dust.global_position = global_position + Vector2(randf_range(-4.0, 4.0), _feet_y)
 	var tween := dust.create_tween()
 	dust.set_meta("vfx_tween", tween)
 	tween.set_parallel(true)

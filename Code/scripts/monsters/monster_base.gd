@@ -202,14 +202,12 @@ func setup(p_inst: MonsterInstance) -> void:
 	if inst.species.frames_override != null:
 		visual.sprite_frames = inst.species.frames_override
 		visual.play(&"idle")
-	# 阴影：贴真实脚点（idle 首帧最低不透明行——各动画脚线有漂移、攻击帧扑得
-	# 更低撑大画布，「画布底=脚点」不成立）+ 椭圆尺寸随内容宽度（缩放档 5→2 后
-	# 旧 6.5×基准缩放 公式只出 13px 小圆点，读作与本体无关的杂点）。须在
+	# 阴影：贴真实脚点（公式同源见 shadow_layout，玩家侧共用）。须在
 	# frames_override 换帧后取真实帧；几何按帧资源缓存，流式重生免重扫
 	if _shadow != null:
-		var g := _frames_geometry(visual.sprite_frames)
-		_shadow.position.y = (float(g["feet"]) + 1.0 - float(g["h"]) * 0.5) * visual.scale.y
-		_shadow.shadow_scale = Vector2.ONE * (float(g["cw"]) * visual.scale.x * 0.45 / 6.5)
+		var layout := shadow_layout(visual.sprite_frames, visual.scale)
+		_shadow.position.y = layout["y"]
+		_shadow.shadow_scale = layout["s"]
 	# 注册表登记：has 先行判一次（get_or_add 的默认参数每次调用都会构造新数组）。
 	# 注意不能写 `var a: Array = dict.get(k)` ——键缺失时 get 返回 null，
 	# 对强类型 Array 变量赋 null 是运行时错误（首个该物种个体登记时必然踩中）
@@ -340,6 +338,19 @@ static func _frames_geometry(frames: SpriteFrames) -> Dictionary:
 	}
 	_frames_geom[key] = geom
 	return geom
+
+
+## 阴影贴脚布局（玩家/怪物两侧的唯一真源，2026-10-01 抽出）：贴真实脚点
+## （idle 首帧最低不透明行——各动画脚线有漂移、攻击帧扑得更低撑大画布，
+## 「画布底=脚点」不成立）+ 椭圆尺寸随内容宽度（缩放档 5→2 后旧 6.5×基准
+## 缩放公式只出 13px 小圆点，读作与本体无关的杂点）。两侧分叉曾致
+## 60ea6d7 帧重切后玩家阴影悬小腿的回归，勿再各写一份
+static func shadow_layout(frames: SpriteFrames, base_scale: Vector2) -> Dictionary:
+	var g := _frames_geometry(frames)
+	return {
+		"y": (float(g["feet"]) + 1.0 - float(g["h"]) * 0.5) * base_scale.y,
+		"s": Vector2.ONE * (float(g["cw"]) * base_scale.x * 0.45 / 6.5),
+	}
 
 
 ## 碰撞/阴影/血条抬升的占地系数：非 Boss 含物种档位（占地随 body_scale）；

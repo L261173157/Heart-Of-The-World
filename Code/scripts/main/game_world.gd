@@ -348,7 +348,7 @@ func _process(delta: float) -> void:
 			_commit_region(rid)
 
 
-# --- 出生营地（美术 v5 M-B）：NA 建筑群 + 行商 + 安全区缓回血 ---
+# --- 出生营地：TS 蓝系建筑群 + 行商 + 安全区缓回血 ---
 ## 营地落点 = 出生斑块中心（障碍抑制区内恒空地，建筑纯装饰 + 底座碰撞体）
 const CAMP_HEAL_RADIUS := 420.0
 ## 安全区缓回血：每秒 3% 最大生命（脱战自然恢复档，不走无敌帧不触发受击演出）
@@ -960,12 +960,12 @@ class LandmarkMarker extends Node2D:
 		draw_circle(Vector2.ZERO, 7.0, Color(color.r, color.g, color.b, 0.9))
 
 
-## 地标 NPC（美术 v5）：NA 角色精灵 + 头顶名牌 + 轻微踱步。
+## 地标 NPC：TS 蓝系角色精灵 + 头顶名牌 + 轻微踱步。
 ## 交互 = 玩家贴近按攻击键（player 侧查询 npcs 组）→ 结构化委托经
 ## EventBus.npc_dialogue 由 HUD 对话气泡呈现（是/否接取）
 class LandmarkNPC extends Node2D:
-	## 地标类型 → NA 角色帧（characters 表 8=猎人 4=老者 7=巫女 6=行商；
-	## P1 扩容 13=瞭望者 9=草药师，视觉盘点定）
+	## 地标类型 → NPC 帧库（v6 TS 蓝系友军：Archer/Pawn 镐/Monk/Pawn 金袋/
+	## Warrior/Pawn 刀，切片映射真源 tools/slice_spritesheets.gd）
 	const FRAMES := {
 		"石环": preload("res://assets/creatures/frames/npc_hunter/npc_hunter_frames.res"),
 		"荒废遗迹": preload("res://assets/creatures/frames/npc_scholar/npc_scholar_frames.res"),

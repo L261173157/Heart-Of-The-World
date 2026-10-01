@@ -11,7 +11,7 @@
 class_name ObstacleField
 extends RefCounted
 
-## 障碍格边长（px）：与障碍瓦片层的瓦片尺寸一致（na_tileset 16px 素材 ×2）
+## 障碍格边长（px）：与障碍瓦片层的瓦片尺寸一致（deco 烘焙精灵 32 高画布同口径）
 const CELL := 32.0
 ## 512px 地形块 = 16×16 障碍格
 const CHUNK_CELLS := 16

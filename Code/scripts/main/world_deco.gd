@@ -30,34 +30,17 @@ const AMBIENT_POLL := 0.5
 const DECO_Z := -1     # 地物在怪物之下
 const PARTICLE_Z := 5
 
-## 装饰贴图源（Ninja Adventure tileset，CC0）：16px 网格，统一裁 32x32
-## （内容居中，透明边距无害），绘制时以底边中心对齐落点。
-## 坐标经像素统计 + 放大看板验证（2026-09-03）：树c0-1 松c4-5 灌木c2-3 岩c10-11
-## 草c12-13 蘑菇c14-15 原木c16-17（r10 行）；宝石堆r12c5-6（蓝67%+白25% 色分布确凿）、
-## 香蒲r15c9-10（绿茎31%+棕穗33%）。曾尝试的其余行道具矩形经色分布复核为误读已撤
-## （雪堆候选实为红棕、骨堆候选含 26% 蓝、墓碑候选红黑主导、花田候选无白/绿占比）
-const TILESET := preload("res://assets/creatures/sheets/na_tileset.png")
-const PROP_SRC := {
-	"tree": Rect2(0, 160, 32, 32),
-	"pine": Rect2(64, 160, 32, 32),
-	"rock": Rect2(160, 160, 32, 32),
-	"grass": Rect2(192, 160, 32, 32),
-	"mushroom": Rect2(224, 160, 32, 32),
-	"log": Rect2(256, 160, 32, 32),
-	"bush": Rect2(32, 160, 32, 32),
-	"gems": Rect2(80, 192, 32, 32),
-	"cattail": Rect2(144, 240, 32, 32),
-	## 枯树回退矩形（EP 真枯树 assets/deco/deadtree.png 缺失时兜底=松树格）
-	"deadtree": Rect2(64, 160, 32, 32),
-}
-## 走贴图绘制的装饰种类（big_tree/boulder = 放大复用；冰锥/雪堆/水洼/水晶/
-## 骨堆/骷髅桩等多边形烘焙或 EP 精灵，素材无对口验证矩形）
+## 装饰精灵真源 = assets/deco/<kind>.png（tools/bake_structures 烘焙：TS Resources
+## 树/松/岩/灌丛 + EP 骨堆/骷髅桩/真枯树 + 色板合成蘑菇/香蒲等。v6 起 NA 图集通道
+## 已退役：缺图=该件跳过并告警，不再回退 NA 像素）。
+## 走精灵绘制的装饰种类（big_tree/boulder = 放大复用；冰锥/雪堆/水洼/水晶/
+## 骨堆/骷髅桩等走多边形兜底或 EP 精灵）
 const TEXTURE_KINDS := ["tree", "big_tree", "grass", "pine", "deadtree", "rock", "boulder",
 	"mushroom", "log", "bush", "gems", "cattail"]
 ## 细软小道具：落影同步收窄（草/蘑菇/灌木/香蒲/宝石下面不该拖大黑影）
 const SMALL_SHADOW_KINDS := ["grass", "mushroom", "bush", "gems", "cattail"]
 
-## AI 装饰精灵（assets/deco/<kind>.png）：有图走精灵，缺图回退图集矩形/多边形
+## 装饰精灵（assets/deco/<kind>.png）：有图走精灵；缺图该类告警一次并跳过
 var _sprite_cache := {}
 
 
@@ -68,6 +51,8 @@ func _deco_sprite(kind: String) -> Texture2D:
 	var path := "res://assets/deco/%s.png" % kind
 	if ResourceLoader.exists(path):
 		tex = load(path)
+	if tex == null:
+		push_warning("world_deco 缺装饰精灵 assets/deco/%s.png，该类装饰跳过" % kind)
 	_sprite_cache[kind] = tex
 	return tex
 
@@ -80,27 +65,23 @@ var _ambient_accum := 0.0
 
 
 ## 块贴图装饰层：一个节点 _draw 全部道具（保持"每块个位数节点"的性能模型）。
-## 每件 = 源矩形 + 落点 + 缩放 + 水平翻转 + 着色（枯树=松树灰化复用）
+## 每件 = 精灵 + 落点 + 缩放 + 水平翻转 + 着色（枯树走 EP 精灵，56 高树档）
 class DecoLayer extends Node2D:
-	var texture: Texture2D
 	var items: Array = []
 
 	func _draw() -> void:
 		for item: Dictionary in items:
+			var sp: Texture2D = item.get("sprite")
+			if sp == null:
+				continue
 			var s: float = item["s"]
 			draw_set_transform(item["pos"], 0.0,
 				Vector2(-s if item["flip"] else s, s))
-			var sp: Texture2D = item.get("sprite")
-			if sp != null:
-				# AI 精灵：底边贴落点，高 32px 与图集件同档（保持占地/落影一致）；
-				# 高件（枯树等）经 item["h"] 指定目标高
-				var h := float(item.get("h", 32.0))
-				var w := h * float(sp.get_width()) / float(sp.get_height())
-				draw_texture_rect(sp, Rect2(-w / 2.0, -h, w, h), false, item["mod"])
-				continue
-			# 目标矩形：32x32 内容、水平居中、底边贴落点（y ∈ [-32, 0]）
-			draw_texture_rect_region(texture, Rect2(-16.0, -32.0, 32.0, 32.0),
-				item["src"], item["mod"])
+			# 精灵：底边贴落点，高 32px 基准档（保持占地/落影一致）；
+			# 高件（枯树等）经 item["h"] 指定目标高
+			var h := float(item.get("h", 32.0))
+			var w := h * float(sp.get_width()) / float(sp.get_height())
+			draw_texture_rect(sp, Rect2(-w / 2.0, -h, w, h), false, item["mod"])
 
 
 func _ready() -> void:
@@ -142,7 +123,6 @@ func _on_chunk_ready(origin: Vector2i) -> void:
 		clusters.append(rect.position + Vector2(
 			rng.randf_range(60.0, 452.0), rng.randf_range(60.0, 452.0)))
 	var layer := DecoLayer.new()
-	layer.texture = TILESET
 	layer.z_index = DECO_Z
 	var points := PackedVector2Array()
 	var colors := PackedColorArray()
@@ -166,12 +146,14 @@ func _on_chunk_ready(origin: Vector2i) -> void:
 		_bake_poly([Vector2(-sw, 0), Vector2(-sw * 0.5, -3), Vector2(sw * 0.5, -3), Vector2(sw, 0),
 				Vector2(sw * 0.5, 3), Vector2(-sw * 0.5, 3)], Color(0, 0, 0, 0.28), pos, 0.0, s, points, colors, polys)
 		if kind in TEXTURE_KINDS:
-			layer.items.append(_texture_item(kind, rng, pos, s))
+			var item := _texture_item(kind, rng, pos, s)
+			if not item.is_empty():
+				layer.items.append(item)
 		else:
-			# 多边形兜底类优先换 AI 精灵，无精灵再走多边形
+			# 多边形兜底类优先换烘焙精灵，无精灵再走多边形
 			var poly_sp := _deco_sprite(kind)
 			if poly_sp != null:
-				layer.items.append({"src": Rect2(), "pos": pos, "s": s,
+				layer.items.append({"pos": pos, "s": s,
 					"flip": rng.randf() < 0.5, "mod": Color.WHITE, "sprite": poly_sp})
 			else:
 				_bake_deco(kind, rng, pos, points, colors, polys)
@@ -280,8 +262,8 @@ func _bake_deco(kind: String, rng: RandomNumberGenerator, pos: Vector2,
 			_bake_poly([-2, -4, 2, -4, 2, 2, -2, 2], Color("#bfb8a6", 0.9), pos, rot, s, points, colors, polys)
 
 
-## 纹理类装饰 → 贴图绘制条目：直取源矩形；
-## big_tree/boulder = 基础素材放大复用；枯树 = EP 真枯树精灵（56 高树档）
+## 精灵类装饰 → 绘制条目：big_tree/boulder = 基础精灵放大复用；枯树 = EP 真枯树
+## 精灵（56 高树档）；缺图返回空字典，由调用方跳过该件
 func _texture_item(kind: String, rng: RandomNumberGenerator, pos: Vector2, s: float) -> Dictionary:
 	var src_key := kind
 	var mod := Color.WHITE
@@ -296,11 +278,14 @@ func _texture_item(kind: String, rng: RandomNumberGenerator, pos: Vector2, s: fl
 			scale_mult = 1.8
 		"deadtree":
 			h = 56.0  # EP 枯树：树形高件，超默认 32 档
-	# 素材尺寸偏紧凑（内容约 20px），整体再放大一档贴回原多边形的占地
+	var sp := _deco_sprite(src_key)
+	if sp == null:
+		return {}
+	# 素材内容偏紧凑，整体再放大一档贴回占地（v6 沿用既有调参）
 	var item := {
-		"src": PROP_SRC[src_key], "pos": pos, "s": s * scale_mult * 1.25,
+		"pos": pos, "s": s * scale_mult * 1.25,
 		"flip": rng.randf() < 0.5, "mod": mod,
-		"sprite": _deco_sprite(src_key),
+		"sprite": sp,
 	}
 	if h > 0.0:
 		item["h"] = h
