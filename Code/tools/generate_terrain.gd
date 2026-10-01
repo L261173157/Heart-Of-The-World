@@ -1,12 +1,13 @@
 ## 地表纹理离线生成工具（无头运行：godot --headless --path Code -s tools/generate_terrain.gd）。
-## v2（2026-09-03 内容重设计 v3 / P2）：Ninja Adventure tileset 真贴图拼接——
-##   确定性噪声决定每 16px 瓦的材质（草/泥/水/冰），变体哈希防重复，细节瓦点缀；
+## v2（2026-09-03）：真贴图拼接——确定性噪声决定每 16px 瓦的材质（草/泥/水/冰），
+##   变体哈希防重复，细节瓦点缀；
 ##   群系差异 = 色桶重映射（绿/蓝水/白冰/棕橙各自 HSV 目标，纹理与明度层次保留）；
 ##   水岸 2px 描边 + 边缘渐暗 + 簇状散点（沿用 v1 质感层）。
 ## v4（2026-09-08 世界大地图重构）起游戏内地表改为运行时分块绘制
 ## （scripts/main/terrain/terrain_painter.gd，同源算法），本工具的 6 张
 ## 1100×700 PNG 仅剩主菜单底部地平线装饰条一个消费方（main_menu.gd）——
 ## 保留不动；小地图底图用 tools/generate_world_map.gd。
+## 美术 v6（2026-09-20）贴图源换 Tiny Swords tilemap（÷4 保网格数学 + HSV 六群系）。
 extends SceneTree
 
 const W := 1100
