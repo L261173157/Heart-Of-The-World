@@ -33,6 +33,17 @@ EXIT_DIAGNOSTICS = (
     re.compile(r"ERROR: \d+ RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit\."),
 )
 
+# Godot 4.7 的 ThemeDB 在首次资源导入之前读取项目默认字体。干净检出没有
+# fontdata 时会先报这四条、随后成功导入字体。只允许引导轮的精确已知诊断；
+# 紧接的第二轮严格导入及所有游戏测试仍拒绝它们，不能把真实缺字库当作通过。
+_FONT_CACHE = "res://.godot/imported/NotoSansSC-Regular.ttf-4b8abad24b3b7f136d93d4ff5bc17cfc.fontdata"
+BOOTSTRAP_DIAGNOSTICS = {
+    f"ERROR: Cannot open file '{_FONT_CACHE}'.",
+    f"ERROR: Failed loading resource: {_FONT_CACHE}.",
+    "ERROR: Failed loading resource: res://assets/fonts/NotoSansSC-Regular.ttf.",
+    "ERROR: Error loading custom project font 'res://assets/fonts/NotoSansSC-Regular.ttf'",
+}
+
 
 def unexpected_errors(case: str, output: str) -> list[str]:
     bad = []
@@ -40,6 +51,8 @@ def unexpected_errors(case: str, output: str) -> list[str]:
         if "SCRIPT ERROR:" in line or re.search(r"\bFAIL\b", line):
             bad.append(line)
         elif line.startswith("ERROR:"):
+            if case == "bootstrap_import" and line in BOOTSTRAP_DIAGNOSTICS:
+                continue
             if any(pattern.fullmatch(line) for pattern in EXIT_DIAGNOSTICS):
                 continue
             # save_test 故意输入半截 JSON，验证旧进度保持不变；只豁免此精确诊断。
@@ -76,7 +89,12 @@ def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str]
     passed = code == 0 and complete and not errors
     print(f"[{name}] {'PASS' if passed else 'FAIL'} exit={code} completed={complete} "
           f"unexpected_errors={len(errors)} log={logs / (name + '.log')}", flush=True)
+    if name == "bootstrap_import":
+        count = sum(line in BOOTSTRAP_DIAGNOSTICS for line in output.splitlines())
+        if count:
+            print(f"[bootstrap_import] 初次字体就绪前诊断 {count} 条；下一轮仍须严格通过", flush=True)
     if not passed:
+        print("\n".join(errors[:20]), flush=True)
         print("\n".join(output.splitlines()[-50:]), flush=True)
     return passed
 
@@ -111,7 +129,9 @@ def main() -> int:
         version = subprocess.run([godot, "--headless", "--version"], env=env,
                                  capture_output=True, text=True, check=True).stdout.strip()
         print("Godot:", version, flush=True)
-        # 冷检出必须先导入资源/注册全局类；导入错误不能伪装成测试通过。
+        # 冷检出先完成资源引导，再以严格模式重新启动核验；游戏测试没有豁免。
+        if not run_case("bootstrap_import", ["--editor", "--import"], None, env, godot, logs, opts.timeout):
+            return 1
         if not run_case("import", ["--editor", "--import"], None, env, godot, logs, opts.timeout):
             return 1
         for name in names:

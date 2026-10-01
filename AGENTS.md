@@ -23,6 +23,7 @@ GODOT="/path/to/Godot" python3 Code/tests/run_headless.py
 ```
 此入口运行既有八测及三组生命周期回归（弹幕池、世界持久化、独立进程存档）。
 不只检查退出码：还要求完成标记，并拒绝脚本/物理运行错误；仅豁免基线已有的退出资源诊断和存档测试故意构造的精确 JSON 错误。
+干净检出采用两轮导入：首轮仅允许默认中文字体尚未生成缓存的四条已知诊断，第二轮导入及全部运行检查仍须严格通过。
 `save_lifecycle` 在 Linux 子进程中使用文件大小上限验证真实短写/flush 失败，不触碰真实磁盘容量；其它平台仍跑冷启动奖励往返。
 `.github/workflows/godot-tests.yml` 在 PR/main 上运行相同入口，使用校验 SHA512 的官方 Godot 4.7，无 iOS 签名或发布步骤。
 
