@@ -10,8 +10,9 @@ const SAVE_DEBOUNCE := 2.0
 ## 存档版本：v1 角色侧；v2 增加生态世界；v3 增加角色位置/当前生命与魔法；
 ## v4（世界 v5）增加 world_seed（每档全新世界）+ 探索进度（explored/discovered）；
 ## v5 增加 destroyed（已摧毁障碍格）+ quests（任务进度）；
-## v6（玩法 v7）增加 inventory（物品栏：消耗品/材料）
-const SAVE_VERSION := 6
+## v6（玩法 v7）增加 inventory（物品栏：消耗品/材料）；
+## v7 增加未领取赐福/当前选卡与城塞宝箱领取状态（旧字段原样兼容）
+const SAVE_VERSION := 7
 
 ## 世界种子（世界 v5）：「新的冒险」重掷，游戏内 BiomeMap.configure 消费；
 ## v3 旧档无此键 → DEFAULT_SEED（旧世界与旧 ecology 存档严丝合缝）
@@ -29,6 +30,8 @@ var fog_dirty: Array[Vector2i] = []
 var discovered_landmarks: Array[String] = []
 ## 已摧毁障碍格（"x,y" 字符串列表；game_world 装配时灌回 ObstacleField）
 var destroyed_cells: Array[String] = []
+## 城塞宝箱已领取：patch_id -> true，Boss 实际重生后才清除对应条目。
+var chest_claims: Dictionary = {}
 ## 任务系统数据真源（存档 v5）：active=进行中任务数组，completed=各 NPC 已完成数
 var quests := {"active": [], "completed": {}}
 ## 物品栏（玩法 v7，存档 v6）：id -> 数量（钳 ITEM_MAX）。合法 id 真源是
@@ -437,10 +440,12 @@ func reset_all() -> void:
 	# 世界装配读到的都是新世界），探索进度归零
 	world_seed = randi()
 	BiomeMap.configure(world_seed)
+	ObstacleField.restore_destroyed([])
 	explored = PackedByteArray()
 	fog_dirty.clear()
 	discovered_landmarks = []
 	destroyed_cells = []
+	chest_claims = {}
 	quests = {"active": [], "completed": {}}
 	inventory = {}
 	save_now()
@@ -482,25 +487,55 @@ func _queue_save() -> void:
 		_save_timer = SAVE_DEBOUNCE
 
 
+## 宝箱与 Boss 周期同档提交：状态改变必须使降频生态缓存失效，
+## 否则可能把新领取标记与上一个 Boss 周期的快照拼成同一份档。
+func mark_chest_taken(patch_id: String) -> void:
+	if patch_id.is_empty() or chest_claims.has(patch_id):
+		return
+	chest_claims[patch_id] = true
+	_invalidate_world_save_cache()
+
+
+func reset_chest_claim(patch_id: String) -> void:
+	chest_claims.erase(patch_id)
+	# 未开过宝箱也进入了新 Boss 周期，旧的死亡快照同样不能继续复用。
+	_invalidate_world_save_cache()
+
+
+func clear_chest_claims() -> void:
+	chest_claims.clear()
+	_invalidate_world_save_cache()
+
+
+func _invalidate_world_save_cache() -> void:
+	_ecology_cache = null
+	_ecology_saved_at = 0.0
+	_queue_save()
+
+
 ## 立即落盘（公开：防抖到时/退后台/回主菜单自动调用，也是
 ## 主菜单"冒险档案"与暂停菜单"保存进度"手动保存的入口）。
 ## include_ecology=false 为自动防抖档：生态快照按 ECOLOGY_SAVE_INTERVAL
 ## 降频序列化，跳过时复用缓存——文件仍带（可能早至 6s 的）ecology 键
-func save_now(include_ecology := true) -> void:
+## 返回 true 只表示临时档写入/flush/原子替换全部成功；测试禁用写盘也返回 false。
+func save_now(include_ecology := true) -> bool:
 	_save_timer = 0.0
 	if not save_enabled:
-		return
+		return false
 	# 世界运行中取角色实时状态；菜单期间沿用 game_world 退出前留下的缓存。
 	var live_player := get_tree().get_first_node_in_group("player")
 	if live_player != null and live_player.has_method("save_snapshot"):
 		player_snapshot = live_player.save_snapshot()
-	last_save_unix = Time.get_unix_time_from_system()
+	var saved_at := Time.get_unix_time_from_system()
 	var data := {
 		"version": SAVE_VERSION,
 		"world_seed": world_seed,
 		"level": stats.level,
 		"xp": stats.xp,
 		"pending_points": stats.pending_points,
+		"pending_passive_picks": stats.pending_passive_picks,
+		"passive_choices": stats.passive_choices.duplicate(),
+		"passive_offer_id": stats.passive_offer_id,
 		"strength": stats.strength,
 		"agility": stats.agility,
 		"intellect": stats.intellect,
@@ -518,7 +553,7 @@ func save_now(include_ecology := true) -> void:
 		"achievements": achievements,
 		"settings": settings,
 		"tutorial": tutorial_flags,
-		"last_save_unix": last_save_unix,
+		"last_save_unix": saved_at,
 	}
 	if typeof(player_snapshot) == TYPE_DICTIONARY:
 		data["player"] = (player_snapshot as Dictionary).duplicate(true)
@@ -552,8 +587,13 @@ func save_now(include_ecology := true) -> void:
 		data["explored"] = Marshalls.raw_to_base64(explored)
 	if not discovered_landmarks.is_empty():
 		data["landmarks"] = discovered_landmarks.duplicate()
-	if not ObstacleField.destroyed_list().is_empty():
-		data["destroyed"] = ObstacleField.destroyed_list()
+	# 世界运行时覆盖层是真源；菜单冷启动尚未装配 ObstacleField，必须保留读档缓存。
+	if WorldSim.sim != null:
+		destroyed_cells.assign(ObstacleField.destroyed_list())
+	if not destroyed_cells.is_empty():
+		data["destroyed"] = destroyed_cells.duplicate()
+	if not chest_claims.is_empty():
+		data["chest_claims"] = chest_claims.duplicate()
 	if not quests["active"].is_empty() or not quests["completed"].is_empty():
 		data["quests"] = {"active": (quests["active"] as Array).duplicate(true),
 			"completed": (quests["completed"] as Dictionary).duplicate(true)}
@@ -565,13 +605,35 @@ func save_now(include_ecology := true) -> void:
 	var tmp_path := "%s.tmp" % SAVE_PATH
 	var file := FileAccess.open(tmp_path, FileAccess.WRITE)
 	if file == null:
-		push_warning("存档写入失败：%s" % tmp_path)
-		return
-	file.store_string(JSON.stringify(data))
+		return _save_failed("存档写入失败：%s" % tmp_path)
+	var payload := JSON.stringify(data).to_utf8_buffer()
+	var stored := file.store_buffer(payload)
+	var write_error := file.get_error()
+	# 缓冲写入可能直到 flush 才暴露磁盘满/IO 错误，不能直接 close 后替换好档。
+	file.flush()
+	var flush_error := file.get_error()
 	file.close()
+	if not stored or write_error != OK or flush_error != OK:
+		DirAccess.remove_absolute(tmp_path)
+		return _save_failed("存档写入/刷新失败（错误码 %d/%d），保留旧档" % [write_error, flush_error])
+	# Godot 4.7 在 POSIX 缓冲 flush 失败时可能仍返回 get_error()==OK
+	#（RLIMIT_FSIZE 短写实测）；关闭后核对完整字节，确认无截断才替换好档。
+	if FileAccess.get_file_as_bytes(tmp_path) != payload:
+		DirAccess.remove_absolute(tmp_path)
+		return _save_failed("存档写入校验失败，保留旧档")
 	var err := DirAccess.rename_absolute(tmp_path, SAVE_PATH)
 	if err != OK:
-		push_warning("存档原子替换失败（错误码 %d），保留旧档" % err)
+		DirAccess.remove_absolute(tmp_path)
+		return _save_failed("存档原子替换失败（错误码 %d），保留旧档" % err)
+	last_save_unix = saved_at
+	return true
+
+
+func _save_failed(message: String) -> bool:
+	push_warning(message)
+	# 失败不是已保存：保留内存进度，恢复可写后自动重试，暂停菜单期间也继续计时。
+	_queue_save()
+	return false
 
 
 ## 反序列化的宽松数值读取：存档可能被手改/三方工具写坏，
@@ -700,13 +762,37 @@ func _load() -> void:
 					var migrated: String = SpeciesCatalog.migrate_name(key)
 					codex[migrated] = codex.get(migrated, 0) + kills
 	var saved_passives: Variant = data.get("passives", {})
+	stats.passives = {}
 	if typeof(saved_passives) == TYPE_DICTIONARY:
-		stats.passives = {}
 		for key in saved_passives:
 			if typeof(key) == TYPE_STRING:
 				var lv := _safe_int(saved_passives[key], 0)
 				if lv > 0:
 					stats.passives[key] = lv
+	# v1-v6 每级恰有一次赐福，但待领取次数仅在旧 HUD 内存中。
+	# 用「已升等级 - 已持有被动等级之和」补回遗失资格；保留全部既有被动，
+	# 已领取的不会再发。v7 的显式剩余次数为真源，不能每次读档重新推算。
+	var claimed := 0
+	for rank: int in stats.passives.values():
+		claimed += rank
+	var inferred_pending := maxi(0, stats.level - 1 - claimed)
+	stats.pending_passive_picks = clampi(
+		_safe_int(data.get("pending_passive_picks", inferred_pending), inferred_pending),
+		0, stats.level - 1)
+	stats.passive_offer_id = maxi(0, _safe_int(data.get("passive_offer_id", 0), 0))
+	stats.passive_choices.clear()
+	var saved_choices: Variant = data.get("passive_choices", [])
+	if typeof(saved_choices) == TYPE_ARRAY:
+		for id: Variant in saved_choices:
+			if typeof(id) != TYPE_STRING or stats.passive_choices.has(id):
+				continue
+			for entry: Dictionary in CharacterStats.PASSIVE_POOL:
+				if entry["id"] == id:
+					stats.passive_choices.append(id)
+		# 损坏/不完整选项重新生成一组完整卡，资格不丢；正常三张卡保持原样。
+	if stats.passive_choices.size() != 3:
+		stats.passive_choices.clear()
+	stats.ensure_passive_choices()
 	# 寿命：读档重建（非法值回落默认）；已越过的警告阈值静默补记防重复播报
 	stats.age_days = maxf(0.0, _safe_float(data.get("age_days", 0.0), 0.0))
 	stats.lifespan_days = maxf(1.0, _safe_float(data.get("lifespan_days", CharacterStats.BASE_LIFESPAN_DAYS), CharacterStats.BASE_LIFESPAN_DAYS))
@@ -777,6 +863,13 @@ func _load() -> void:
 			explored = decoded
 	discovered_landmarks = []
 	destroyed_cells = []
+	chest_claims = {}
+	var saved_claims: Variant = data.get("chest_claims", {})
+	if typeof(saved_claims) == TYPE_DICTIONARY:
+		for patch_id: Variant in saved_claims:
+			if typeof(patch_id) == TYPE_STRING and not patch_id.is_empty() \
+					and typeof(saved_claims[patch_id]) == TYPE_BOOL and saved_claims[patch_id]:
+				chest_claims[patch_id] = true
 	var saved_cells: Variant = data.get("destroyed", [])
 	if typeof(saved_cells) == TYPE_ARRAY:
 		for entry in saved_cells:

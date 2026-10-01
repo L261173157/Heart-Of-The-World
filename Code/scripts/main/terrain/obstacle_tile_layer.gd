@@ -68,6 +68,18 @@ func _ready() -> void:
 	EventBus.obstacle_destroyed.connect(_on_obstacle_destroyed)
 
 
+func _exit_tree() -> void:
+	# 铺设预算尚未消费完时 body 仍在树外，父节点退场不会替我们释放它。
+	# 暂停后立即回菜单/切世界也必须回收，不等下一次 _process 或出窗信号。
+	for entry: Dictionary in _laying.values():
+		var body: Node = entry["body"]
+		if is_instance_valid(body) and body.get_parent() == null:
+			body.free()
+	_laying.clear()
+	_lay_queue.clear()
+	_clearing.clear()
+
+
 func _process(_delta: float) -> void:
 	var budget := LAY_BUDGET
 	while budget > 0 and not _lay_queue.is_empty():

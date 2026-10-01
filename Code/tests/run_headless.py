@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""隔离真实存档的 Godot 无头回归入口；退出码、完成标记与运行错误三重守闸。"""
+from __future__ import annotations
+
+import argparse
+import os
+from pathlib import Path
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+
+PROJECT = Path(__file__).resolve().parents[1]
+CASES = {
+    "smoke": (["--quit"], None),
+    "sim": (["-s", "tests/sim_test.gd"], "=== 全部测试通过 ==="),
+    "frames": (["-s", "tests/frames_test.gd"], "失败 0）==="),
+    "balance": (["-s", "tests/balance_test.gd"], "=== 平衡校验全部通过（带/反推/经济） ==="),
+    "combat": (["res://tests/combat_test.tscn", "--quit-after", "100000"], "=== 战斗验证全部通过 ==="),
+    "save": (["res://tests/save_test.tscn", "--quit-after", "5000"], "=== 存档验证全部通过 ==="),
+    "save_lifecycle": ([str(PROJECT / "tests/run_save_lifecycle_test.py")], "=== 独立进程存档生命周期全部通过 ==="),
+    "ui_flow": (["res://tests/ui_flow_test.tscn", "--quit-after", "8000"], "=== UI 流程冒烟全部通过 ==="),
+    "projectile": (["res://tests/projectile_pool_test.tscn", "--quit-after", "5000"], "=== 弹幕池生命周期验证全部通过 ==="),
+    "world": (["res://tests/world_persistence_test.tscn", "--quit-after", "10000"], "=== 世界持久化回归全部通过 ==="),
+    "pacing": (["res://tests/pacing_test.tscn", "--quit-after", "100000"], "=== 节奏验证全部通过 ==="),
+}
+
+# 已在修改前的 4.7 基线逐项记录：仅允许退出清理诊断，不放过物理/解析/运行错误。
+EXIT_DIAGNOSTICS = (
+    re.compile(r"ERROR: \d+ resources still in use at exit \(run with --verbose for details\)\."),
+    re.compile(r"ERROR: \d+ RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit\."),
+)
+
+
+def unexpected_errors(case: str, output: str) -> list[str]:
+    bad = []
+    for line in output.splitlines():
+        if "SCRIPT ERROR:" in line or re.search(r"\bFAIL\b", line):
+            bad.append(line)
+        elif line.startswith("ERROR:"):
+            if any(pattern.fullmatch(line) for pattern in EXIT_DIAGNOSTICS):
+                continue
+            # save_test 故意输入半截 JSON，验证旧进度保持不变；只豁免此精确诊断。
+            if case == "save" and line == "ERROR: Parse JSON failed. Error at line 0: Unexpected character":
+                continue
+            bad.append(line)
+    return bad
+
+
+def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str],
+             godot: str, logs: Path, timeout: int) -> bool:
+    command = ([sys.executable, args[0], godot] if name == "save_lifecycle"
+               else [godot, "--headless", "--path", str(PROJECT), *args])
+    print(f"[{name}] 开始", flush=True)
+    with subprocess.Popen(command, env=env, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True,
+                          start_new_session=os.name == "posix") as process:
+        try:
+            output, _ = process.communicate(timeout=timeout)
+            code = process.returncode
+        except subprocess.TimeoutExpired:
+            # 冷启动回归会再起一个 Godot；只杀父进程会遗留子进程与管道，
+            # communicate 继续等管道关闭，实际绕过时间上限。POSIX 整组终止。
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+            output, _ = process.communicate()
+            output += f"\nTIMEOUT: {timeout}s\n"
+            code = 124
+    (logs / f"{name}.log").write_text(output, encoding="utf-8")
+    errors = unexpected_errors(name, output)
+    complete = marker is None or marker in output
+    passed = code == 0 and complete and not errors
+    print(f"[{name}] {'PASS' if passed else 'FAIL'} exit={code} completed={complete} "
+          f"unexpected_errors={len(errors)} log={logs / (name + '.log')}", flush=True)
+    if not passed:
+        print("\n".join(output.splitlines()[-50:]), flush=True)
+    return passed
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--godot", default=os.environ.get("GODOT", "godot"))
+    parser.add_argument("--only", help="逗号分隔的测试名；默认全部")
+    parser.add_argument("--log-dir", type=Path, default=Path(tempfile.mkdtemp(prefix="hotw-test-logs-")))
+    parser.add_argument("--timeout", type=int, default=900, help="每项检查的秒数上限")
+    opts = parser.parse_args()
+    names = opts.only.split(",") if opts.only else list(CASES)
+    unknown = set(names) - CASES.keys()
+    if unknown:
+        parser.error("未知测试：" + ", ".join(sorted(unknown)))
+    godot = shutil.which(opts.godot)
+    if not godot:
+        parser.error("未找到 Godot：" + opts.godot)
+    logs = opts.log_dir.resolve()
+    logs.mkdir(parents=True, exist_ok=True)
+    results = []
+    with tempfile.TemporaryDirectory(prefix="hotw-test-state-") as temp:
+        base = Path(temp)
+        env = os.environ.copy()
+        # Godot 在 Linux 以 XDG 路径为准；HOME 与启动档也单独配置，供子进程继承。
+        for key, relative in {"HOME": "home", "XDG_CONFIG_HOME": "config",
+                              "XDG_CACHE_HOME": "cache", "XDG_DATA_HOME": "data"}.items():
+            path = base / relative
+            path.mkdir()
+            env[key] = str(path)
+        env.pop("HOTW_TEST_SAVE", None)
+        version = subprocess.run([godot, "--headless", "--version"], env=env,
+                                 capture_output=True, text=True, check=True).stdout.strip()
+        print("Godot:", version, flush=True)
+        # 冷检出必须先导入资源/注册全局类；导入错误不能伪装成测试通过。
+        if not run_case("import", ["--editor", "--import"], None, env, godot, logs, opts.timeout):
+            return 1
+        for name in names:
+            # 启动夹具也复制到沙盒：即使某测试意外启用保存，也不会覆盖仓库夹具。
+            startup = base / f"{name}-startup.json"
+            shutil.copyfile(PROJECT / "tests/fixtures/test_save.json", startup)
+            env["HOTW_TEST_SAVE"] = str(startup)
+            args, marker = CASES[name]
+            results.append(run_case(name, args, marker, env, godot, logs, opts.timeout))
+    print(f"完成：{sum(results)}/{len(results)} 通过；日志 {logs}", flush=True)
+    return 0 if all(results) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -74,8 +74,8 @@ var _cd_elapsed := 0.0
 var _mp_now := 0.0
 ## 是否满血（治疗槽"满血无效"置灰用）
 var _hp_full := false
-## 三选一被动：待选择次数（连升排队）
-var _pending_passive_picks := 0
+## 三选一点击去重：下一帧才接受下一张，避免同帧重复按钮事件连领。
+var _passive_pick_locked := false
 var _death_tween: Tween
 var _day_toast_count := 0
 ## 平滑条目标值（事件写入，_process 逼近）
@@ -244,6 +244,9 @@ func _ready() -> void:
 	_on_progress_changed(GameState.stats.level, GameState.stats.xp,
 			GameState.stats.xp_to_next(), GameState.stats.pending_points)
 	_on_gold_changed(GameState.gold)
+	# 读档/菜单往返不再等待下一次升级信号；立即续接角色尚未领取的赐福。
+	if GameState.stats.pending_passive_picks > 0:
+		_open_passive_pick()
 
 
 ## 战斗播报位：与顶部世界事件/引导提示分离的第二条 toast 通道。
@@ -938,8 +941,8 @@ func _toggle_pause() -> void:
 ## 手动保存（暂停菜单"保存进度"）：自动存档本已覆盖，按钮的价值是
 ## 给玩家确定感；toast 计时在暂停态冻结，"已保存"会停留到恢复游戏后淡出
 func _save_progress() -> void:
-	GameState.save_now()
-	_toast("已保存")
+	var saved := GameState.save_now()
+	_toast("已保存" if saved else ("存档已禁用" if not GameState.save_enabled else "保存失败，请重试"))
 
 
 func _back_to_menu() -> void:
@@ -1024,32 +1027,31 @@ func _refresh_codex() -> void:
 
 # --- 三选一被动（升级赐福） ---
 
-func _on_leveled_up(_new_level: int, levels_gained: int) -> void:
-	# 按跨级数排队：单次大额经验连升 N 级 = N 次三选一（漏发无法事后补领）
-	_pending_passive_picks += levels_gained
+func _on_leveled_up(_new_level: int, _levels_gained: int) -> void:
+	# 资格由 CharacterStats 在发信号前记账；HUD 只展示，重建场景不会丢失。
 	if not passive_layer.visible:
 		_open_passive_pick()
 
 
 func _open_passive_pick() -> void:
-	if _pending_passive_picks <= 0:
+	if GameState.stats.pending_passive_picks <= 0:
 		passive_layer.visible = false
 		get_tree().paused = false
 		return
-	var pool: Array = []
-	for entry: Dictionary in CharacterStats.PASSIVE_POOL:
-		pool.append(entry)
-	pool.shuffle()
-	var chosen: Array = pool.slice(0, mini(3, pool.size()))
+	var chosen: Array[String] = GameState.stats.passive_choices
 	for i in 3:
 		var btn: Button = passive_cards[i]
 		if i < chosen.size():
-			var entry: Dictionary = chosen[i]
+			var entry: Dictionary = {}
+			for candidate: Dictionary in CharacterStats.PASSIVE_POOL:
+				if candidate["id"] == chosen[i]:
+					entry = candidate
 			var lv: int = GameState.stats.passive_level(entry["id"])
 			btn.icon = PASSIVE_ICONS.get(entry["id"], PASSIVE_ICON_DEFAULT)
 			btn.expand_icon = true
 			btn.text = "%s\n%s\n（当前 %d 级）" % [entry["name"], entry["desc"], lv]
 			btn.set_meta("passive_id", entry["id"])
+			btn.set_meta("passive_offer_id", GameState.stats.passive_offer_id)
 			btn.visible = true
 		else:
 			btn.visible = false
@@ -1060,13 +1062,17 @@ func _open_passive_pick() -> void:
 
 
 func _pick_passive(index: int) -> void:
+	if _passive_pick_locked or not passive_layer.visible or index < 0 or index >= passive_cards.size():
+		return
 	var btn: Button = passive_cards[index]
-	var id: Variant = btn.get_meta("passive_id", "")
-	if id != null and str(id) != "":
-		GameState.stats.add_passive(str(id))
+	var id := str(btn.get_meta("passive_id", ""))
+	var offer_id := int(btn.get_meta("passive_offer_id", -1))
+	_passive_pick_locked = true
+	if GameState.stats.claim_passive(id, offer_id):
 		SfxManager.play("passive")
-		_pending_passive_picks -= 1
 		_open_passive_pick()
+	await get_tree().process_frame
+	_passive_pick_locked = false
 
 
 # --- 氛围 ---

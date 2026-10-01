@@ -466,6 +466,10 @@ static func restore_destroyed(list: Array) -> void:
 	# 的话，灌进来的摧毁层会被首次采样触发的种子重置静默清空）
 	_ensure()
 	_destroyed = {}  # 整表替换语义（空列表 = 全复原，测试与读档共用）
+	# 同种子读档也需失效：旧分块可能仍画着已毁墙，或新世界沿用旧局半血障碍。
+	_cells_chunk_cache.clear()
+	_nav_chunk_cache.clear()
+	_obstacle_hp.clear()
 	for entry in list:
 		if typeof(entry) != TYPE_STRING:
 			continue

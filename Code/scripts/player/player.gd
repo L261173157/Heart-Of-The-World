@@ -83,7 +83,6 @@ var _respawn_timer := 0.0
 var _is_dead := false
 ## 熔岩池灼烧（世界 v5）：站立每 LAVA_TICK 结算 LAVA_DAMAGE_FRAC 最大生命
 var _lava_accum := 0.0
-var _spawn_position := Vector2.ZERO
 var _hit_this_swing: Array = []
 var _hud_accum := 0.0
 var _knockback := Vector2.ZERO
@@ -137,7 +136,6 @@ func _ready() -> void:
 	# 有跨会话快照则优先恢复
 	if not _restore_saved_state():
 		global_position = WorldConfig.spawn_pos()
-	_spawn_position = global_position
 	# 相机边界随世界尺寸（v4 起为运行期数据）
 	var cam := get_node_or_null("Camera2D") as Camera2D
 	if cam != null:
@@ -199,10 +197,11 @@ func _restore_saved_state() -> bool:
 
 
 ## GameState 保存与 game_world 退场缓存共用。死亡的 2 秒表现不跨会话延续：
-## 按游戏既有重生规则写成出生点满血蓝，避免下次启动落在不可操作的半死亡态。
+## 按游戏既有重生规则写成最近安全点满血蓝，避免读档免费回到此前登录位置。
 func save_snapshot() -> Dictionary:
 	if _is_dead:
-		return {"position": [_spawn_position.x, _spawn_position.y],
+		var respawn_pos := WorldConfig.nearest_safe_respawn(global_position)
+		return {"position": [respawn_pos.x, respawn_pos.y],
 			"hp": stats.max_hp(), "mp": stats.max_mp()}
 	return {"position": [global_position.x, global_position.y],
 		"hp": current_hp, "mp": current_mp}

@@ -189,10 +189,11 @@ func _test_world_death_respawn() -> void:
 	await get_tree().create_timer(0.6).timeout
 	_check(player._is_dead, "玩家已死亡")
 	var dead_snapshot: Dictionary = player.save_snapshot()
-	_check(dead_snapshot["position"] == [player._spawn_position.x, player._spawn_position.y]
+	var safe_respawn := _WorldConfig.nearest_safe_respawn(player.global_position)
+	_check(dead_snapshot["position"] == [safe_respawn.x, safe_respawn.y]
 			and dead_snapshot["hp"] == player.stats.max_hp()
 			and dead_snapshot["mp"] == player.stats.max_mp(),
-			"死亡期间存档归一为出生点满状态")
+			"死亡期间存档归一为最近安全重生点满状态")
 	var death_label: Label = _world.get_node("HUD/Root/DeathLabel")
 	_check(death_label.modulate.a > 0.5 and death_label.text.begins_with("被"),
 			"死亡信息已显示（含本局击杀 7）")
@@ -200,13 +201,23 @@ func _test_world_death_respawn() -> void:
 	await get_tree().create_timer(2.2).timeout
 	_check(not player._is_dead, "2 秒后自动重生")
 	_check(GameState.session_kills == 0, "重生清零本局击杀")
-	# 暂停菜单手动保存：toast 反馈 + 不破坏暂停态（沙盒 save_enabled=false，
-	# save_now 早退不写盘——这里只验 UI 链路，落盘归 save_test 管）
+	# 手动保存必须区分测试禁用、实际成功和 IO 失败，三条路径均不破坏暂停态。
 	hud._toggle_pause()
 	var save_btn: Button = hud.get_node("Root/PauseLayer/PausePanel/Margin/VB/SaveBtn")
 	save_btn.pressed.emit()
-	_check(get_tree().paused and hud.toast_label.text.ends_with("已保存")
-			and hud.toast_label.modulate.a > 0.9, "暂停菜单「保存进度」出「已保存」toast")
+	_check(get_tree().paused and hud.toast_label.text.ends_with("存档已禁用"), "暂停菜单不把禁用写盘报为已保存")
+	GameState.save_enabled = true
+	save_btn.pressed.emit()
+	_check(get_tree().paused and hud.toast_label.text.ends_with("已保存") \
+			and FileAccess.file_exists(GameState.SAVE_PATH), "暂停菜单实际落盘后显示已保存")
+	var saved_time := GameState.last_save_unix
+	var save_path := GameState.SAVE_PATH
+	GameState.SAVE_PATH = "user://ui_missing_directory/save.json"
+	save_btn.pressed.emit()
+	_check(get_tree().paused and hud.toast_label.text.ends_with("保存失败，请重试") \
+			and GameState.last_save_unix == saved_time, "暂停菜单写入失败明确提示且保留上次保存时间")
+	GameState.SAVE_PATH = save_path
+	GameState.save_enabled = false
 	hud._toggle_pause()
 	_check(not get_tree().paused, "手动保存后可正常恢复游戏")
 	# --- 物品栏与快捷槽（玩法 v7）：开关/暂停口径/屏内/互斥链/零配置绑定 ---
@@ -292,9 +303,26 @@ func _test_resume_flow() -> void:
 	_check(lv_value.text == "Lv.%d" % GameState.stats.level and gold_value.text == str(GameState.gold),
 			"档案面板显示等级与金币（%s / %s）" % [lv_value.text, gold_value.text])
 	_check(codex_value.text.begins_with("0 / "), "图鉴按「已解锁/总数」成对显示（%s）" % codex_value.text)
-	# 立即保存（沙盒不落盘）：toast 反馈即可
-	_menu.get_node("ArchiveLayer/ArchivePanel/Margin/VB/HB/ArchiveSave").pressed.emit()
-	_check(_menu.get_node("MenuToast").modulate.a > 0.9, "档案面板「立即保存」toast 反馈")
+	var menu_save: Button = _menu.get_node("ArchiveLayer/ArchivePanel/Margin/VB/HB/ArchiveSave")
+	menu_save.pressed.emit()
+	_check(_menu.get_node("MenuToast").text == "存档已禁用", "档案面板不把禁用写盘报为已保存")
+	GameState.save_enabled = true
+	menu_save.pressed.emit()
+	_check(_menu.get_node("MenuToast").text == "已保存" \
+			and FileAccess.file_exists(GameState.SAVE_PATH), "档案面板成功落盘后显示已保存")
+	var saved_time := GameState.last_save_unix
+	var time_label: Label = _menu.get_node(grid + "SaveTimeValue")
+	var old_time_text := time_label.text
+	var save_path := GameState.SAVE_PATH
+	GameState.SAVE_PATH = "user://ui_missing_directory/save.json"
+	menu_save.pressed.emit()
+	_check(_menu.get_node("MenuToast").text == "保存失败，请重试" \
+			and GameState.last_save_unix == saved_time and time_label.text == old_time_text,
+			"档案面板失败提示真实，上次成功时间不变")
+	GameState.SAVE_PATH = save_path
+	GameState.save_enabled = false
+	var expected_picks := GameState.stats.pending_passive_picks
+	var expected_choices := GameState.stats.passive_choices.duplicate()
 	_menu.queue_free()
 	await get_tree().process_frame
 	# 继续冒险：快照恢复世界（出生点在西部荒野）
@@ -312,6 +340,20 @@ func _test_resume_flow() -> void:
 	# 两个 process frame 内自然回复会产生极小增量，验证仍在保存值附近且没有回满。
 	_check(absf(resumed_player.current_hp - 87.0) < 1.0 \
 			and absf(resumed_player.current_mp - 23.0) < 1.0, "继续冒险恢复生命/魔法")
+	var hud := _world.get_node("HUD")
+	_check(hud.passive_layer.visible and get_tree().paused \
+			and GameState.stats.pending_passive_picks == expected_picks \
+			and GameState.stats.passive_choices == expected_choices,
+			"菜单外连升资格在继续冒险时恢复原选卡并暂停世界")
+	# 同帧重复按卡只能结算一次，之后逐张领取可正常退出暂停。
+	hud._pick_passive(0)
+	hud._pick_passive(0)
+	_check(GameState.stats.pending_passive_picks == expected_picks - 1, "重复选卡回调不会连扣两次资格")
+	await get_tree().process_frame
+	while GameState.stats.pending_passive_picks > 0:
+		hud._pick_passive(0)
+		await get_tree().process_frame
+	_check(not hud.passive_layer.visible and not get_tree().paused, "全部领取后收卡并恢复世界")
 	# resume_clock 在 AchievementManager 挂载前恢复夜晚；管理器需从当前相位补记，
 	# 否则读档后的这一夜活到黎明不会解锁“夜行者”。
 	GameState.achievements.erase("night_walker")
