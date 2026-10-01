@@ -5,7 +5,7 @@ class_name Spider
 extends MonsterBase
 
 const BACKOFF_STUCK_TIME := 0.5
-const PROJECTILE := preload("res://scenes/monsters/projectile.tscn")
+## （弹幕经 Projectile.spawn 类级池发射，2026-10-01）
 
 ## 被逼到墙角的后撤卡墙计时与"困兽"状态：后撤顶墙超时后不再徒劳后退，
 ## 改为按攻击冷却贴脸吐息——否则玩家把它逼进墙角再贴近，它会顶墙站桩
@@ -78,8 +78,6 @@ func _spit(player: Node2D) -> void:
 	_play_action_anim("attack", 0.75)
 	_squash(Vector2(0.94, 1.06), 0.12)  # 吐息轻弹
 	var dir := (player.global_position - global_position).normalized()
-	var projectile: Projectile = PROJECTILE.instantiate()
-	get_parent().add_child(projectile)
-	projectile.global_position = global_position + dir * 16.0
-	projectile.launch(dir, CombatMath.magic_damage(inst.attack_power()), 270.0, inst.display_name(),
+	Projectile.spawn(get_parent(), global_position + dir * 16.0, dir,
+		CombatMath.magic_damage(inst.attack_power()), 270.0, inst.display_name(),
 		inst.species.projectile_tex)

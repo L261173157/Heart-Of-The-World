@@ -1516,6 +1516,8 @@ func _exit_tree() -> void:
 	var player := get_node_or_null("Player")
 	if player != null and player.has_method("save_snapshot"):
 		GameState.player_snapshot = player.save_snapshot()
+	# 弹幕池清场：Projectile 静态池跨场景持有摘树节点，随世界退场释放
+	Projectile.clear_pool()
 	WorldSim.stop()
 
 
