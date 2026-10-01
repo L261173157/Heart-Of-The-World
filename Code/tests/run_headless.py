@@ -24,6 +24,9 @@ CASES = {
     "ui_flow": (["res://tests/ui_flow_test.tscn", "--quit-after", "8000"], "=== UI 流程冒烟全部通过 ==="),
     "projectile": (["res://tests/projectile_pool_test.tscn", "--quit-after", "5000"], "=== 弹幕池生命周期验证全部通过 ==="),
     "world": (["res://tests/world_persistence_test.tscn", "--quit-after", "10000"], "=== 世界持久化回归全部通过 ==="),
+    "ui_visual": (["res://tests/ui_visual_test.tscn", "--quit-after", "8000"], "=== UI VISUAL REGRESSION PASSED"),
+    "menu_layout": (["res://tests/menu_layout_test.tscn", "--quit-after", "8000"], "=== MENU LAYOUT REGRESSION PASSED"),
+    "animation": (["res://tests/animation_polish_test.tscn", "--quit-after", "8000"], "=== ANIMATION POLISH PASS"),
     "pacing": (["res://tests/pacing_test.tscn", "--quit-after", "100000"], "=== 节奏验证全部通过 ==="),
 }
 

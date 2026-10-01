@@ -89,6 +89,12 @@ var _cover_timer := -1.0
 var _cover_phase := 0
 var _cover_target: MonsterBase = null
 var _cover_setup_tries := 0
+## 供给阶段只等一个模拟实例，避免每0.12s换营地/捡到待回收的旧节点。
+var _cover_spawn_id := -1
+var _cover_spawn_pos := Vector2.INF
+var _cover_rejected_camps := {}
+var _cover_player_reset_pending := false
+var _cover_motion_reset_pending := false
 var _cover_invalid_retries := 0
 var _cover_ecology_frozen := false
 var _cover_ecology_was_processing := false
@@ -735,6 +741,9 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if _player != null and _cover_player_reset_pending:
+		_reset_cover_motion(_player)
+		_cover_player_reset_pending = false
 	# 掩体段的射线查询（怪→玩家视线）必须在物理帧上下文执行——
 	# 进程帧里 direct_space_state 查询结果不可信（恒返回碰撞，曾致 9s 误判）
 	if _player != null and _cover_timer >= 0.0:
@@ -1275,6 +1284,52 @@ func _cover_setup_failed(message: String) -> void:
 	_resume_cover_ecology()
 
 
+## CharacterBody保留上一帧的地板RID：把接触中的双方远距传送后，即使
+## velocity清零，下次move_and_slide仍会叠加旧地板的瞬移速度。仅在布阵的
+## 物理帧做一次零速度碰撞更新来清掉历史接触；立刻恢复平台跟随层，
+## collision_layer/mask、motion_mode、导航与后续真实移动全部保持原样。
+func _reset_cover_motion(body: CharacterBody2D) -> void:
+	var floor_layers := body.platform_floor_layers
+	var wall_layers := body.platform_wall_layers
+	body.platform_floor_layers = 0
+	body.platform_wall_layers = 0
+	body.velocity = Vector2.ZERO
+	body.move_and_slide()
+	body.platform_floor_layers = floor_layers
+	body.platform_wall_layers = wall_layers
+
+
+## 按模拟实例锁定供给目标；只接受世界登记中的现役节点，不能捡到
+## 同一流式pass已queue_free、但帧末尚未释放的旧节点。
+func _find_cover_target(species: String) -> MonsterBase:
+	if _cover_spawn_id < 0:
+		var candidate: MonsterInstance = null
+		var best_dist := INF
+		for inst: MonsterInstance in _sim.instances.values():
+			if not inst.is_alive or inst.species.species_name != species \
+					or inst.spawn_pos == Vector2.INF:
+				continue
+			if _cover_rejected_camps.has(species + "|" + inst.region_id):
+				continue
+			var dist := _player.global_position.distance_squared_to(inst.spawn_pos)
+			if dist < best_dist:
+				candidate = inst
+				best_dist = dist
+		if candidate == null:
+			return null
+		_cover_spawn_id = candidate.id
+		_cover_spawn_pos = candidate.spawn_pos
+		_player.global_position = _cover_spawn_pos
+		_cover_player_reset_pending = true
+		return null  # 让物理帧清理瞬移前的接触，再等正常流式供给
+	var target := _world._nodes.get(_cover_spawn_id) as MonsterBase
+	if target == null or not is_instance_valid(target) or target.is_queued_for_deletion() \
+			or target.inst == null or not target.inst.is_alive or target.state == MonsterBase.S_CORPSE:
+		_player.global_position = _cover_spawn_pos
+		return null
+	return target
+
+
 func _verify_cover() -> void:
 	# 本段只测实际导航/碰撞/AI。生态老化、捕食、迁徙另由sim_test验证，
 	# 不能把随机移除靶怪当作本段通过；观察结束恢复原驱动状态。
@@ -1285,21 +1340,24 @@ func _verify_cover() -> void:
 	if _cover_phase == 0 or _cover_phase == 2:
 		# 靶种取自 TARGET_ORDER 之外（六物种段已把它们清光，找不到活体布阵会轮空）
 		var species := "蜥蜴刀客" if _cover_phase == 0 else "弹弓地精"
-		var target := _find_alive(species)
+		var target := _find_cover_target(species)
 		if target == null:
 			_cover_setup_tries += 1
 			if _cover_setup_tries >= COVER_SETUP_MAX:
 				_cover_setup_failed("掩体布阵失败：%s未能流式入场" % species)
 				return
-			_teleport_to_species(species)
-			return  # 流式供给未到，下轮重试
+			return  # 原地等已锁定实例，不能在供给到达前再次换营地
 		var ppos := _cover_setup(target)
 		if ppos == Vector2.INF:
 			_cover_setup_tries += 1
 			if _cover_setup_tries >= COVER_SETUP_MAX:
 				_cover_setup_failed("掩体布阵失败：25轮未遇合适孤岩")
 				return
-			_teleport_to_any_populated()
+			# 此营地附近没有合适掩体就换另一个营地，不能把旧实例仍锁在
+			# 原据点后再传送任意地点（下一轮供给会把玩家拉回失败点）。
+			_cover_rejected_camps[species + "|" + target.inst.region_id] = true
+			_cover_spawn_id = -1
+			_cover_spawn_pos = Vector2.INF
 			return
 		# 斑块级生成后掩体点位周围常有巡猎怪群：靶怪关掉 RVO 群体避让——
 		# 本段验证的是导航绕障能力，群体避让挤压是无关噪声
@@ -1324,6 +1382,7 @@ func _verify_cover() -> void:
 		# 通过生产预热入口准备被测障碍块，仍由真实铺格预算/物理射线验收。
 		var streamer := _world.get_node("ChunkStreamer") as ChunkStreamer
 		streamer._spawn_sync(Vector2i(_cover_rock_cell.x >> 4, _cover_rock_cell.y >> 4) * 512)
+		_cover_motion_reset_pending = true
 		_cover_physics_ready = false
 		_cover_prepare_time = 0.0
 		_cover_stand_pos = ppos
@@ -1337,7 +1396,9 @@ func _verify_cover() -> void:
 
 func _cover_check(delta: float) -> void:
 	var target := _cover_target
-	if target == null or not is_instance_valid(target) or target.state == MonsterBase.S_CORPSE:
+	if target == null or not is_instance_valid(target) or target.is_queued_for_deletion() \
+			or target.state == MonsterBase.S_CORPSE:
+		_cover_spawn_id = -1
 		_cover_invalid_retries += 1
 		_cover_timer = -1.0
 		_cover_phase -= 1
@@ -1347,6 +1408,11 @@ func _cover_check(delta: float) -> void:
 	# 玩家布阵固定，外部围攻的击退不应把导航终点拖出脱战圈。
 	_player.global_position = _cover_stand_pos
 	_player._knockback = Vector2.ZERO
+	if _cover_motion_reset_pending:
+		_reset_cover_motion(_player)
+		_reset_cover_motion(target)
+		_cover_motion_reset_pending = false
+		return  # 让碰撞/导航服务器看到已复位的布阵，再校验真实射线
 	if not _cover_physics_ready:
 		# 逻辑岩石存在不代表流式碰撞体已挂载。先锁住靶怪，物理射线确认被挡
 		# 后才起13s观察，避免远程在碰撞未铺好时以0.0s直接假通过。
@@ -1376,6 +1442,7 @@ func _cover_check(delta: float) -> void:
 			_check(true, "近战怪掩体绕行达阵（%.0fpx，%.1fs）" % [dist, _cover_timer])
 			_cover_timer = -1.0
 			_cover_phase = 2
+			_cover_spawn_id = -1
 		elif _cover_timer >= COVER_BUDGET:
 			# 超时先分型：绕岩完成（重取视线+收距）但被营地同族 RVO 拥挤暂缓
 			# 终段逼近 = 掩体绕行成功（测试钉住玩家会引来营怪围观，现实玩家
@@ -1403,6 +1470,7 @@ func _cover_check(delta: float) -> void:
 				_check(false, "近战怪 %.1fs 未绕过掩体（距离 %.0fpx）" % [_cover_timer, dist])
 			_cover_timer = -1.0
 			_cover_phase = 2
+			_cover_spawn_id = -1
 	else:
 		# 远程段：射线查询怪→玩家（只对障碍墙层）——视线重取即成功
 		var los := target._has_los(_player.global_position)

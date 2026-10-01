@@ -24,6 +24,8 @@ jobs:
         include:
           - suite: logic
             tests: sim,frames,balance
+          - suite: visuals
+            tests: ui_visual,menu_layout,animation
           - suite: flows
             tests: smoke,save,save_lifecycle,combat,ui_flow,projectile,world,pacing
     steps:

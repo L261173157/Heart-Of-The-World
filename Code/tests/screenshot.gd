@@ -16,6 +16,7 @@ const SECOND_DELAY := 0.35
 var _elapsed := 0.0
 var _shot_a := false
 var _shot_b := false
+var _capture_in_progress := false
 var _ui_opened := false
 var _menu_mode := false
 var _menu: Control
@@ -110,6 +111,8 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	if _capture_in_progress:
+		return  # 等待渲染帧时不得重入同一拍并把弹层序号推进两次。
 	_elapsed += delta
 	if _menu_layers:
 		_process_menu_layers()
@@ -236,7 +239,7 @@ func _process(delta: float) -> void:
 	# 探针模式整体延后 1s：等流式怪物稳定入场（平原点实测 3s 前后才有节点）
 	var shot_delay := DELAY + (1.0 if _probe else 0.0)
 	if not _shot_a and _elapsed >= shot_delay and (_probe_done or not _probe):
-		_capture(OUT_PATH)
+		await _capture(OUT_PATH)
 		# 城塞取证模式：打印结构实证（墙/门/宝箱/Boss 节点在场的运行时证据）
 		if OS.get_environment("HOTW_SHOT_DUNGEON") != "":
 			var dgs := ObstacleField.dungeons()
@@ -258,7 +261,7 @@ func _process(delta: float) -> void:
 		_elapsed = 0.0
 		return
 	if _shot_a and not _shot_b and _elapsed >= SECOND_DELAY:
-		_capture(OUT_PATH_B)
+		await _capture(OUT_PATH_B)
 		_shot_b = true
 		if not _fight:
 			get_tree().quit(0)
@@ -267,14 +270,18 @@ func _process(delta: float) -> void:
 		_elapsed = 0.0
 		return
 	if _fight and _shot_b and _elapsed >= 0.7:
-		_capture("/tmp/hotw_shot_c.png")
+		await _capture("/tmp/hotw_shot_c.png")
 		get_tree().quit(0)
 
 
 func _capture(path: String) -> void:
+	# 从 _process 读取进行中的渲染目标会留下局部未更新矩形，取证必须等整帧结束。
+	_capture_in_progress = true
+	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	img.save_png(path)
 	print("截图已保存 %s" % path)
+	_capture_in_progress = false
 
 
 ## 主菜单弹层取证：首帧设置面板（背后衬完整菜单），次帧清档确认层。
@@ -287,7 +294,7 @@ func _process_menu_layers() -> void:
 		return
 	if _ui_opened and not _shot_a and _elapsed >= 0.35:
 		_shot_a = true
-		_capture("/tmp/hotw_ml_1.png")
+		await _capture("/tmp/hotw_ml_1.png")
 		return
 	if _shot_a and not _shot_b and _elapsed >= 0.7:
 		_shot_b = true
@@ -295,7 +302,7 @@ func _process_menu_layers() -> void:
 		_menu._open_layer(_menu.get_node("%NewGameConfirm"))
 		return
 	if _shot_b and _elapsed >= 1.05:
-		_capture("/tmp/hotw_ml_2.png")
+		await _capture("/tmp/hotw_ml_2.png")
 		get_tree().quit(0)
 
 
@@ -306,7 +313,7 @@ func _process_overlays(delta: float) -> void:
 		_ov_wait -= delta
 		if _ov_wait > 0.0:
 			return
-		_capture(_ov_pending)
+		await _capture(_ov_pending)
 		_ov_pending = ""
 		_ov_step += 1
 	var hud := _hud()
@@ -340,7 +347,10 @@ func _process_overlays(delta: float) -> void:
 			EventBus.player_died.emit()
 			_ov_arm("/tmp/hotw_ov_6.png")
 		6:
-			GameState.stats.leveled_up.emit(GameState.stats.level + 1, 1)
+			# 资格与卡组由 CharacterStats 在升级时先记账；只发信号不会产生可领卡。
+			# 上一拍的死亡提示也需收起，避免把两个互斥状态混进同一张取证图。
+			hud.death_label.visible = false
+			GameState.stats.add_xp(GameState.stats.xp_to_next())
 			_ov_arm("/tmp/hotw_ov_7.png")
 		7:
 			hud._pick_passive(0)

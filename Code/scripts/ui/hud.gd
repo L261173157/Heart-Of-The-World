@@ -70,6 +70,8 @@ var _last_species := {}
 ## 技能冷却显示：最近一次推送的剩余值 + 本地流逝（订阅后本地衰减，不轮询玩法系统）
 var _cd_values := [0.0, 0.0, 0.0, 0.0, 0.0]
 var _cd_elapsed := 0.0
+## 记录每次施放的实际冷却总长，包含被动/装备减冷却；圆环不能拿裸常量做分母。
+var _cd_durations := [0.0, 0.0, 0.0, 0.0, 0.0]
 ## 最近已知蓝量（技能槽"蓝不足"置灰用）
 var _mp_now := 0.0
 ## 是否满血（治疗槽"满血无效"置灰用）
@@ -110,6 +112,9 @@ var _quick_id := ""
 ## 4Hz 刷新（Engine.get_frames_per_second 本身是均值，快刷无意义）
 var _fps_label: Label
 var _fps_accum := 0.0
+var _hud_plate: Panel
+var _hp_value: Label
+var _mp_value: Label
 
 # --- 触控按钮图标（美术 v6 · TS 烘焙/合成图标，bake_structures 产线） ---
 const ICON_ATTACK := preload("res://assets/ts/icons/attack.png")
@@ -120,7 +125,7 @@ const ICON_HEAL := preload("res://assets/ts/icons/heal_pot_red.png")
 const ICON_EMPOWER := preload("res://assets/ts/icons/empower.png")
 const ICON_ECO := preload("res://assets/ts/icons/eco.png")
 const ICON_SHOP := preload("res://assets/ts/icons/shop.png")
-const ICON_CODEX := preload("res://assets/ts/icons/codex.png")
+const ICON_CODEX := preload("res://assets/ts/icons/cdr.png")
 const ICON_COIN := preload("res://assets/ts/icons/coin.png")
 const ICON_HEART := preload("res://assets/ts/icons/heart.png")
 ## 武器图标对位（TS Tools 件）：katana=武器磨刀（刀）、fork=法杖赋能
@@ -196,17 +201,15 @@ func _ready() -> void:
 	%PauseBtn.pressed.connect(func() -> void:
 		SfxManager.play("menu")
 		_toggle_pause())
-	%ResumeBtn.pressed.connect(_toggle_pause)
+	%ResumeBtn.pressed.connect(_resume_game)
 	%SaveBtn.pressed.connect(_save_progress)
-	%PauseSettingsBtn.pressed.connect(
-		func() -> void: pause_settings_layer.visible = true)
-	%PauseSettingsClose.pressed.connect(
-		func() -> void: pause_settings_layer.visible = false)
+	%PauseSettingsBtn.pressed.connect(_open_pause_settings)
+	%PauseSettingsClose.pressed.connect(_close_pause_settings)
 	%MenuBtn.pressed.connect(_back_to_menu)
 	%BtnCodex.pressed.connect(_toggle_codex)
 	# 关闭按钮必须与 C/ESC 走同一路径：图鉴打开时世界处于暂停态，
 	# 只隐藏弹层会留下“画面恢复但整个世界永久停住”的触屏死锁。
-	%CodexClose.pressed.connect(_toggle_codex)
+	%CodexClose.pressed.connect(_close_codex)
 	for i in 3:
 		passive_cards[i].pressed.connect(_pick_passive.bind(i))
 	GameState.stats.leveled_up.connect(func(new_level: int, _levels: int) -> void:
@@ -239,6 +242,7 @@ func _ready() -> void:
 	_apply_theme()
 	_setup_icon_buttons()
 	_setup_stats_row()
+	_setup_hud_hierarchy()
 	_apply_vignette()
 	# 初值用真源实值：读档进世界（如 Lv.7 带 3 待分配点）时 HUD 不再闪显 Lv.1 空经验条
 	_on_progress_changed(GameState.stats.level, GameState.stats.xp,
@@ -540,19 +544,19 @@ func _setup_boss_bar() -> void:
 	_boss_bar.show_percentage = false
 	# TS BigBar：框=BigBar_Base 九宫（端帽 48 保形），填充=BigBar_Fill 原红横向平铺
 	var fill := StyleBoxTexture.new()
-	fill.texture = load(HotwTheme.TS_UI + "/Bars/BigBar_Fill.png")
+	fill.texture = HotwTheme.cropped_texture(HotwTheme.TS_UI + "/Bars/BigBar_Fill.png")
 	fill.texture_margin_left = 14.0
-	fill.texture_margin_top = 8.0
+	fill.texture_margin_top = 4.0
 	fill.texture_margin_right = 14.0
-	fill.texture_margin_bottom = 8.0
+	fill.texture_margin_bottom = 4.0
 	fill.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE
 	_boss_bar.add_theme_stylebox_override("fill", fill)
 	var boss_bg := StyleBoxTexture.new()
-	boss_bg.texture = load(HotwTheme.TS_UI + "/Bars/BigBar_Base.png")
-	boss_bg.texture_margin_left = 48.0
-	boss_bg.texture_margin_top = 8.0
-	boss_bg.texture_margin_right = 48.0
-	boss_bg.texture_margin_bottom = 8.0
+	boss_bg.texture = HotwTheme.cropped_texture(HotwTheme.TS_UI + "/Bars/BigBar_Base.png")
+	boss_bg.texture_margin_left = 16.0
+	boss_bg.texture_margin_top = 4.0
+	boss_bg.texture_margin_right = 16.0
+	boss_bg.texture_margin_bottom = 4.0
 	_boss_bar.add_theme_stylebox_override("background", boss_bg)
 	_boss_layer.add_child(_boss_bar)
 	_boss_layer.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
@@ -608,26 +612,25 @@ func _bar_fill(c: Color) -> StyleBoxFlat:
 
 
 ## TS 条填充纹理（BigBar_Fill 烘色件，横向平铺）
-func _ts_bar_fill(tex_name: String) -> StyleBoxTexture:
-	var sb := StyleBoxTexture.new()
-	sb.texture = load("res://assets/ts/icons/%s.png" % tex_name)
-	sb.texture_margin_left = 6.0
-	sb.texture_margin_top = 6.0
-	sb.texture_margin_right = 6.0
-	sb.texture_margin_bottom = 6.0
-	sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE
+func _ts_bar_fill(tex_name: String) -> StyleBoxFlat:
+	# 原烘色条含绿色底半帧，缩小时会混成黄白；语义色直接绘制，保留硬边像素轮廓。
+	var colors := {"bar_fill_red": Color("d96a62"), "bar_fill_blue": Color("659cc9"),
+		"bar_fill_gold": Color("d6b66e")}
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = colors.get(tex_name, HotwTheme.GOLD)
+	sb.border_color = sb.bg_color.lightened(0.28)
+	sb.border_width_top = 2
+	sb.set_corner_radius_all(2)
 	return sb
 
 
 ## TS 条框（SmallBar_Base 九宫：端帽保留、上下窄边）
-func _ts_bar_base() -> StyleBoxTexture:
-	var sb := StyleBoxTexture.new()
-	sb.texture = load("res://assets/ts/icons/bar_base.png")
-	sb.texture_margin_left = 24.0
-	sb.texture_margin_top = 6.0
-	sb.texture_margin_right = 24.0
-	sb.texture_margin_bottom = 6.0
-	sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE
+func _ts_bar_base() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color("0c1721")
+	sb.border_color = Color("64797e")
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(2)
 	return sb
 
 
@@ -637,13 +640,15 @@ func _ts_bar_base() -> StyleBoxTexture:
 ## 底座 v6 起为 TS 圆钮两态（攻击=红、技能/功能=蓝），替代玻璃拟态圆。
 func _setup_icon_buttons() -> void:
 	HotwTheme.style_ts_round_button(%AttackBtn, true)
-	HotwTheme.add_icon(%AttackBtn, ICON_ATTACK, 32.0)
+	HotwTheme.add_icon(%AttackBtn, ICON_ATTACK, 28.0)
+	_add_button_caption(%AttackBtn, "攻击")
 	var skill_btns: Array = [%DashBtn, %HeavyBtn, %BoltBtn, %HealBtn, %EmpowerBtn]
 	var skill_icons: Array = [ICON_DASH, ICON_HEAVY, ICON_BOLT, ICON_HEAL, ICON_EMPOWER]
 	for i in skill_btns.size():
 		var btn: Button = skill_btns[i]
 		HotwTheme.style_ts_round_button(btn)
 		var icon := HotwTheme.add_icon(btn, skill_icons[i], 22.0)
+		_add_button_caption(btn, str(skill_cds[i]["name"]))
 		var cd_parts := HotwTheme.add_cd_overlay(btn)
 		HotwTheme.add_badge(btn, str(int(skill_cds[i]["mp"])))
 		skill_cds[i]["icon"] = icon
@@ -660,7 +665,7 @@ func _setup_icon_buttons() -> void:
 	# 暂停面板/商店/三选一的图标走 Button.icon（文字说明保留，图标辅助扫读）
 	%ResumeBtn.icon = preload("res://assets/ts/icons/play.png")
 	%SaveBtn.icon = preload("res://assets/ts/icons/save.png")
-	%PauseSettingsBtn.icon = preload("res://assets/ts/icons/settings.png")
+	%PauseSettingsBtn.icon = preload("res://assets/ts/icons/star_gold.png")
 	%MenuBtn.icon = preload("res://assets/ts/UI Elements/UI Elements/Swords/Swords.png")
 	%ResumeBtn.expand_icon = true
 	%SaveBtn.expand_icon = true
@@ -700,14 +705,135 @@ func _setup_stats_row() -> void:
 	_heart_icon = heart
 	# MP 条头标记（v6 TS 蓝药图标）：贴条左侧作蓝量标识
 	var kunai := TextureRect.new()
-	kunai.texture = preload("res://assets/ts/icons/hp_pot_blue.png")
-	kunai.position = Vector2(-17, -3)
+	kunai.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	kunai.texture = preload("res://assets/ts/icons/mp_pot_green.png")
+	kunai.position = Vector2(-28, -1)
 	kunai.custom_minimum_size = Vector2(20, 20)
 	kunai.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	kunai.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	kunai.size = Vector2(20, 20)
 	kunai.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	mp_bar.add_child(kunai)
+
+
+## 常驻信息只占两个角：深色阅读底与细色条给角色/战场留出视觉中心。
+func _setup_hud_hierarchy() -> void:
+	var root := get_node("Root") as Control
+	var top := get_node("Root/TopLeft") as VBoxContainer
+	top.position = Vector2(52, 26)
+	top.size = Vector2(286, 150)
+	top.add_theme_constant_override("separation", 7)
+	_hud_plate = Panel.new()
+	_hud_plate.name = "StatusPlate"
+	_hud_plate.position = Vector2(14, 14)
+	_hud_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := HotwTheme.panel_style()
+	style.bg_color = Color(0.065, 0.105, 0.14, 0.91)
+	style.border_color = Color("607b80")
+	_hud_plate.add_theme_stylebox_override("panel", style)
+	root.add_child(_hud_plate)
+	root.move_child(_hud_plate, top.get_index())
+	top.resized.connect(_resize_status_plate)
+	var eco_vb := ecology_panel.get_node("EcoMargin/EcoVB") as VBoxContainer
+	var eco_scroll := ScrollContainer.new()
+	eco_scroll.name = "EcoScroll"
+	eco_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	eco_scroll.custom_minimum_size = Vector2(364, 168)
+	eco_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	eco_vb.add_child(eco_scroll)
+	ecology_label.reparent(eco_scroll)
+	ecology_label.custom_minimum_size.x = 352
+	ecology_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	(ecology_panel.get_node("EcoMargin/EcoVB/EcologyTitle") as Label).add_theme_font_size_override("font_size", 16)
+	_resize_status_plate()
+	_heart_icon.position = Vector2(22, 27)
+	_heart_icon.size = Vector2(22, 22)
+	_hp_ghost_bar.custom_minimum_size = Vector2(286, 24)
+	mp_bar.custom_minimum_size = Vector2(286, 18)
+	xp_bar.custom_minimum_size = Vector2(286, 6)
+	_hp_value = _bar_value_label(hp_bar)
+	_mp_value = _bar_value_label(mp_bar)
+	stats_label.add_theme_font_size_override("font_size", 18)
+	stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	stats_label.custom_minimum_size.x = 252
+	for label: Label in [bounty_label, quest_label]:
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.custom_minimum_size.x = 286
+		label.add_theme_font_size_override("font_size", 16)
+		label.add_theme_color_override("font_outline_color", Color("16242d"))
+		label.add_theme_constant_override("outline_size", 2)
+	toast_label.add_theme_font_size_override("font_size", 20)
+	toast_label.add_theme_color_override("font_outline_color", Color("16242d"))
+	toast_label.add_theme_constant_override("outline_size", 5)
+	toast_label.offset_left = -246
+	toast_label.offset_right = 246
+	toast_label.offset_top = 24
+	toast_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_combat_toast.add_theme_color_override("font_outline_color", Color("16242d"))
+	_combat_toast.add_theme_constant_override("outline_size", 4)
+	%BtnEco.position = Vector2(362, 18)
+	%BtnEco.size = Vector2(80, 80)
+	_add_button_caption(%BtnEco, "生态")
+	for pair: Array in [[%BtnBag, "物品"], [%BtnCodex, "图鉴"], [%BtnShop, "商店"], [%PauseBtn, "暂停"]]:
+		_add_button_caption(pair[0], pair[1])
+	%Minimap.offset_top = 24
+	%Minimap.offset_bottom = 144
+	for i in 4:
+		var button: Button = [%BtnBag, %BtnCodex, %BtnShop, %PauseBtn][i]
+		button.offset_left = -352 + i * 84
+		button.offset_right = button.offset_left + 80
+		button.offset_top = 156
+		button.offset_bottom = 236
+	stat_buttons.offset_top = 248
+	stat_buttons.offset_bottom = 302
+	# 无补给时保留可识别的空槽，而不是只剩一块无义图标。
+	_add_button_caption(_quick_btn, "补给")
+	# 战斗控件有独立键位；不进入Tab链，避免暂停后键盘焦点绕到遮罩背后。
+	for name: String in ["AttackBtn", "DashBtn", "HeavyBtn", "BoltBtn", "HealBtn", "EmpowerBtn", "QuickSlotBtn", "BtnEco", "BtnBag", "BtnCodex", "BtnShop", "PauseBtn"]:
+		(root.get_node(name) as Button).focus_mode = Control.FOCUS_NONE
+	for button: Button in stat_buttons.get_children():
+		button.focus_mode = Control.FOCUS_NONE
+	death_label.add_theme_color_override("font_outline_color", Color("16242d"))
+	death_label.add_theme_constant_override("outline_size", 6)
+
+
+func _resize_status_plate() -> void:
+	if _hud_plate != null:
+		var top := get_node("Root/TopLeft") as Control
+		_hud_plate.size = Vector2(338, top.size.y + 24)
+		# 任务行出现/换行会改变信息块高度，生态面板必须跟随，不能压住任务文字。
+		ecology_panel.position = Vector2(14, top.position.y + top.size.y + 22)
+		ecology_panel.size = Vector2(400, 234)
+
+
+func _bar_value_label(bar: ProgressBar) -> Label:
+	var label := Label.new()
+	label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 13)
+	label.add_theme_color_override("font_color", Color("fcf4e0"))
+	label.add_theme_color_override("font_outline_color", Color("17232c"))
+	label.add_theme_constant_override("outline_size", 3)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(label)
+	return label
+
+
+func _add_button_caption(button: Button, caption: String) -> void:
+	var label := Label.new()
+	label.name = "Caption"
+	label.text = caption
+	label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	label.offset_top = -19
+	label.offset_bottom = 1
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 15)
+	label.add_theme_color_override("font_color", HotwTheme.TEXT)
+	label.add_theme_color_override("font_outline_color", Color("17232c"))
+	label.add_theme_constant_override("outline_size", 4)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button.add_child(label)
 
 
 ## 全屏暗角：程序生成径向渐变纹理，弱化边缘聚焦画面中心。
@@ -808,6 +934,8 @@ func _snap_lerp(bar: ProgressBar, target: float, t: float) -> void:
 
 ## 键盘开关生态面板（Tab）/ 图鉴（C）/ 商店（B）/ 物品栏（I）/ 暂停（ESC）；触屏走按钮
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_echo():
+		return
 	if event.is_action_pressed("toggle_ecology"):
 		ecology_panel.visible = not ecology_panel.visible
 		get_viewport().set_input_as_handled()
@@ -829,15 +957,11 @@ func _unhandled_input(event: InputEvent) -> void:
 ## 否则世界解除暂停恢复战斗，设置层却还悬浮在画面上挡操作
 func _close_top_layer_or_toggle_pause() -> void:
 	if pause_settings_layer.visible:
-		pause_settings_layer.visible = false
+		_close_pause_settings()
 	elif codex_layer.visible:
-		codex_layer.visible = false
-		# 图鉴打开期间世界是暂停的（_toggle_codex），关闭即恢复
-		get_tree().paused = false
+		_close_codex()
 	elif _inv_layer != null and _inv_layer.visible:
-		_inv_layer.visible = false
-		# 物品栏与图鉴同口径（打开时暂停），关闭即恢复
-		get_tree().paused = false
+		_close_inventory()
 	elif shop_panel.visible:
 		shop_panel.visible = false
 	else:
@@ -848,7 +972,12 @@ func _close_top_layer_or_toggle_pause() -> void:
 
 func _on_skills_changed(dash_cd: float, heavy_cd: float, bolt_cd: float, heal_cd: float,
 		empower_cd: float, mp: float, _max_mp: float) -> void:
-	_cd_values = [dash_cd, heavy_cd, bolt_cd, heal_cd, empower_cd]
+	var incoming := [dash_cd, heavy_cd, bolt_cd, heal_cd, empower_cd]
+	for i in incoming.size():
+		var previous := maxf(0.0, _cd_values[i] - _cd_elapsed)
+		if incoming[i] > previous + 0.05:
+			_cd_durations[i] = incoming[i]
+	_cd_values = incoming
 	_cd_elapsed = 0.0
 	_mp_now = mp
 	_refresh_skill_bar()
@@ -885,7 +1014,7 @@ func _refresh_skill_bar() -> void:
 		# 遮罩位显示原因（"蓝不足"/"生命满"）。文字脏检查沿用（避免每帧重绘）
 		var button: Button = slot["button"]
 		if button != null and is_instance_valid(button):
-			var overlay: ColorRect = slot.get("overlay")
+			var overlay: Control = slot.get("overlay")
 			var cd_label: Label = slot.get("cd_label")
 			var icon: TextureRect = slot.get("icon")
 			var hint := ""
@@ -906,6 +1035,8 @@ func _refresh_skill_bar() -> void:
 				cd_label.visible = want_text != ""
 			if overlay != null:
 				overlay.visible = left > 0.05 or hint != ""
+				var duration := maxf(float(_cd_durations[i]), left)
+				overlay.set("fraction", clampf(left / duration, 0.0, 1.0) if left > 0.05 else 1.0)
 			if icon != null and blocked != slot.get("blocked", false):
 				icon.modulate = Color(0.45, 0.45, 0.5) if blocked else Color.WHITE
 			button.disabled = left > 0.05 or blocked
@@ -924,11 +1055,16 @@ func _toggle_pause() -> void:
 		return
 	if passive_layer.visible:
 		return  # 三选一未选时不允许暂停卡死流程
+	if _inv_layer != null and _inv_layer.visible:
+		_toggle_inventory()
+		return
 	if codex_layer.visible:
 		# 图鉴打开期间世界已暂停：任何暂停入口（按钮/ESC）先收起图鉴，
 		# 直接翻转 paused 会造成"世界恢复运行而图鉴还开着"的坏状态
 		_toggle_codex()
 		return
+	# 鼠标暂停入口也必须收起商店，不能把仍可键盘购买的商店留在遮罩背后。
+	shop_panel.visible = false
 	var paused := not get_tree().paused
 	get_tree().paused = paused
 	if paused:
@@ -936,6 +1072,86 @@ func _toggle_pause() -> void:
 		TouchInput.clear_queues()
 	pause_layer.visible = paused
 	pause_settings_layer.visible = false
+	_sync_modal_focus()
+
+
+func _open_pause_settings() -> void:
+	if not pause_layer.visible:
+		return
+	pause_settings_layer.visible = true
+	_sync_modal_focus()
+
+
+func _close_pause_settings() -> void:
+	pause_settings_layer.visible = false
+	_sync_modal_focus(%PauseSettingsBtn)
+
+
+## 遮罩只挡鼠标，不挡键盘焦点。仅最上层可进入 Tab 链，关闭后恢复原始模式。
+## 模态内动态生成的背包格子也在每次打开后登记；不改常驻战斗按钮的 FOCUS_NONE。
+func _sync_modal_focus(preferred: Control = null) -> void:
+	var active: Control = null
+	var fallback: Control = null
+	if passive_layer.visible:
+		active = passive_layer
+		fallback = passive_cards[0]
+	elif pause_settings_layer.visible:
+		active = pause_settings_layer
+		fallback = %PauseSettingsClose
+	elif _inv_layer != null and _inv_layer.visible:
+		active = _inv_layer
+		fallback = _inv_layer.find_child("InventoryClose", true, false) as Control
+	elif codex_layer.visible:
+		active = codex_layer
+		fallback = %CodexClose
+	elif pause_layer.visible:
+		active = pause_layer
+		fallback = %ResumeBtn
+	for node: Node in get_node("Root").find_children("*", "Control", true, false):
+		var control := node as Control
+		if not control.has_meta("hud_focus_mode"):
+			control.set_meta("hud_focus_mode", control.focus_mode)
+		var eligible := active == null or control == active or active.is_ancestor_of(control)
+		control.focus_mode = int(control.get_meta("hud_focus_mode")) if eligible else Control.FOCUS_NONE
+	if active == null:
+		return
+	if preferred != null and preferred.is_visible_in_tree() \
+			and active.is_ancestor_of(preferred) and preferred.focus_mode != Control.FOCUS_NONE:
+		preferred.grab_focus()
+		return
+	var focused := get_viewport().gui_get_focus_owner()
+	if focused == null or not active.is_ancestor_of(focused):
+		if fallback != null:
+			fallback.grab_focus()
+
+
+## 关闭动作必须幂等：同帧重复点击不能把刚收起的面板重新打开。
+func _resume_game() -> void:
+	if not pause_layer.visible:
+		return
+	pause_layer.visible = false
+	pause_settings_layer.visible = false
+	get_tree().paused = false
+	TouchInput.clear_queues()
+	_sync_modal_focus()
+
+
+func _close_codex() -> void:
+	if not codex_layer.visible:
+		return
+	codex_layer.visible = false
+	get_tree().paused = false
+	TouchInput.clear_queues()
+	_sync_modal_focus()
+
+
+func _close_inventory() -> void:
+	if _inv_layer == null or not _inv_layer.visible:
+		return
+	_inv_layer.visible = false
+	get_tree().paused = false
+	TouchInput.clear_queues()
+	_sync_modal_focus()
 
 
 ## 手动保存（暂停菜单"保存进度"）：自动存档本已覆盖，按钮的价值是
@@ -970,11 +1186,14 @@ func _on_player_died() -> void:
 # --- 图鉴与成就 ---
 
 func _toggle_codex() -> void:
+	if _inv_layer != null and _inv_layer.visible:
+		return
 	# 暂停菜单/三选一已占住屏幕时不响应（键 C 穿透暂停层打开图鉴会造成
 	# 双弹层叠加 + 暂停态翻转错乱）
 	if not codex_layer.visible and (pause_layer.visible or pause_settings_layer.visible \
 			or passive_layer.visible):
 		return
+	shop_panel.visible = false
 	codex_layer.visible = not codex_layer.visible
 	if codex_layer.visible:
 		# 图鉴是 29 物种 + 成就的长列表阅读界面：读条时被围殴不是乐趣是干扰，
@@ -984,6 +1203,8 @@ func _toggle_codex() -> void:
 		_refresh_codex()
 	else:
 		get_tree().paused = false
+		TouchInput.clear_queues()
+	_sync_modal_focus()
 
 
 func _refresh_codex() -> void:
@@ -1037,6 +1258,7 @@ func _open_passive_pick() -> void:
 	if GameState.stats.pending_passive_picks <= 0:
 		passive_layer.visible = false
 		get_tree().paused = false
+		_sync_modal_focus()
 		return
 	var chosen: Array[String] = GameState.stats.passive_choices
 	for i in 3:
@@ -1059,6 +1281,7 @@ func _open_passive_pick() -> void:
 	passive_layer.visible = true
 	get_tree().paused = true
 	TouchInput.clear_queues()
+	_sync_modal_focus()
 
 
 func _pick_passive(index: int) -> void:
@@ -1117,10 +1340,11 @@ func _on_day_phase(night: bool) -> void:
 # --- 游商营地 ---
 
 func _toggle_shop() -> void:
+	if pause_layer.visible or pause_settings_layer.visible or passive_layer.visible or codex_layer.visible:
+		return
 	# 物品栏开着（世界暂停）时开商店会留下"商店可点而世界冻结"的怪态——先收起
 	if _inv_layer != null and _inv_layer.visible:
-		_inv_layer.visible = false
-		get_tree().paused = false
+		_close_inventory()
 	shop_panel.visible = not shop_panel.visible
 	if shop_panel.visible:
 		_refresh_shop()
@@ -1294,9 +1518,9 @@ func _setup_inventory_layer() -> void:
 	panel.anchor_top = 0.5
 	panel.anchor_right = 0.5
 	panel.anchor_bottom = 0.5
-	panel.offset_left = -280.0
+	panel.offset_left = -324.0
 	panel.offset_top = -290.0
-	panel.offset_right = 280.0
+	panel.offset_right = 324.0
 	panel.offset_bottom = 290.0
 	_inv_layer.add_child(panel)
 	# 木瓦底 + 芥末黄丝带标题（与游商营地同属交易/收纳意象）
@@ -1322,20 +1546,22 @@ func _setup_inventory_layer() -> void:
 	vb.add_child(_inv_hint)
 
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 420)
+	scroll.custom_minimum_size = Vector2(0, 356)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	vb.add_child(scroll)
 	_inv_grid = GridContainer.new()
-	_inv_grid.columns = 6
+	_inv_grid.columns = 5
 	_inv_grid.add_theme_constant_override("h_separation", 10)
 	_inv_grid.add_theme_constant_override("v_separation", 10)
 	_inv_grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	scroll.add_child(_inv_grid)
 
 	var close := Button.new()
+	close.name = "InventoryClose"
 	close.text = "关闭（I）"
 	close.custom_minimum_size = Vector2(0, 56)
-	close.pressed.connect(_toggle_inventory)
+	close.pressed.connect(_close_inventory)
 	vb.add_child(close)
 
 
@@ -1356,6 +1582,8 @@ func _toggle_inventory() -> void:
 		_refresh_inventory()
 	else:
 		get_tree().paused = false
+		TouchInput.clear_queues()
+	_sync_modal_focus()
 
 
 func _refresh_inventory() -> void:
@@ -1376,9 +1604,14 @@ func _refresh_inventory() -> void:
 			continue
 		shown += 1
 		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(76, 76)
-		btn.icon = ItemCatalog.icon_of(id)
-		btn.expand_icon = true
+		btn.custom_minimum_size = Vector2(104, 104)
+		var icon := HotwTheme.add_icon(btn, ItemCatalog.icon_of(id), 23.0)
+		icon.offset_bottom = -38
+		_add_button_caption(btn, ItemCatalog.name_of(id))
+		var caption := btn.get_node("Caption") as Label
+		caption.offset_top = -34
+		caption.offset_bottom = -12
+		caption.add_theme_font_size_override("font_size", 14)
 		HotwTheme.add_badge(btn, "×%d" % n).add_theme_font_size_override("font_size", 16)
 		btn.pressed.connect(_on_inv_cell.bind(id))
 		_inv_grid.add_child(btn)
@@ -1421,7 +1654,7 @@ func _refresh_quick_slot() -> void:
 			break
 	_quick_id = pick
 	_quick_btn.disabled = pick == ""
-	_quick_icon.texture = ItemCatalog.icon_of(pick) if pick != "" else null
+	_quick_icon.texture = ItemCatalog.icon_of(pick) if pick != "" else ICON_BAG
 	_quick_badge.text = str(GameState.count_item(pick)) if pick != "" else ""
 
 
@@ -1432,6 +1665,8 @@ func _on_quick_slot() -> void:
 
 
 func _on_hp_changed(current: float, maximum: float) -> void:
+	if _hp_value != null:
+		_hp_value.text = "%d / %d" % [ceili(current), ceili(maximum)]
 	hp_bar.max_value = maximum
 	_hp_max_cache = maximum
 	_hp_full = current >= maximum - 0.5
@@ -1449,6 +1684,8 @@ func _on_hp_changed(current: float, maximum: float) -> void:
 
 func _on_mp_changed(current: float, maximum: float) -> void:
 	_mp_now = current
+	if _mp_value != null:
+		_mp_value.text = "%d / %d" % [ceili(current), ceili(maximum)]
 	mp_bar.max_value = maximum
 	_mp_target = current
 
@@ -1470,9 +1707,9 @@ func _refresh_stats_label(level: int, pending_points: int) -> void:
 	stat_buttons.visible = pending_points > 0
 	stats_label.text = "Lv.%d  金币 %d" % [level, GameState.gold]
 	if _region_name != "":
-		stats_label.text += "  |  %s" % _region_name
+		stats_label.text += "\n%s" % _region_name
 	if pending_points > 0:
-		stats_label.text += "  可分配 %d" % pending_points
+		stats_label.text += " · 属性点 +%d" % pending_points
 
 
 func _on_region_entered(_region_id: String, display_name: String) -> void:
