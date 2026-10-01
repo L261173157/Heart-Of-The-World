@@ -42,7 +42,7 @@ python3 Code/tools/subset_font.py    # 重新生成内嵌中文字体 assets/fon
 主场景为 scenes/ui/main_menu.tscn（开始/继续冒险、新的冒险、冒险档案、设置、退出；暂停菜单含保存进度）；测试直接加载 main.tscn/combat_test.tscn 不受影响。
 无输出且退出码 0 = 通过。改生态层必跑 sim_test；改战斗/AI/场景必跑 combat_test；改 GameState 必跑 save_test；改数值必跑 balance_test；改 HUD/菜单/流程必跑 ui_flow_test；改切帧表/烘焙/generate_fx 后必跑 frames_test（09-20 横带与 Lancer 空白帧两次事故后增设——六测不覆盖资产契约层）。测试场景会自动关闭自动存档（GameState.save_enabled），不污染真实进度。
 iOS 一键导出装机（前置：Xcode 已登录账号 + 设备已连接）：仓库根 `./ios-run.sh`（输出在 build-output/，勿放回 Code/build/ 防资源自污染）。
-iOS TestFlight/App Store 上传通道（前置：ASC 已建 App 记录「心之世界」6808568562 + API Key `~/.appstoreconnect/private_keys/AuthKey_BQSLFKJH4X.p8`）：仓库根 `./ios-upload.sh`——Release 导出→自动签名 Archive→app-store 重签出 ipa→校验→**altool 免登录上传**（2026-10-02 用户指示固定主通道，绕过 Xcode 会话；09-13 起 (5)(7)(8)(11)~(21) 十四代实证；内部测试组自动分发）；build 号自动递增。签名链路（第 3-4 步 Archive/重签）仍用本地缓存证书，Xcode 会话登出不影响。
+iOS TestFlight/App Store 上传通道（前置：ASC 已建 App 记录「心之世界」6808568562 + API Key 文件 `~/.appstoreconnect/private_keys/AuthKey_BQSLFKJH4X.p8`）：仓库根 `./ios-upload.sh`——Release 导出→自动签名 Archive→app-store 重签出 ipa→校验→**altool 免登录上传**（2026-10-02 用户指示固定主通道，绕过 Xcode 会话；09-13 起 (5)(7)(8)(11)~(21) 十四代实证；内部测试组自动分发）；build 号自动递增。签名链路（第 3-4 步 Archive/重签）仍用本地缓存证书，Xcode 会话登出不影响。**密钥边界：仓库/脚本只含非凭据标识（Key ID/Issuer ID，无 .p8 无法认证，已核全 git 历史无密钥文件）；.p8 私钥只存在于仓库外 ~/.appstoreconnect/，永不入库、Agent 不读取/打印/上传其内容，由 altool 进程自行消费。**
 **安全约束（上传通道）**：上传属对外发布操作，Agent 不得自动执行，每次须用户当次明确确认。
 
 ## 目录结构（Code/）
