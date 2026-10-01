@@ -36,7 +36,7 @@ HOTW_TEST_SAVE="res://tests/fixtures/test_save.json" "$GODOT" --headless --path 
 "$GODOT" --headless --path Code -s tools/numbers_audit.gd                        # 数值全盘量化审计（构筑/对刀/经济/生态/寿命基线表）
 "$GODOT" --headless --path Code -s tools/eco_probe.gd                            # 生态长程探针（2000 tick 逐物种存活占比/灭绝次数/死因——捕食结构调参的实证工具）
 python3 Code/tools/subset_font.py    # 重新生成内嵌中文字体 assets/fonts/（iOS 26 系统字体回退失效须自带 CJK 字体；游戏文案缺字变豆腐块时重跑，桌面端缺字静默回退看不出来）
-"$GODOT" --headless --path Code -s tools/generate_icon.gd                         # 重新生成 App 图标 1024（六群系像素心；导出走单一图标模式自动派生全 iOS 尺寸，改参数重跑本工具即可）
+"$GODOT" --headless --path Code -s tools/generate_icon.gd                         # 重新生成 App 图标 1024（v6.2 起=ts 蓝骑士 Attack1 剑展开帧+夜空星点底，素材真源 Units/Blue Units/Warrior；导出走单一图标模式自动派生全 iOS 尺寸，改参数重跑本工具即可；v6.1 六群系像素心在 git 历史）
 "$GODOT" --path Code --resolution 1280x720 res://tests/screenshot.tscn            # 视觉截图（3s+3.35s 双帧到 /tmp/hotw_shot{,_b}.png，帧差验证动画；HOTW_SHOT_POS="x,y" 指定世界坐标，v4 大世界采样点：出生平原 21888,60301 / 雪原 753707,738957 / 熔岩 774085,696114 / 平原|沼泽交界 83882,99810；HOTW_SHOT_UI="menu" 截主菜单+冒险档案面板，"codex" 截图鉴；HOTW_SHOT_NIGHT=1 强制满夜取证提灯+障碍阴影投射）
 ```
 主场景为 scenes/ui/main_menu.tscn（开始/继续冒险、新的冒险、冒险档案、设置、退出；暂停菜单含保存进度）；测试直接加载 main.tscn/combat_test.tscn 不受影响。
