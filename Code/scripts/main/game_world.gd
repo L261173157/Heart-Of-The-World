@@ -99,6 +99,9 @@ var _overview_thread: Thread = null
 var _boss_accum := 0.0
 ## Boss 血条追踪状态（id = -1 表示未追踪；换目标/丢失才发 boss_tracked）
 var _boss_tracked_id := -1
+## Boss 实例小表（spawned 时进表；_update_boss_track 4Hz 查不到实例时自愈剔除
+## ——替代全量遍历 ~880 模拟实例过滤 ≤3 只 Boss，2026-10-01）
+var _boss_ids: Array[int] = []
 ## 高危警告每区域每会话只发一次（重复进入同一高星区不再刷红光）
 var _warned_regions := {}
 ## 读档续玩时跳过首个区域播报（"进入 平原"对刚离开这个世界的玩家是噪音；
@@ -1153,14 +1156,18 @@ func _normalize_xp() -> void:
 
 
 ## Boss 顶部血条桥：玩家附近最近的存活 Boss 上屏（换目标/脱离/死亡时收起）。
-## Boss 数量 ≤3，遍历模拟实例即可；HUD 只订阅不轮询玩法系统
+## Boss 数量 ≤3，经 _boss_ids 小表遍历（实例已过期时自愈剔除）；HUD 只订阅不轮询玩法系统
 func _update_boss_track() -> void:
 	var player := get_tree().get_first_node_in_group("player") as Node2D
 	var best: MonsterBase = null
 	var best_dist := BOSS_TRACK_RANGE
 	if player != null and player.visible:
-		for inst: MonsterInstance in _sim.instances.values():
-			if not inst.is_alive or not inst.species.is_boss:
+		for i in range(_boss_ids.size() - 1, -1, -1):
+			var inst: MonsterInstance = _sim.instances.get(_boss_ids[i])
+			if inst == null:
+				_boss_ids.remove_at(i)  # 尸体过期已出实例表，自愈剔除
+				continue
+			if not inst.is_alive:
 				continue
 			var node: Node = _nodes.get(inst.id)
 			var mb := node as MonsterBase
@@ -1244,6 +1251,10 @@ func _spawn_region_labels() -> void:
 
 
 func _on_instance_spawned(inst: MonsterInstance) -> void:
+	# Boss 小表维护（2026-10-01）：_update_boss_track 曾 4Hz 全量遍历
+	# ~880 模拟实例过滤 ≤3 只 Boss，纯浪费；spawned/装配期重放统一进表
+	if inst.species.is_boss:
+		_boss_ids.append(inst.id)
 	# Boss 重生降临：多重光束 + 播报（美术 v5 fx 全量；只在玩家附近、且世界
 	# 已装配完成后的重生才播——初始撒放的重放不是"重生"）
 	if _stream_primed and inst.species.is_boss \
@@ -1427,6 +1438,7 @@ func _discard_streamed_world() -> void:
 			node.queue_free()
 	_nodes.clear()
 	_pending_stream.clear()
+	_boss_ids.clear()
 	for key: String in _nest_nodes.keys():
 		var nest: Node = _nest_nodes.get(key)
 		if nest != null:
