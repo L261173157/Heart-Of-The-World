@@ -42,6 +42,12 @@ CASES = {
     "town_interaction": (["res://tests/town_interaction_test.tscn", "--quit-after", "10000"], "=== TOWN INTERACTION PASS"),
     "quest_clarity": (["res://tests/quest_clarity_test.tscn", "--quit-after", "10000"], "=== QUEST CLARITY PASSED"),
     "quest_lifecycle": ([str(PROJECT / "tests/run_quest_lifecycle_test.py")], "=== QUEST LIFECYCLE PASSED ==="),
+    "directional_attack": (["res://tests/directional_attack_test.tscn", "--quit-after", "10000"], "=== DIRECTIONAL ATTACK PASS"),
+    "weapon_effects": (["res://tests/weapon_effects_test.tscn", "--quit-after", "10000"], "=== WEAPON EFFECTS PASS"),
+    "terrain_coherence": (["-s", "tests/terrain_coherence_test.gd"], "=== TERRAIN COHERENCE PASS"),
+    "exploration_lifecycle": ([str(PROJECT / "tests/run_exploration_lifecycle_test.py")], "=== EXPLORATION LIFECYCLE PASSED ==="),
+    "exploration_map": (["res://tests/exploration_map_test.tscn", "--quit-after", "10000"], "=== EXPLORATION MAP PASSED"),
+    "knockback_response": (["res://tests/knockback_response_test.tscn", "--quit-after", "10000"], "=== KNOCKBACK RESPONSE PASS"),
     "pacing": (["res://tests/pacing_test.tscn", "--quit-after", "100000"], "=== 节奏验证全部通过 ==="),
 }
 
@@ -86,7 +92,7 @@ def unexpected_errors(case: str, output: str) -> list[str]:
 
 def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str],
              godot: str, logs: Path, timeout: int) -> bool:
-    command = ([sys.executable, args[0], godot] if name in {"save_lifecycle", "quest_lifecycle"}
+    command = ([sys.executable, args[0], godot] if name in {"save_lifecycle", "quest_lifecycle", "exploration_lifecycle"}
                else [godot, "--headless", "--path", str(PROJECT), *args])
     print(f"[{name}] 开始", flush=True)
     with subprocess.Popen(command, env=env, stdout=subprocess.PIPE,

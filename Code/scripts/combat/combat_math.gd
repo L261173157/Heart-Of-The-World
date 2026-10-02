@@ -6,7 +6,13 @@ class_name CombatMath
 
 ## 击退基础速度（px/s）：玩家命中怪物的击退基数，重击翻倍、
 ## 抗性并联合成后衰减——手感目标带见 CombatBandMath
-const KNOCKBACK_BASE := 150.0
+const KNOCKBACK_BASE := 170.0
+## 普通目标约16px、重击最多30px；击退赐福不能无限放大移位。
+const KNOCKBACK_HEAVY_MULT := 1.5
+const KNOCKBACK_MAX_SPEED := 230.0
+const KNOCKBACK_BOSS_MAX_SPEED := 12.0
+const KNOCKBACK_MIN_SPEED := 18.0
+const KNOCKBACK_RETRIGGER := 0.20
 
 
 static func roll_variance(base: float, spread := 0.1) -> float:

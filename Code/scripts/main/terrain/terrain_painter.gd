@@ -1,17 +1,17 @@
 ## 地表分块绘制器（运行时，静态工具类 + 静态缓存）。
 ## v4 世界大地图重构：每区域一张静态 PNG（1100×700×6）不可覆盖 80 万像素世界，
 ## 改为按世界坐标分块（512px/块 = 32×32 瓦）确定性绘制——同坐标永远同画面，
-## 走过再回来看到的还是同一片地。绘制核心（value noise 材质图 / 变体哈希 /
-## HSV 色桶烘焙）与旧 tools/generate_terrain.gd 同源，视觉风格一脉相承。
-## 群系交界：BiomeMap 双最近斑块的权重差在 BLEND_PX 内线性混合两套烘焙瓦
-## （次群系瓦按 alpha 阶梯叠绘）——犬牙交错的"交融"而非硬接缝。
+## 走过再回来看到的还是同一片地。沿用 Tiny Swords 平面像素纹理，
+## 运行时采用六群系明确色板、世界尺度材质斑块和邻接岸线。
+## 保留 16px 逻辑取样，纹理按 32px 世界尺度铺设；材质边缘消费原图草岸轮廓，
+## 不把悬崖或随机外轮廓当平地。所有细节按世界坐标取样，任意分块/重载像素一致。
 ## 注意：_ensure_atlases() 涉及 load()，必须在主线程首次调用（ChunkStreamer._ready），
 ## 之后工作线程只读静态缓存（初始化后不再写，线程安全）。
 class_name TerrainPainter
 extends RefCounted
 
 ## 图集源（美术 v6 TS）：Tilemap 同版式 5 套配色取 3 套 + 水底纹。
-## 源瓦 64px → ÷4 缩到 16px 世界网格（保持全部网格数学不变）。
+## 运行时源瓦 64px → 32px 视觉纹理；16px 逻辑格从中取四个相位，网格数学不变。
 const SOURCES := {
 	"main": "res://assets/ts/Terrain/Tileset/Tilemap_color1.png",
 	"earth": "res://assets/ts/Terrain/Tileset/Tilemap_color4.png",
@@ -20,11 +20,11 @@ const SOURCES := {
 }
 const TS := 16
 ## 群系过渡带宽度（世界像素）：双斑块距离差在此宽度内线性混瓦
-const BLEND_PX := 72.0
-## 过渡叠绘 alpha 阶梯（两档；权重 < 0.15 不叠）
-const OVERLAY_ALPHAS := [0.38, 0.68]
-const ATLAS_COLS := 12
+const BLEND_PX := 160.0
+## 对称群系渐变色阶；边界两侧权重均趋近 0.5，避免换主群系时颜色跳变。
+const OVERLAY_ALPHAS := [0.0625, 0.125, 0.1875, 0.25, 0.3125, 0.375, 0.4375, 0.5]
 
+## 以下旧槽位表保留给主菜单生成器/帧资产契约；运行时 _build_surface 直接抽内部格。
 ## 地表只取平面内部格（零起点 (1,1)/(6,1)）：r0/r2 是上下轮廓，
 ## c3/c8 是窄岛边缘，r4/r5 是竖直悬崖，随机铺地会形成无碰撞的假裂缝/假墙。
 ## 土斑改取现有 color4 橄榄色平面，保留材质分区；不新增美术或更改地形逻辑。
@@ -44,211 +44,263 @@ const ICE_FILL := [["cold", Vector2i(1, 1)], ["cold", Vector2i(6, 1)],
 const ICE_DETAIL := [["cold", Vector2i(1, 1)], ["cold", Vector2i(6, 1)],
 	["cold", Vector2i(1, 1)]]
 
-## 素材种类 id（材质图 0=base 1=patch 2=water 按规则映射）
-const KIND_GRASS := 0
-const KIND_DIRT := 1
-const KIND_WATER := 2
-const KIND_ICE := 3
-## 每种类在迷你图集中的起始格与数量（图集布局 = 上面六组按序拼接）
-const KIND_RANGES := {
-	KIND_GRASS: [0, 6],
-	KIND_DIRT: [12, 7],
-	KIND_WATER: [19, 1],
-	KIND_ICE: [20, 4],
-}
-## 低概率换细节瓦（花簇/裂纹）打破重复：种类 → 细节格区间 [start, count]
-const KIND_DETAILS := {
-	KIND_GRASS: [6, 6],
-	KIND_ICE: [24, 3],
+## 材质语义与宏观斑块；水位仍只消费 ObstacleField，色板集中在下方。
+const RULES := {
+	"plains": {"seedv": 11, "base": "grass", "patch": "dirt", "patch_thr": 0.64},
+	"forest": {"seedv": 22, "base": "grass", "patch": "dirt", "patch_thr": 0.57},
+	"snow": {"seedv": 33, "base": "ice", "patch": "dirt", "patch_thr": 0.66},
+	"swamp": {"seedv": 44, "base": "grass", "patch": "water", "patch_thr": 0.59},
+	"hill": {"seedv": 55, "base": "dirt", "patch": "grass", "patch_thr": 0.55},
+	"lava": {"seedv": 66, "base": "ice", "patch": "grass", "patch_thr": 0.58},
 }
 
-## 每地形绘制规则（与 generate_terrain.BIOMES 同源，键改地形名）：
-## base/patch=材质，thr=斑块噪声阈值；water/water_thr=独立水池层；
-## bake=色桶 HSV 重映射（群系氛围由 bake 定义，瓦片纹理与明度层次保留）
-const RULES := {
-	"plains": {"seedv": 11, "base": "grass", "patch": "dirt", "patch_thr": 0.60,
-		"water": false, "water_thr": 0.90},
-	"forest": {"seedv": 22, "base": "grass", "patch": "dirt", "patch_thr": 0.52,
-		"water": false, "water_thr": 0.90,
-		"bake": {"grass": {"hue": -0.02, "sat": 1.10, "val": 0.78}}},
-	"snow": {"seedv": 33, "base": "ice", "patch": "dirt", "patch_thr": 0.66,
-		"water": true, "water_thr": 0.78,
-		"bake": {"grass": {"hue": 0.42, "sat": 0.25, "val": 1.12},
-			"dirt": {"sat": 0.40, "val": 1.02}, "water": {"sat": 0.20, "val": 1.15}}},
-	"swamp": {"seedv": 44, "base": "grass", "patch": "water", "patch_thr": 0.62,
-		"water": false, "water_thr": 0.90,
-		"bake": {"grass": {"hue": 0.06, "sat": 0.70, "val": 0.70},
-			"water": {"hue": -0.23, "sat": 0.80, "val": 0.68}}},
-	"hill": {"seedv": 55, "base": "dirt", "patch": "grass", "patch_thr": 0.55,
-		"water": true, "water_thr": 0.86},
-	"lava": {"seedv": 66, "base": "ice", "patch": "grass", "patch_thr": 0.58,
-		"water": true, "water_thr": 0.72,
-		"bake": {"ice": {"val": 0.38}, "water": {"hue": 0.55, "sat": 1.40, "val": 0.95},
-			"grass": {"sat": 0.30, "val": 0.50}}},
+## 色板仅重映射 Tiny Swords 的原始像素纹理；不生成纯色地板或假悬崖。
+## 三槽 = 地被、裸地/浅滩、真实液体；低对比纹理为角色、投射物与地物让出层次。
+const SURFACE_PALETTES := {
+	"plains": [["6f914e", "91ad61"], ["988961", "bba578"], ["477b91", "5b9bae"]],
+	"forest": [["426d4c", "5c8555"], ["757650", "8e8a60"], ["467383", "60909c"]],
+	"snow": [["cbdcde", "e4eded"], ["a3bbc4", "bed1d5"], ["48829e", "6aa5ba"]],
+	"swamp": [["4e6c56", "6f805f"], ["456563", "5e8075"], ["456563", "5e8075"]],
+	"hill": [["a08c6e", "b6a27f"], ["7c8855", "97a167"], ["447f98", "64a0b2"]],
+	"lava": [["4e4852", "68606a"], ["716069", "89746f"], ["c94c35", "f49b47"]],
 }
+const TEXTURE_SIZE := 32
+const EDGE_N := 1
+const EDGE_E := 2
+const EDGE_S := 4
+const EDGE_W := 8
+## 出生营地现有门前、行商与南侧开口的步道中心线。仅地表色块，无导航含义。
+const CAMP_PATHS := [
+	[Vector2(0, -178), Vector2(12, -80), 24.0],
+	[Vector2(12, -80), Vector2(-22, 90), 26.0],
+	[Vector2(-22, 90), Vector2(10, 220), 26.0],
+	[Vector2(10, 220), Vector2(-24, 390), 24.0],
+	[Vector2(-310, -25), Vector2(-180, 0), 24.0],
+	[Vector2(-180, 0), Vector2(12, -45), 24.0],
+	[Vector2(12, -45), Vector2(180, -15), 24.0],
+	[Vector2(180, -15), Vector2(300, -10), 22.0],
+	[Vector2(300, -10), Vector2(430, -25), 22.0],
+	[Vector2(6, -150), Vector2(110, -130), 22.0],
+	[Vector2(110, -130), Vector2(215, -145), 22.0],
+	[Vector2(85, -28), Vector2(100, 48), 20.0],
+]
 
 static var _sources := {}
-## terrain → 烘焙迷你图集（alpha=1，基础瓦）
-static var _atlases := {}
-## terrain → Array[Image]（OVERLAY_ALPHAS 对应的叠绘变体）
-static var _overlays := {}
-## 水岸内侧 2px 暗带（横/竖细条，黑色半透明）
-static var _strip_h: Image
-static var _strip_v: Image
+static var _surfaces := {} # terrain → 三槽 32px 原图材质
+static var _patch_edges := {} # terrain → 16 邻接轮廓 × 4 世界纹理相位
+static var _water_edges := {} # terrain → 水面 + 原图轮廓岸边
+static var _overlays := {} # terrain → 次群系地被渐变色阶
 static var _ready := false
+static var _edge_depths := PackedInt32Array()
 
 
-## 主线程初始化（load 图集 + 烘焙）。幂等。源 64px 瓦 ÷4 缩到 16px 世界格。
+## 主线程初始化（load 图集 + 烘焙）。幂等；工作线程只读约 1.4MiB 材质缓存。
 static func ensure_atlases() -> void:
 	if _ready:
 		return
-	_ready = true
 	for key: String in SOURCES:
 		var img := (load(SOURCES[key]) as Texture2D).get_image()
-		img.resize(img.get_width() / 4, img.get_height() / 4, Image.INTERPOLATE_NEAREST)
+		# 原图 64px 瓦缩到 32px：与 TS 角色/树的像素粒度一致。
+		img.resize(img.get_width() / 2, img.get_height() / 2, Image.INTERPOLATE_NEAREST)
 		_sources[key] = img
-	var cells := _atlas_cells()
-	var rows := (cells.size() + ATLAS_COLS - 1) / ATLAS_COLS
+	_edge_depths.resize(TEXTURE_SIZE)
+	for x in TEXTURE_SIZE:
+		_edge_depths[x] = 2
+		for y in 6:
+			if (_sources["main"] as Image).get_pixel(TEXTURE_SIZE + x, y).a > 0.5:
+				_edge_depths[x] = clampi(y + 1, 1, 3)
+				break
 	for terrain: String in RULES:
-		var atlas := _build_atlas(cells, rows, RULES[terrain].get("bake", {}))
-		_atlases[terrain] = atlas
+		var surface := _build_surface(terrain)
+		_surfaces[terrain] = surface
+		_patch_edges[terrain] = _build_edges(terrain, surface, false)
+		_water_edges[terrain] = _build_edges(terrain, surface, true)
 		var steps: Array = []
-		for f: float in OVERLAY_ALPHAS:
-			steps.append(_with_alpha(atlas, f))
+		for alpha: float in OVERLAY_ALPHAS:
+			steps.append(_with_alpha(surface, alpha))
 		_overlays[terrain] = steps
-	_strip_h = _black_strip(Vector2i(TS, 4))
-	_strip_v = _black_strip(Vector2i(4, TS))
+	_ready = true
 
 
-## 绘制一个世界坐标块：origin 为块左上角世界像素（TS 的倍数），tiles 为边长瓦数。
-## 返回 RGBA8 Image（调用方在主线程转 ImageTexture）。确定性：同参数同结果。
+## 世界取样加一圈邻格；边界、岸线和纹理相位均不依赖块的大小与加载顺序。
 static func paint_chunk(origin: Vector2i, tiles: int) -> Image:
 	ensure_atlases()
-	var size_px := tiles * TS
-	# 材质图带 1 瓦边距（水岸判定需要邻瓦；边距瓦只供查询不绘制）
 	var dim := tiles + 2
 	var terr1 := PackedStringArray()
 	var terr2 := PackedStringArray()
+	var mat1 := PackedInt32Array()
+	var wet := PackedByteArray()
+	var mix := PackedFloat32Array()
 	terr1.resize(dim * dim)
 	terr2.resize(dim * dim)
-	var mat1 := PackedInt32Array()
 	mat1.resize(dim * dim)
-	var mix := PackedFloat32Array()
+	wet.resize(dim * dim)
 	mix.resize(dim * dim)
-	var base_gtx := origin.x / TS
-	var base_gty := origin.y / TS
+	var base_gtx := floori(float(origin.x) / TS)
+	var base_gty := floori(float(origin.y) / TS)
 	for ty in dim:
 		for tx in dim:
-			var center := Vector2(
-				float(origin.x + (tx - 1) * TS + TS / 2),
-				float(origin.y + (ty - 1) * TS + TS / 2))
-			var field := BiomeMap.field_at(center)
-			var t1: String = BiomeMap.terrain_of_patch(field["id1"])
-			var t2: String = BiomeMap.terrain_of_patch(field["id2"])
-			var idx := ty * dim + tx
-			terr1[idx] = t1
-			terr2[idx] = t2
 			var gtx := base_gtx + tx - 1
 			var gty := base_gty + ty - 1
+			var center := Vector2(gtx * TS + TS / 2, gty * TS + TS / 2)
+			var field := BiomeMap.field_at(center)
+			var idx := ty * dim + tx
+			var t1 := BiomeMap.terrain_of_patch(field["id1"])
+			terr1[idx] = t1
+			terr2[idx] = BiomeMap.terrain_of_patch(field["id2"])
 			mat1[idx] = _material(t1, gtx, gty, center, field["id1"])
+			wet[idx] = int(mat1[idx] == 2 or (mat1[idx] == 1 and t1 == "swamp"))
 			var dd := sqrt(float(field["d2"])) - sqrt(float(field["d1"]))
 			mix[idx] = clampf(1.0 - dd / BLEND_PX, 0.0, 1.0) * 0.5
-	# 铺瓦：主导群系基础瓦 + 交界处次群系叠瓦
-	var img := Image.create(size_px, size_px, false, Image.FORMAT_RGBA8)
+	var img := Image.create(tiles * TS, tiles * TS, false, Image.FORMAT_RGBA8)
 	for ty in tiles:
 		for tx in tiles:
-			var idx := (ty + 1) * dim + (tx + 1)
-			var t1: String = terr1[idx]
-			var m := mat1[idx]
-			var gtx := base_gtx + tx
-			var gty := base_gty + ty
-			var rule: Dictionary = RULES[t1]
-			var kind := _kind_of(rule, m)
-			var cell := _cell_rect(_pick(kind, gtx, gty, rule["seedv"]))
+			var idx := (ty + 1) * dim + tx + 1
+			var t1 := terr1[idx]
+			var phase := posmod(base_gtx + tx, 2) + posmod(base_gty + ty, 2) * 2
 			var dst := Vector2i(tx * TS, ty * TS)
-			img.blit_rect(_atlases[t1], cell, dst)
-			# 群系交融：次斑块瓦按权重阶梯叠绘（权重 0.15~0.5）
-			var w: float = mix[idx]
-			var t2: String = terr2[idx]
-			if w >= 0.15 and t2 != t1:
-				var rule2: Dictionary = RULES[t2]
-				var kind2 := _kind_of(rule2, mat1[idx])
-				var cell2 := _cell_rect(_pick(kind2, gtx, gty, rule2["seedv"]))
-				var step := 0 if w < 0.34 else 1
-				img.blend_rect((_overlays[t2] as Array)[step], cell2, dst)
-			# 水岸：水瓦贴着非水瓦的内侧 2~4px 暗带
-			if m == 2:
-				if mat1[idx - 1] != 2:
-					img.blend_rect(_strip_v, Rect2i(0, 0, 4, TS), dst)
-				if mat1[idx + 1] != 2:
-					img.blend_rect(_strip_v, Rect2i(0, 0, 4, TS), dst + Vector2i(TS - 4, 0))
-				if mat1[idx - dim] != 2:
-					img.blend_rect(_strip_h, Rect2i(0, 0, TS, 4), dst)
-				if mat1[idx + dim] != 2:
-					img.blend_rect(_strip_h, Rect2i(0, 0, TS, 4), dst + Vector2i(0, TS - 4))
-	# 碎斑散点：簇状暗点成团（水面不撒），密度与旧整图口径一致（80 簇/77 万 px²）
-	var rng := RandomNumberGenerator.new()
-	rng.seed = (absi(origin.x) * 73856093) ^ (absi(origin.y) * 19349663)
-	var clusters := maxi(2, int(round(80.0 * float(size_px * size_px) / 770000.0)))
-	for c in clusters:
-		var cx := rng.randi_range(10, size_px - 11)
-		var cy := rng.randi_range(10, size_px - 11)
-		for i in rng.randi_range(18, 46):
-			var sx := clampi(cx + rng.randi_range(-7, 7), 4, size_px - 5)
-			var sy := clampi(cy + rng.randi_range(-5, 5), 4, size_px - 5)
-			if mat1[(sy / TS + 1) * dim + sx / TS + 1] == 2:
-				continue
-			if rng.randf() < 0.55:
-				img.set_pixel(sx, sy, img.get_pixel(sx, sy).darkened(0.06))
+			var material := mat1[idx]
+			if wet[idx] != 0:
+				var edges := _edge_mask(wet, idx, dim, 1)
+				img.blit_rect(_water_edges[t1], _edge_rect(edges, phase), dst)
+			else:
+				img.blit_rect(_surfaces[t1], _surface_rect(0, phase), dst)
+				if material == 1:
+					var edges := _edge_mask(mat1, idx, dim, 1)
+					img.blend_rect(_patch_edges[t1], _edge_rect(edges, phase), dst)
+			# 跨群系只交融地被色板，不把次群系的水画到主群系可行地面上。
+			# 真水/熔岩岸线维持权威液体口径，不做跨岸 alpha 污染。
+			var w := mix[idx]
+			if w >= 0.03125 and terr2[idx] != t1 and wet[idx] == 0:
+				var step := clampi(int(round(w * 16.0)) - 1, 0, OVERLAY_ALPHAS.size() - 1)
+				var center := Vector2((base_gtx + tx) * TS + TS / 2,
+					(base_gty + ty) * TS + TS / 2)
+				var secondary := _ground_material(terr2[idx], base_gtx + tx, base_gty + ty, center)
+				img.blend_rect((_overlays[terr2[idx]] as Array)[step],
+					_surface_rect(secondary, phase), dst)
 	return img
+
+
+static func _edge_mask(values: Variant, idx: int, dim: int, match_value: int) -> int:
+	return (EDGE_N if values[idx - dim] != match_value else 0) \
+		| (EDGE_E if values[idx + 1] != match_value else 0) \
+		| (EDGE_S if values[idx + dim] != match_value else 0) \
+		| (EDGE_W if values[idx - 1] != match_value else 0)
+
+
+static func _surface_rect(material: int, phase: int) -> Rect2i:
+	return Rect2i(material * TEXTURE_SIZE + (phase % 2) * TS, (phase / 2) * TS, TS, TS)
+
+
+static func _edge_rect(edges: int, phase: int) -> Rect2i:
+	return Rect2i(edges * TS, phase * TS, TS, TS)
+
+
+## 用原草地内部的明暗形状映射六群系色板；源图轮廓绝不进入平地填充。
+static func _build_surface(terrain: String) -> Image:
+	var out := Image.create(TEXTURE_SIZE * 3, TEXTURE_SIZE, false, Image.FORMAT_RGBA8)
+	var grass: Image = _sources["main"]
+	var water: Image = _sources["water"]
+	for material in 3:
+		var palette: Array = SURFACE_PALETTES[terrain][material]
+		var dark := Color(palette[0])
+		var light := Color(palette[1])
+		for y in TEXTURE_SIZE:
+			for x in TEXTURE_SIZE:
+				var pixel := grass.get_pixel(x + TEXTURE_SIZE, y + TEXTURE_SIZE)
+				var tone := clampf((pixel.v - 0.50) / 0.24, 0.0, 1.0)
+				if material == 2 or (terrain == "swamp" and material == 1):
+					# 水底沿用 TS 原图；少量原草纹低幅叠入，避免液体成为纯色块。
+					var wave := water.get_pixel(x % water.get_width(), y % water.get_height())
+					tone = clampf(wave.v * 0.60 + tone * 0.18, 0.0, 1.0)
+				out.set_pixel(material * TEXTURE_SIZE + x, y, dark.lerp(light, tone))
+	return out
+
+
+## 原图顶部叶簇轮廓提供 1~3px 不规则边，不绘制悬崖/黑方框。
+static func _shore_depth(at: int) -> int:
+	return _edge_depths[posmod(at, TEXTURE_SIZE)]
+
+
+static func _build_edges(terrain: String, surface: Image, water: bool) -> Image:
+	var out := Image.create(16 * TS, 4 * TS, false, Image.FORMAT_RGBA8)
+	for phase in 4:
+		for edges in 16:
+			for y in TS:
+				for x in TS:
+					var sx := (phase % 2) * TS + x
+					var sy := (phase / 2) * TS + y
+					var distance := 99
+					if edges & EDGE_N: distance = mini(distance, y - _shore_depth(sx))
+					if edges & EDGE_E: distance = mini(distance, TS - 1 - x - _shore_depth(sy))
+					if edges & EDGE_S: distance = mini(distance, TS - 1 - y - _shore_depth(sx))
+					if edges & EDGE_W: distance = mini(distance, x - _shore_depth(sy))
+					var color := surface.get_pixel(TEXTURE_SIZE + sx, sy)
+					if water:
+						color = surface.get_pixel(TEXTURE_SIZE * 2 + sx, sy)
+						if distance < 0:
+							color = surface.get_pixel(sx, sy)
+						elif distance <= 1:
+							# 陆缘厚度与像素纹理都来自真实地被，区别于旧黑色矩形条。
+							color = surface.get_pixel(sx, sy).darkened(0.15)
+						elif distance <= 4:
+							# 浅岸是可见液体内部的一小段，不移动权威水位/碰撞线。
+							if terrain == "lava":
+								color = color.lerp(Color("ffca70"), 0.58 - float(distance) * 0.06)
+							else:
+								color = color.lerp(surface.get_pixel(sx, sy), 0.62 - float(distance) * 0.06)
+						elif distance == 5:
+							color = color.lightened(0.12)
+					else:
+						# 草/土是同一高度的可行地面，以半透明绒边过渡，不加墙边。
+						color.a = clampf(float(distance + 1) / 3.0, 0.0, 1.0)
+					out.set_pixel(edges * TS + x, phase * TS + y, color)
+	return out
+
+
+## 出生点只画现有通路；不会拓路、移动障碍或赋予任何可达性保证。
+static func is_camp_path(pos: Vector2) -> bool:
+	var relative := pos - BiomeMap.spawn_pos()
+	if absf(relative.x) > 480.0 or relative.y < -240.0 or relative.y > 450.0:
+		return false
+	for line: Array in CAMP_PATHS:
+		var nearest := Geometry2D.get_closest_point_to_segment(relative, line[0], line[1])
+		if relative.distance_squared_to(nearest) <= float(line[2]) * float(line[2]):
+			return true
+	return false
 
 
 ## 材质图采样：0=base 1=patch 2=water（全局瓦坐标连续）。
 ## 液体层真源在 ObstacleField.liquid_kind_in（世界 v5 起与阻挡/灼烧判定同源，
-## 抑制区同口径——可见水与可行区不再两张皮；RULES 的 water/water_thr 键废弃留档）
+## 抑制区同口径——可见水与可行区不再两张皮）
 static func _material(terrain: String, gtx: int, gty: int, center: Vector2,
 		patch_id: String) -> int:
+	if ObstacleField.liquid_kind_in(terrain, center, patch_id) != "":
+		return 2
+	return _ground_material(terrain, gtx, gty, center)
+
+
+## 次群系用自己的地被配方，禁止把主群系材质编号直接套给次群系。
+static func _ground_material(terrain: String, gtx: int, gty: int, center: Vector2) -> int:
 	var rule: Dictionary = RULES[terrain]
 	var seedv: int = rule["seedv"]
-	var macro := _fbm(float(gtx) / 8.5, float(gty) / 8.5, seedv, 3)
+	var macro := _fbm(float(gtx) / 22.0, float(gty) / 22.0, seedv, 3)
 	var m := 0
-	if macro >= float(rule["patch_thr"]):
+	var threshold := float(rule["patch_thr"])
+	if terrain == "plains":
+		# 安全营地以草坪衬托建筑，天然裸地在外围渐回；不把小路并进巨大泥斑。
+		var camp_distance := center.distance_to(BiomeMap.spawn_pos())
+		threshold += 0.45 * clampf((1100.0 - camp_distance) / 500.0, 0.0, 1.0)
+	if macro >= threshold:
 		m = 1
-	if ObstacleField.liquid_kind_in(terrain, center, patch_id) != "":
-		m = 2
+	if terrain == "plains" and is_camp_path(center):
+		m = 1
 	return m
-
-
-static func _kind_of(rule: Dictionary, m: int) -> int:
-	var name: String = rule["base"] if m == 0 else (rule["patch"] if m == 1 else "water")
-	match name:
-		"grass":
-			return KIND_GRASS
-		"dirt":
-			return KIND_DIRT
-		"ice":
-			return KIND_ICE
-		_:
-			return KIND_WATER
-
-
-## 按材质选瓦：哈希挑填充变体；低概率换细节瓦（花簇/裂纹）打破重复
-static func _pick(kind: int, gtx: int, gty: int, seedv: int) -> int:
-	var v := _hash2(gtx, gty, seedv + 3)
-	var detail: Array = KIND_DETAILS.get(kind, [])
-	if v > 0.93 and not detail.is_empty():
-		return detail[0] + int(_hash2(gtx, gty, seedv + 4) * detail[1])
-	var range_: Array = KIND_RANGES[kind]
-	return range_[0] + int(_hash2(gtx, gty, seedv + 5) * range_[1])
-
-
-static func _cell_rect(cell: int) -> Rect2i:
-	return Rect2i((cell % ATLAS_COLS) * TS, (cell / ATLAS_COLS) * TS, TS, TS)
 
 
 # --- 图集烘焙 ---
 
-## 迷你图集源格序列（六组瓦表按序拼接，索引即 KIND_RANGES 的坐标系）
+## 主菜单旧图集源格序列（帧资产契约保留；运行时不用这些旧索引）
 static func _atlas_cells() -> Array:
 	var cells: Array = []
 	cells.append_array(GRASS_FILL)
@@ -260,43 +312,6 @@ static func _atlas_cells() -> Array:
 	return cells
 
 
-## 从各源图集抽取用到的瓦组成迷你图集，再按色桶规则 HSV 烘焙（群系氛围）。
-## 色桶区间按 TS 素材实测色相标定（草 0.21-0.25 / 泥 0.44 / 水 0.50 青）
-static func _build_atlas(cells: Array, rows: int, bake: Dictionary) -> Image:
-	var atlas := Image.create(ATLAS_COLS * TS, rows * TS, false, Image.FORMAT_RGBA8)
-	for idx in cells.size():
-		var spec: Array = cells[idx]
-		var img: Image = _sources[spec[0]]
-		var cell: Vector2i = spec[1]
-		atlas.blit_rect(img, Rect2i(cell.x * TS, cell.y * TS, TS, TS),
-			Vector2i((idx % ATLAS_COLS) * TS, (idx / ATLAS_COLS) * TS))
-	if bake.is_empty():
-		return atlas
-	for y in atlas.get_height():
-		for x in atlas.get_width():
-			var c: Color = atlas.get_pixel(x, y)
-			if c.a <= 0.0:
-				continue
-			var bucket := ""
-			if c.s < 0.14:
-				bucket = "ice" if c.v > 0.78 else ""
-			elif 0.48 <= c.h and c.h < 0.72:
-				bucket = "water"
-			elif 0.16 <= c.h and c.h < 0.40:
-				bucket = "grass"
-			else:
-				bucket = "dirt"
-			var rule: Dictionary = bake.get(bucket, {})
-			if rule.is_empty():
-				continue
-			atlas.set_pixel(x, y, Color.from_hsv(
-				fposmod(c.h + rule.get("hue", 0.0), 1.0),
-				clampf(c.s * rule.get("sat", 1.0), 0.0, 1.0),
-				clampf(c.v * rule.get("val", 1.0), 0.0, 1.0),
-				c.a))
-	return atlas
-
-
 ## 图集整体乘 alpha（交界叠绘变体）
 static func _with_alpha(src: Image, factor: float) -> Image:
 	var out := src.duplicate()
@@ -306,13 +321,6 @@ static func _with_alpha(src: Image, factor: float) -> Image:
 			if c.a > 0.0:
 				out.set_pixel(x, y, Color(c.r, c.g, c.b, c.a * factor))
 	return out
-
-
-## 水岸暗带细条（黑色半透明）
-static func _black_strip(sz: Vector2i) -> Image:
-	var img := Image.create(sz.x, sz.y, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0.35))
-	return img
 
 
 # --- 确定性噪声（与 generate_terrain / BiomeMap 同源实现） ---

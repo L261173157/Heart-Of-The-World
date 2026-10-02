@@ -124,6 +124,8 @@ var _enrage_timer := 0.0
 const ENRAGE_TIME := 60.0
 const ENRAGE_DETECT_MULT := 1.8
 var _knockback := Vector2.ZERO
+## 外力只接受短窗首击，后续伤害/AI照常处理，避免碎弹持续刷新位移。
+var _knockback_rearm := 0.0
 var _patrol_target := Vector2.ZERO
 var _patrol_wait := 0.0
 var _patrol_target_valid := false
@@ -377,6 +379,7 @@ func body_k() -> float:
 
 
 func _physics_process(delta: float) -> void:
+	_knockback_rearm = maxf(0.0, _knockback_rearm - delta)
 	if state == S_CORPSE:
 		velocity = Vector2.ZERO
 		return
@@ -455,7 +458,7 @@ func _near_tick(delta: float, player: Node2D) -> void:
 			_extra_state_tick(delta, player)
 
 	var has_impulse := _knockback.length_squared() > 0.01
-	velocity += _knockback
+	velocity = _velocity_with_impact(velocity)
 	_knockback = _knockback.move_toward(Vector2.ZERO, KNOCKBACK_DECAY * delta)
 	# 击退是短暂外力，不交给 RVO 的普通行走限速/避让抵消（实测会吞成零位移）。
 	# 仍经真实身体 move_and_slide 抵墙，AI/前摇计时照常运行，不新增硬直状态。
@@ -501,7 +504,7 @@ func _far_tick(delta: float, player: Node2D) -> void:
 			_chase_tick(delta, player)
 		S_MIGRATING:
 			_migrate_tick()
-	velocity += _knockback
+	velocity = _velocity_with_impact(velocity)
 	_knockback = _knockback.move_toward(Vector2.ZERO, KNOCKBACK_DECAY * delta)
 	_far_move(velocity * delta)
 	_snap_visual_to_body()
@@ -743,9 +746,15 @@ func take_damage(amount: float, from_position := Vector2.INF, p_heavy := false,
 		var dir := (global_position - from_position).normalized()
 		if dir == Vector2.ZERO:
 			dir = Vector2.UP
-		var impulse := dir * CombatMath.KNOCKBACK_BASE * (1.0 - resist) * (2.0 if p_heavy else 1.0) * p_knock_mult
-		# 同帧多来源只保留最强一次的速度包络，不累计把怪弹出近战范围。
-		_knockback = (_knockback + impulse).limit_length(maxf(_knockback.length(), impulse.length()))
+		var speed := CombatMath.KNOCKBACK_BASE * (1.0 - resist) \
+				* (CombatMath.KNOCKBACK_HEAVY_MULT if p_heavy else 1.0) * maxf(0.0, p_knock_mult)
+		var limit := CombatMath.KNOCKBACK_BOSS_MAX_SPEED if inst.species.is_boss \
+				else CombatMath.KNOCKBACK_MAX_SPEED
+		speed = minf(speed, limit)
+		# 极小外力只留下接触火花，不让高抗性/Boss的脚点亚像素抖动。
+		if speed >= CombatMath.KNOCKBACK_MIN_SPEED and _knockback_rearm <= 0.0:
+			_knockback = dir * speed
+			_knockback_rearm = CombatMath.KNOCKBACK_RETRIGGER
 	_on_taken_damage(dealt, from_position)
 	# 仇恨连锁：同物种邻近个体会来支援（火把哥布林/骷髅兵实现支援半径）
 	notify_allies_hit(inst.species.species_name, global_position)
@@ -763,6 +772,16 @@ func _show_impact(from_position: Vector2, heavy: bool, effective: bool) -> void:
 	if dir == Vector2.ZERO:
 		dir = Vector2.UP
 	_impact_feedback.trigger(-dir * clampf(body_k() * 9.0, 6.0, 18.0), dir, heavy, effective)
+
+
+## AI依然计时/出招，仅在短外力存续期移除迎着击退的移动分量。
+## 原实现追击速度直接抵消击退，表现成“有数值、身体没有后退”。
+func _velocity_with_impact(ai_velocity: Vector2) -> Vector2:
+	if _knockback.is_zero_approx():
+		return ai_velocity
+	var direction := _knockback.normalized()
+	var opposing := minf(0.0, ai_velocity.dot(direction))
+	return ai_velocity - direction * opposing + _knockback
 
 
 ## 生态迁移：模拟层归属与据点已瞬间切换（p_dest = 新营地位置，缺省回退
@@ -810,6 +829,7 @@ func on_sim_death() -> void:
 	state = S_CORPSE
 	velocity = Vector2.ZERO
 	_knockback = Vector2.ZERO
+	_knockback_rearm = 0.0
 	if _impact_feedback != null:
 		_impact_feedback.clear()
 	_action_anim_timer = 0.0  # 让出招/受击压制立即让位给尸体表现

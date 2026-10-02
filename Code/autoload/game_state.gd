@@ -24,10 +24,12 @@ var world_seed: int = BiomeMap.DEFAULT_SEED
 ## 25 bytes/行 × 200 行 = 5KB）。空数组 = 全图未探索（懒分配）
 const FOG_GRID := 200
 var explored := PackedByteArray()
+## 细探索独立稀疏保存；粗图继续服务旧任务线索与旧档兼容。
+var exploration := ExplorationFog.new(BiomeMap.DEFAULT_SEED)
 ## 迷雾改动计数（小地图纹理增量重建的脏标记；_test 也可复位）
 var fog_version := 0
-## 新揭示格列表（小地图增量更新消费后清空——揭示只增不减，跑图期间
-## 全量 4 万像素重建是移动尖峰，改为只写脏格；真机性能优化 2026-09-19）
+## 旧粗图新揭示格（最多4万格）；观察者只读，不能清空其他模块的探索通知。
+## 新局部地图依赖fog_version与稀疏细图，不再构建全世界纹理。
 var fog_dirty: Array[Vector2i] = []
 ## 已发现地标 id 列表（lm_{patch}_{k}，确定性 id 随种子稳定）
 var discovered_landmarks: Array[String] = []
@@ -458,6 +460,14 @@ func fog_is_explored(gx: int, gy: int) -> bool:
 
 
 func fog_reveal_cell(gx: int, gy: int) -> void:
+	# 显式旧API表示整粗格已经知道；世界移动必须走fog_reveal_position。
+	_ensure_exploration()
+	exploration.remember_legacy_cell(Vector2i(gx, gy))
+	_fog_mark_coarse(gx, gy)
+	fog_version += 1
+
+
+func _fog_mark_coarse(gx: int, gy: int) -> void:
 	gx = clampi(gx, 0, FOG_GRID - 1)
 	gy = clampi(gy, 0, FOG_GRID - 1)
 	if explored.is_empty():
@@ -467,6 +477,30 @@ func fog_reveal_cell(gx: int, gy: int) -> void:
 	if explored[row] & bit == 0:
 		explored[row] = explored[row] | bit
 		fog_dirty.append(Vector2i(gx, gy))
+
+
+func _ensure_exploration() -> void:
+	if exploration.seed != world_seed:
+		exploration = ExplorationFog.new(world_seed)
+
+
+func fog_knows_position(pos: Vector2) -> bool:
+	if exploration.seed != world_seed or not pos.is_finite():
+		return false
+	return exploration.is_explored(pos)
+
+
+func fog_reveal_position(pos: Vector2) -> bool:
+	_ensure_exploration()
+	var added := exploration.reveal(pos)
+	for cell: Vector2i in added:
+		var coarse := fog_cell_of((Vector2(cell) + Vector2.ONE * 0.5) * ExplorationFog.CELL)
+		_fog_mark_coarse(coarse.x, coarse.y)
+	if added.is_empty():
+		return false
+	fog_version += 1
+	_queue_save()
+	return true
 
 
 ## 世界坐标 → 迷雾格坐标
@@ -522,6 +556,8 @@ func reset_all() -> void:
 	BiomeMap.configure(world_seed)
 	ObstacleField.restore_destroyed([])
 	explored = PackedByteArray()
+	exploration = ExplorationFog.new(world_seed)
+	fog_version += 1
 	fog_dirty.clear()
 	discovered_landmarks = []
 	discovered_checkpoints = []
@@ -676,6 +712,8 @@ func save_now(include_ecology := true) -> bool:
 	# 探索进度（世界 v5）：迷雾位图（base64 存 PackedByteArray）+ 已发现地标
 	if not explored.is_empty():
 		data["explored"] = Marshalls.raw_to_base64(explored)
+	_ensure_exploration()
+	data["exploration_v2"] = exploration.to_dict()
 	if not discovered_landmarks.is_empty():
 		data["landmarks"] = discovered_landmarks.duplicate()
 	if not discovered_checkpoints.is_empty():
@@ -900,10 +938,10 @@ func _load() -> void:
 	stats.passives = {}
 	if typeof(saved_passives) == TYPE_DICTIONARY:
 		for key in saved_passives:
-			if typeof(key) == TYPE_STRING:
+			if typeof(key) == TYPE_STRING and CharacterStats.passive_known(key):
 				var lv := _safe_int(saved_passives[key], 0)
 				if lv > 0:
-					stats.passives[key] = lv
+					stats.passives[key] = mini(lv, 1) if key in CharacterStats.WEAPON_PASSIVES else lv
 	# v1-v6 每级恰有一次赐福，但待领取次数仅在旧 HUD 内存中。
 	# 用「已升等级 - 已持有被动等级之和」补回遗失资格；保留全部既有被动，
 	# 已领取的不会再发。v7 的显式剩余次数为真源，不能每次读档重新推算。
@@ -1013,11 +1051,15 @@ func _load() -> void:
 	# 探索进度（v4+）：坏值静默回退"全未探索/零发现"——迷雾只是表现，不值得坏档
 	var saved_fog: Variant = data.get("explored", "")
 	explored = PackedByteArray()
+	exploration = ExplorationFog.new(world_seed)
+	fog_version += 1
 	fog_dirty.clear()
 	if typeof(saved_fog) == TYPE_STRING and saved_fog != "":
-		var decoded := Marshalls.base64_to_raw(saved_fog)
+		var decoded := ExplorationFog.decode_bitmap(saved_fog, FOG_GRID * 25)
 		if decoded.size() == FOG_GRID * 25:
 			explored = decoded
+	exploration.restore(data.get("exploration_v2") if data.get("exploration_v2") != null else \
+		({} if data.has("exploration_v2") else null), explored)
 	discovered_landmarks = []
 	discovered_checkpoints = []
 	destroyed_cells = []

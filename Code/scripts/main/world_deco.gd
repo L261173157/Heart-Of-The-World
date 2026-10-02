@@ -13,7 +13,7 @@ extends Node2D
 ## 只有柔软地被留在无碰撞装饰层。硬树/岩一律由 ObstacleField 生成，
 ## 避免外观相同却一棵可穿、一棵挡路；装饰尺寸不再制造迷你树。
 const RECIPES := {
-	"plains": {"grass": 20, "bush": 12, "mushroom": 4},
+	"plains": {"grass": 20, "bush": 12, "mushroom": 2},
 	"forest": {"mushroom": 12, "grass": 8, "bush": 16},
 	"snow": {"snowpile": 14, "bush": 6},
 	"swamp": {"cattail": 10, "mushroom": 10, "puddle": 10, "bush": 8},
@@ -21,11 +21,11 @@ const RECIPES := {
 	"lava": {"gems": 5, "skullspike": 6},
 }
 
-## 每块（512²）道具件数：与旧"每区域配方"密度同口径
-## （旧图 1100×700≈77 万 px²，块 26.2 万 px²，约 1/3 密度取整）
-const CHUNK_PROPS := 13
-## 撒布簇心数（70% 道具围绕簇心成团）
-const CHUNK_CLUSTERS := 3
+## 每块最多 16 个候选点，密度、材质和通路过滤后约 5~12 件软地被。
+const CHUNK_PROPS := 16
+const DECO_GRID := 128
+const TERRAIN_DENSITY := {"plains": 0.72, "forest": 0.90, "snow": 0.58,
+	"swamp": 0.75, "hill": 0.62, "lava": 0.48}
 ## 环境粒子跟随/切换的轮询间隔
 const AMBIENT_POLL := 0.5
 
@@ -120,25 +120,16 @@ func _on_chunk_ready(origin: Vector2i) -> void:
 	if _by_chunk.has(_key(origin)):
 		return
 	var rng := RandomNumberGenerator.new()
-	rng.seed = (absi(origin.x) * 73856093) ^ (absi(origin.y) * 19349663) ^ 0x5DEC0
-	var rect := Rect2(Vector2(origin), Vector2.ONE * 512.0)
-	var clusters: Array[Vector2] = []
-	for i in CHUNK_CLUSTERS:
-		clusters.append(rect.position + Vector2(
-			rng.randf_range(60.0, 452.0), rng.randf_range(60.0, 452.0)))
+	# 全局 128px 候选格：块边界不是生态边界，重载与跨块不重抽簇心。
+	rng.seed = (origin.x * 73856093) ^ (origin.y * 19349663) ^ BiomeMap.current_seed() ^ 0x5DEC0
 	var layer := DecoLayer.new()
 	layer.z_index = DECO_Z
 	var points := PackedVector2Array()
 	var colors := PackedColorArray()
 	var polys: Array = []
-	for i in CHUNK_PROPS:
-		var pos: Vector2
-		if rng.randf() < 0.7 and not clusters.is_empty():
-			pos = clusters[rng.randi() % clusters.size()] + Vector2(
-				rng.randf_range(-110.0, 110.0), rng.randf_range(-90.0, 90.0))
-		else:
-			pos = rect.position + Vector2(rng.randf_range(20.0, 492.0), rng.randf_range(20.0, 492.0))
-		if ObstacleField.blocks(pos, 18.0) or ObstacleField._in_interior_pocket(pos):
+	for pos: Vector2 in decoration_points(origin):
+		if ObstacleField.blocks(pos, 18.0) or ObstacleField._in_interior_pocket(pos) \
+				or TerrainPainter.is_camp_path(pos) or ObstacleField.liquid_kind_at(pos) != "":
 			continue
 		var camp_delta := pos - WorldConfig.spawn_pos()
 		if absf(camp_delta.x) < 130.0 and absf(camp_delta.y) < 340.0:
@@ -149,11 +140,18 @@ func _on_chunk_ready(origin: Vector2i) -> void:
 		if recipe.is_empty():
 			continue
 		var kind := _pick_kind(recipe, rng)
-		var s := rng.randf_range(0.8, 1.25)
+		var material := TerrainPainter._material(terrain, floori(pos.x / 16.0),
+			floori(pos.y / 16.0), pos, BiomeMap.region_id_at(pos))
+		# 裸地让出行走/战斗空间；香蒲集中在浅滩，其他地被沿干岸与草地生长。
+		if material == 1 and terrain != "swamp" and kind in ["grass", "bush", "mushroom"]:
+			continue
+		if terrain == "swamp" and ((kind == "cattail") != (material == 1)):
+			continue
+		var s := rng.randf_range(0.9, 1.1)
 		# 统一落影：脚下半透明椭圆，让地物"站"在地上（立体感的关键一招）；细软小道具收窄
 		var sw := (6.0 if kind in SMALL_SHADOW_KINDS else 10.0) * s
 		_bake_poly([Vector2(-sw, 0), Vector2(-sw * 0.5, -3), Vector2(sw * 0.5, -3), Vector2(sw, 0),
-				Vector2(sw * 0.5, 3), Vector2(-sw * 0.5, 3)], Color(0, 0, 0, 0.28), pos, 0.0, s, points, colors, polys)
+				Vector2(sw * 0.5, 3), Vector2(-sw * 0.5, 3)], Color(0, 0, 0, 0.14), pos, 0.0, s, points, colors, polys)
 		if kind in TEXTURE_KINDS:
 			var item := _texture_item(kind, rng, pos, s)
 			if not item.is_empty():
@@ -163,7 +161,8 @@ func _on_chunk_ready(origin: Vector2i) -> void:
 			var poly_sp := _deco_sprite(kind)
 			if poly_sp != null:
 				layer.items.append({"pos": pos, "s": s,
-					"flip": rng.randf() < 0.5, "mod": Color.WHITE, "sprite": poly_sp})
+					"flip": rng.randf() < 0.5, "mod": Color.WHITE, "sprite": poly_sp,
+					"h": 18.0 if kind == "snowpile" or kind == "puddle" else 24.0})
 			else:
 				_bake_deco(kind, rng, pos, points, colors, polys)
 	var entry := {"layer": null, "baked": null}
@@ -179,6 +178,25 @@ func _on_chunk_ready(origin: Vector2i) -> void:
 		add_child(baked)
 		entry["baked"] = baked
 	_by_chunk[_key(origin)] = entry
+
+
+## 按世界坐标采样的低频密度：空地和密簇跨块连续，每件都归自己的半开格。
+static func decoration_points(origin: Vector2i) -> Array[Vector2]:
+	var result: Array[Vector2] = []
+	var base := Vector2i(floori(float(origin.x) / DECO_GRID), floori(float(origin.y) / DECO_GRID))
+	for y in 4:
+		for x in 4:
+			var cell := base + Vector2i(x, y)
+			var seedv := BiomeMap.current_seed() ^ 0x5DEC0
+			var pos := (Vector2(cell) + Vector2(0.5, 0.5)) * DECO_GRID
+			pos += Vector2(TerrainPainter._hash2(cell.x, cell.y, seedv) - 0.5,
+				TerrainPainter._hash2(cell.x, cell.y, seedv + 1) - 0.5) * 84.0
+			var terrain := BiomeMap.terrain_at(pos)
+			var cluster := TerrainPainter._vnoise(pos.x / 440.0, pos.y / 440.0, seedv + 2)
+			var density: float = TERRAIN_DENSITY.get(terrain, 0.5) * lerpf(0.5, 1.25, cluster)
+			if TerrainPainter._hash2(cell.x, cell.y, seedv + 3) < density:
+				result.append(pos.round())
+	return result
 
 
 func _on_chunk_freed(origin: Vector2i) -> void:
@@ -277,7 +295,13 @@ func _texture_item(kind: String, rng: RandomNumberGenerator, pos: Vector2, s: fl
 	var src_key := kind
 	var mod := Color.WHITE
 	var scale_mult := 1.0
-	var h := 0.0
+	var h := float({"grass": 18, "bush": 24, "mushroom": 16, "cattail": 28,
+		"gems": 18}.get(kind, 32))
+	var terrain := BiomeMap.terrain_at(pos)
+	if kind in ["grass", "bush", "cattail"]:
+		if terrain == "snow": mod = Color("c9dce0")
+		elif terrain == "forest": mod = Color("b9ceb1")
+		elif terrain == "swamp": mod = Color("afc0ac")
 	match kind:
 		"big_tree":
 			src_key = "tree"
@@ -290,9 +314,9 @@ func _texture_item(kind: String, rng: RandomNumberGenerator, pos: Vector2, s: fl
 	var sp := _deco_sprite(src_key)
 	if sp == null:
 		return {}
-	# 素材内容偏紧凑，整体再放大一档贴回占地（v6 沿用既有调参）
+	# 软地被按种类明确尺寸，小于真实障碍；不再统一放大到角色膝高。
 	var item := {
-		"pos": pos, "s": s * scale_mult * 1.25,
+		"pos": pos, "s": s * scale_mult,
 		"flip": rng.randf() < 0.5, "mod": mod,
 		"sprite": sp,
 	}

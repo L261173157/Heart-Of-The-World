@@ -1,6 +1,6 @@
 ## 玩家控制器：移动 + 无锁定普攻 + 冲刺位移（无敌帧）+ 受击击退 + 死亡重生。
 ## ACT 无锁定（策划：无锁定通过攻击达到降低敌方血量目的）——
-## 攻击方向 = 最后移动方向，判定框朝该方向短暂开启，命中所有进入的怪物。
+## 攻击方向 = 最后移动方向，刀锋按实际时相扫过前方扇形，碰到墙即被阻挡。
 ## 冲刺消耗 MP 并带 0.18s 无敌帧，是躲避冲锋/重击的核心手段。
 ## 输入双通道：键盘（Input Map 动作）+ 触屏（TouchInput），玩法代码不区分平台。
 class_name Player
@@ -10,12 +10,18 @@ extends CharacterBody2D
 ## 这里只留表现层手感常量：判定框几何 / 输入窗 / 物理参数 / 残影节奏。
 const Skill := preload("res://scripts/character/character_stats.gd")
 const SpritePlayback := preload("res://scripts/animation/sprite_playback.gd")
+const DirectionalWeapon := preload("res://scripts/player/directional_weapon.gd")
+const GUARD_WEAPON_MASK := preload("res://scripts/player/warrior_guard_weapon_mask.gdshader")
 
-const ATTACK_WINDOW := 0.18
+## 原画四帧：前两帧蓄势，第三帧挥刃，第四帧收招；总时长仍是 0.32s。
+const ATTACK_WINDUP := 0.16
+const ATTACK_WINDOW := 0.26
 ## 攻击动画收尾残留：判定窗结束后攻击动画再停留片刻播完收招段再回 walk/idle。
 ## 只影响表现（攻击期间本就不锁移动），连击重触发会立即切段
-const ATTACK_ANIM_LINGER := 0.14
-const ATTACK_REACH := 26.0
+const ATTACK_ANIM_LINGER := 0.06
+## TS Attack1 源帧 x162−格心96 = 66px；÷2 原生、场景×2，世界尖端仍为66px。
+const ATTACK_REACH := 66.0
+const ATTACK_HALF_ARC := deg_to_rad(58.0)
 ## 攻击朝向吸附：扇形半角与半径（解决"边退边打"的方向冲突）
 const AIM_CONE_DEG := 60.0
 const AIM_RANGE := 150.0
@@ -52,9 +58,7 @@ const BOB_AMPLITUDE := 1.05
 @onready var attack_shape: CollisionShape2D = $AttackHitbox/CollisionShape2D
 @onready var visual: AnimatedSprite2D = $Visual
 
-## 打击特效帧（slice_spritesheets 生成的 NA fx 条带表）
-const FX_SLASH := preload("res://assets/creatures/frames/fx_slash/fx_slash_frames.res")
-const FX_SLASH_GOLD := preload("res://assets/creatures/frames/fx_slash_gold/fx_slash_gold_frames.res")
+## 重击使用现有 TS 合成爆裂，普攻由 DirectionalWeapon 的同源刀锋绘制。
 const FX_BURST := preload("res://assets/creatures/frames/fx_burst/fx_burst_frames.res")
 
 ## 三忍皮肤（美术 v5）：蓝/黑/白忍同布局表（idle/walk/attack/die 动画名同构，
@@ -84,6 +88,14 @@ var _attack_timer := 0.0
 ## 从出招起算的总表现窗 = 判定窗 + 收招窗；两者不能并行倒计时。
 var _attack_anim_linger := 0.0
 var _attack_visual_flip := false
+var _attack_direction := Vector2.RIGHT
+var _attack_half_arc := ATTACK_HALF_ARC
+var _attack_elapsed := 0.0
+var _attack_previous_angle := -ATTACK_HALF_ARC
+var _attack_pose := &"right"
+var _weapon_visual: Node2D
+var _weapon_body_material: ShaderMaterial
+var _obstacles_hit_this_swing := {}
 var _respawn_timer := 0.0
 var _is_dead := false
 ## 熔岩池灼烧（世界 v5）：站立每 LAVA_TICK 结算 LAVA_DAMAGE_FRAC 最大生命
@@ -164,8 +176,16 @@ func _ready() -> void:
 	_shadow.shadow_scale = layout["s"]
 	add_child(_shadow)
 	_add_player_marker()
+	_weapon_visual = DirectionalWeapon.new()
+	_weapon_visual.name = "DirectionalWeapon"
+	add_child(_weapon_visual)
+	_weapon_visual.clear()
+	_weapon_body_material = ShaderMaterial.new()
+	_weapon_body_material.shader = GUARD_WEAPON_MASK
+	# 判定由物理步扫掠查询，Area 仅保存完全相同的调试形状，避免延迟信号多打一刀。
+	attack_hitbox.monitoring = false
+	attack_shape.shape = attack_shape.shape.duplicate()
 	attack_shape.disabled = true
-	attack_hitbox.body_entered.connect(_on_attack_body_entered)
 	# 延迟到所有节点 ready 之后再推初值，保证 HUD 已连接信号
 	_push_hud.call_deferred()
 	# 升级白闪光（美术 v5 fx 全量）：世界层特效走 fx_requested 通道。方法引用
@@ -238,6 +258,8 @@ func teleport_to(destination: Vector2) -> void:
 	_afterimage_accum = 0.0
 	_attack_timer = 0.0
 	_attack_anim_linger = 0.0
+	_weapon_visual.clear()
+	visual.material = null
 	_attack_buffer_timer = 0.0
 	_attack_buffered = false
 	_hurt_anim_timer = 0.0
@@ -290,10 +312,8 @@ func _physics_process(delta: float) -> void:
 	_hurt_iframes = maxf(0.0, _hurt_iframes - delta)
 	if _combo_timer <= 0.0:
 		_combo = 0
-	if _attack_timer > 0.0:
-		_attack_timer -= delta
-		if _attack_timer <= 0.0:
-			attack_shape.disabled = true
+	if _attack_timer > 0.0 or _attack_anim_linger > 0.0:
+		_advance_attack(delta)
 	_attack_anim_linger = maxf(0.0, _attack_anim_linger - delta)
 	_hurt_anim_timer = maxf(0.0, _hurt_anim_timer - delta)
 
@@ -448,12 +468,12 @@ func _update_anim(delta := 0.0) -> void:
 		# 死亡由 _die 一次性定姿/播放，不能逐帧重启或回退到活体 idle。
 		return
 	var want := "idle"
+	visual.material = _weapon_body_material if _attack_anim_linger > 0.0 else null
 	if _attack_timer <= 0.0 and _attack_anim_linger <= 0.0 and absf(facing.x) > 0.1:
 		visual.flip_h = facing.x < 0.0
 	if _attack_timer > 0.0 or _attack_anim_linger > 0.0:
-		# 三段连击消费实际素材：TS attack1 横斩、attack2/3 共用第二种挥斩；
-		# 第三段的重击由既有特效表达，缺分段动画时回退通用 attack
-		# linger 窗内维持收招段（判定窗已关，纯表现）
+		# 所有方向共用去掉原生举剑的 Guard 身体，再叠加同源独立刀锋；
+		# 不让侧向 Attack1/2 烘焙弧光与上/下方向、墙面裁切相互矛盾。
 		want = _attack_animation()
 		visual.flip_h = _attack_visual_flip
 	elif _hurt_anim_timer > 0.0 and visual.sprite_frames.has_animation("hurt"):
@@ -463,8 +483,7 @@ func _update_anim(delta := 0.0) -> void:
 		want = "walk"
 	if not visual.sprite_frames.has_animation(want):
 		want = "idle"
-	# 四方向（美术 v5 借鉴②）：纵向移动/站定时用 up/down 帧（NA 官方表列 0/1），
-	# 横向保持右向帧 + flip_h 老路径——attack 系无方向分段，纵向出招仍走侧向
+	# 回退素材若有纵向移动/站定帧则消费；TS 原画仍保持侧向身体，不伪造素材帧。
 	if want == "walk" or want == "idle":
 		if absf(facing.y) > absf(facing.x):
 			var key := "up" if facing.y < 0.0 else "down"
@@ -481,7 +500,7 @@ func _update_anim(delta := 0.0) -> void:
 		var ground_speed := DASH_SPEED if _dash_timer > 0.0 else velocity.length()
 		visual.speed_scale = clampf(
 			(ground_speed / STRIDE_PX) / (12.0 / 3.0), 0.75, 1.8)
-	elif want.begins_with("attack"):
+	elif _attack_anim_linger > 0.0:
 		visual.speed_scale = SpritePlayback.speed_for_window(
 			visual.sprite_frames, want, ATTACK_WINDOW + ATTACK_ANIM_LINGER)
 	elif want == "hurt":
@@ -656,10 +675,9 @@ func _try_cast_bolt() -> void:
 	EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
 	_push_skills()
 	SfxManager.play("bolt")
-	var bolt := PlayerBolt.new()
-	get_parent().add_child(bolt)
-	bolt.global_position = global_position + facing * 22.0
-	bolt.launch(facing, CombatMath.magic_damage(stats.magic_attack() * Skill.BOLT_MULT), stats.equip_element())
+	PlayerBolt.spawn(get_parent(), global_position + facing * 22.0, facing,
+		CombatMath.magic_damage(stats.magic_attack() * Skill.BOLT_MULT),
+		stats.equip_element(), stats.bolt_effects())
 
 
 ## 治疗：消耗 MP 回复智力加成生命，绿色涟漪特效（深区续航的资源取舍）；
@@ -778,6 +796,8 @@ func _process(delta: float) -> void:
 
 func _try_attack() -> void:
 	activity_serial += 1
+	if _is_dead:
+		return
 	# 对话气泡开着时攻击键 = 确认（接单/继续），不挥刀不消耗冷却
 	if GameState.dialogue_open:
 		EventBus.dialogue_action.emit("confirm")
@@ -791,10 +811,12 @@ func _try_attack() -> void:
 		# 冷却中按下不丢：进预输入缓冲，冷却一转好立即兑现（连击不断段）
 		_attack_buffer_timer = ATTACK_BUFFER_TIME
 		return
-	_attack_cooldown = stats.attack_interval()
+	# 极限攻速也必须让本刀扫完；否则0.25s预输入会截断0.26s末端角度。
+	_attack_cooldown = maxf(stats.attack_interval(), ATTACK_WINDOW)
 	_attack_timer = ATTACK_WINDOW
 	_attack_anim_linger = ATTACK_WINDOW + ATTACK_ANIM_LINGER
 	_hit_this_swing.clear()
+	_obstacles_hit_this_swing.clear()
 	# 连击推进：窗口内连续攻击累积段位 1→2→3，第三段为重击（1.5×伤害 2×击退）
 	_combo = _combo % 3 + 1
 	_combo_timer = stats.combo_window()
@@ -802,6 +824,12 @@ func _try_attack() -> void:
 	var aim: Variant = _aim_assist()
 	if aim != null:
 		facing = aim
+	_attack_direction = facing.normalized()
+	_attack_half_arc = minf(deg_to_rad(78.0), ATTACK_HALF_ARC + stats.sword_arc_bonus())
+	_attack_elapsed = 0.0
+	_attack_previous_angle = -_attack_half_arc
+	_attack_pose = (&"up" if facing.y < 0.0 else &"down") if absf(facing.y) >= absf(facing.x) \
+		else (&"left" if facing.x < 0.0 else &"right")
 	# 只锁精灵朝向，不锁移动/下一招的逻辑 facing；侧向素材必须与吸附后的出刀一致。
 	_attack_visual_flip = visual.flip_h if absf(facing.x) <= 0.1 else facing.x < 0.0
 	visual.flip_h = _attack_visual_flip
@@ -810,18 +838,97 @@ func _try_attack() -> void:
 	if visual.sprite_frames.has_animation(anim):
 		SpritePlayback.restart(visual, anim, SpritePlayback.speed_for_window(
 			visual.sprite_frames, anim, ATTACK_WINDOW + ATTACK_ANIM_LINGER))
-	attack_shape.disabled = false
-	attack_hitbox.position = facing * ATTACK_REACH
-	attack_hitbox.rotation = facing.angle()
-	_damage_obstacle_ray()
-	_play_slash(_combo)
+	visual.material = _weapon_body_material
+	attack_shape.disabled = true
+	attack_hitbox.position = _attack_direction * ATTACK_REACH
+	attack_hitbox.rotation = _attack_direction.angle()
+	_update_weapon_visual()
 	_squash(Vector2(1.1, 0.9), 0.16)
 
 
 ## 同名连击/单攻击素材回退共用选择器；启动事件与状态映射必须使用同一段。
 func _attack_animation() -> StringName:
+	# Warrior 没有上下攻击帧；所有方向共享去剑 Guard 身体，刀锋拥有独立轨迹。
+	if visual.sprite_frames.has_animation(&"hurt"):
+		return &"hurt"
 	var anim := StringName("attack" + str(clampi(_combo, 1, 3)))
 	return anim if visual.sprite_frames.has_animation(anim) else &"attack"
+
+
+## 每个物理步只扫过本步刀锋角度；即使低帧率越过整个挥击窗也不会漏掉中段。
+## ShapeQuery 使用真实怪物/巢穴碰撞轮廓，而非仅按中心距离猜测命中。
+func _advance_attack(delta: float) -> void:
+	if _is_dead:
+		return
+	_attack_elapsed += delta
+	if _attack_timer > 0.0 and _attack_elapsed >= ATTACK_WINDUP:
+		var progress := clampf((_attack_elapsed - ATTACK_WINDUP) /
+			(ATTACK_WINDOW - ATTACK_WINDUP), 0.0, 1.0)
+		var angle := lerpf(-_attack_half_arc, _attack_half_arc, progress)
+		# 极窄首段仍需有效三角形；不在蓄势期提前开启整个扇形。
+		if angle > _attack_previous_angle + 0.0001:
+			var polygon := PackedVector2Array([Vector2(-ATTACK_REACH, 0.0)])
+			var steps := maxi(1, ceili((angle - _attack_previous_angle) / deg_to_rad(6.0)))
+			for i in range(steps + 1):
+				var sample_angle := lerpf(_attack_previous_angle, angle, float(i) / steps)
+				polygon.append(Vector2.RIGHT.rotated(sample_angle) * ATTACK_REACH - Vector2(ATTACK_REACH, 0.0))
+				_damage_obstacle_ray(_attack_direction.rotated(sample_angle))
+			(attack_shape.shape as ConvexPolygonShape2D).points = polygon
+			attack_shape.disabled = false
+			var query := PhysicsShapeQueryParameters2D.new()
+			query.shape = attack_shape.shape
+			query.transform = attack_hitbox.global_transform
+			query.collision_mask = 6
+			query.exclude = [get_rid()]
+			for result in get_world_2d().direct_space_state.intersect_shape(query, 128):
+				_on_attack_body_entered(result.collider)
+			_attack_previous_angle = angle
+	_attack_timer = maxf(0.0, ATTACK_WINDOW - _attack_elapsed)
+	if _attack_timer <= 0.0:
+		attack_shape.disabled = true
+	_update_weapon_visual()
+
+
+func _update_weapon_visual() -> void:
+	if _attack_elapsed >= ATTACK_WINDOW + ATTACK_ANIM_LINGER or _is_dead:
+		_weapon_visual.clear()
+		return
+	var progress := clampf((_attack_elapsed - ATTACK_WINDUP) /
+		(ATTACK_WINDOW - ATTACK_WINDUP), 0.0, 1.0)
+	var angle := lerpf(-_attack_half_arc, _attack_half_arc, progress)
+	var damaging := _attack_elapsed >= ATTACK_WINDUP and _attack_elapsed < ATTACK_WINDOW
+	var points := PackedVector2Array()
+	if damaging:
+		var from := maxf(-_attack_half_arc, angle - deg_to_rad(42.0))
+		for i in 9:
+			var sample_angle := lerpf(from, angle, float(i) / 8.0)
+			var dir := _attack_direction.rotated(sample_angle)
+			points.append((dir * _weapon_visible_reach(dir) / 2.0).round() * 2.0)
+	var opacity := 1.0
+	if _attack_elapsed < ATTACK_WINDUP:
+		opacity = 0.65
+	elif _attack_elapsed >= ATTACK_WINDOW:
+		opacity = 1.0 - (_attack_elapsed - ATTACK_WINDOW) / ATTACK_ANIM_LINGER
+	_weapon_visual.show_swing(_attack_direction, angle,
+		_weapon_visible_reach(_attack_direction.rotated(angle)), points, damaging,
+		opacity, _empower_timer > 0.0, _combo)
+
+
+## 墙体既挡伤害也裁短可见剑与弧；无穿墙命中或画面伸出去却打不到的长隐形刀。
+func _weapon_visible_reach(direction: Vector2) -> float:
+	var query := PhysicsRayQueryParameters2D.create(global_position,
+		global_position + direction * ATTACK_REACH, 1)
+	query.exclude = [get_rid()]
+	query.hit_from_inside = true
+	var hit := get_world_2d().direct_space_state.intersect_ray(query)
+	return ATTACK_REACH if hit.is_empty() else maxf(0.0, global_position.distance_to(hit.position) - 1.0)
+
+
+func _attack_has_line_of_sight(target: Vector2) -> bool:
+	var query := PhysicsRayQueryParameters2D.create(global_position, target, 1)
+	query.exclude = [get_rid()]
+	query.hit_from_inside = true
+	return get_world_2d().direct_space_state.intersect_ray(query).is_empty()
 
 
 ## 最近的可交互地标 NPC（96px 内；无则 null）
@@ -860,31 +967,13 @@ func _aim_assist() -> Variant:
 			continue
 		if not auto_aim and absf(facing.angle_to(offset.normalized())) > deg_to_rad(AIM_CONE_DEG):
 			continue
+		if not _attack_has_line_of_sight(monster.global_position):
+			continue
 		best = monster
 		best_dist = dist
 	if best == null:
 		return null
 	return (best.global_position - global_position).normalized()
-
-
-## 挥砍特效：NA fx 挥砍帧动画（强化期间金色，第三段更大）；播完回池（池化复用）
-func _play_slash(combo_step := 0) -> void:
-	var fx := VfxPool.take("slash") as AnimatedSprite2D
-	if fx == null:
-		fx = AnimatedSprite2D.new()
-		add_child(fx)
-		fx.animation_finished.connect(func() -> void: VfxPool.release(fx, "slash"))
-	fx.sprite_frames = FX_SLASH_GOLD if _empower_timer > 0.0 else FX_SLASH
-	fx.position = facing * 22.0
-	fx.rotation = facing.angle()
-	if facing.x < 0.0:
-		fx.flip_v = true  # 朝左挥砍保持弧光上沿朝上
-	else:
-		fx.flip_v = false
-	fx.scale = Vector2(2.6, 2.6) * (1.4 if combo_step == 3 else 1.0)
-	fx.z_index = 5
-	fx.modulate = Color.WHITE
-	fx.play("play")
 
 
 ## 重击爆裂：橙色爆炸帧以自身为中心（与冲击环叠用，半径观感 ≈ Skill.HEAVY_RADIUS；池化复用）
@@ -964,6 +1053,8 @@ func _die() -> void:
 	if _is_dead:
 		return
 	_is_dead = true
+	_weapon_visual.clear()
+	visual.material = null
 	_respawn_timer = RESPAWN_DELAY
 	# 致死一击的受击白闪 tween 会与死亡淡出并发写 modulate（约 0.12s 的 alpha 闪跳），先杀
 	if _hurt_tween != null and _hurt_tween.is_valid():
@@ -1069,7 +1160,6 @@ func _on_attack_body_entered(body: Node) -> void:
 		return
 	if body in _hit_this_swing:
 		return
-	_hit_this_swing.append(body)
 	# 尸体不吃判定（与重击/朝向吸附同口径）：伤害被尸体守卫吞掉后，
 	# 不再结算吸血/顿帧——对刚被秒杀的怪补刀 = 免费回血
 	var corpse_check := body as MonsterBase
@@ -1077,7 +1167,10 @@ func _on_attack_body_entered(body: Node) -> void:
 		return
 	# 连击第三段重击（×1.5）+ 冲刺后增伤（×1.3）+ 武装强化（×1.6）
 	# + 装备元素克制（火克冰/冰克火 ×1.5）
-	var mult := 1.0
+	if not _attack_has_line_of_sight((body as Node2D).global_position):
+		return
+	_hit_this_swing.append(body)
+	var mult := stats.sword_damage_mult()
 	if _combo == 3:
 		mult *= Skill.COMBO_HEAVY_MULT
 	if _dash_buff_timer > 0.0:
@@ -1116,21 +1209,27 @@ func _on_attack_body_entered(body: Node) -> void:
 ## 挥砍对障碍的射线结算（世界 v5）：Area2D 的 body_entered 对"先于本次挥砍
 ## 就存在的静态瓦片体"不派发进入事件（形状后启用≠进入；怪物是动态体不受
 ## 影响）——静态体用射线直查最可靠，命中点换算障碍格
-func _damage_obstacle_ray() -> void:
+func _damage_obstacle_ray(direction := Vector2.ZERO) -> void:
+	if direction == Vector2.ZERO:
+		direction = _attack_direction
 	var rq := PhysicsRayQueryParameters2D.create(global_position,
-			global_position + facing * 44.0, 1)
+			global_position + direction * ATTACK_REACH, 1)
 	rq.exclude = [get_rid()]
+	rq.hit_from_inside = true
 	var hit := get_world_2d().direct_space_state.intersect_ray(rq)
 	if hit.is_empty():
 		# 流式铺设竞态兜底（真机性能优化二轮）：新入窗障碍格的逻辑数据先于
 		# 碰撞体分帧铺设到位，射线会落空——按真源 ObstacleField 复查刀锋扫过
 		# 的格，避免刚出现的岩石"打不着"；探测点仍在射线段上，reach 语义不变
-		for reach in [30.0, 42.0]:
+		for reach in [22.0, 38.0, 54.0, ATTACK_REACH]:
 			var probe := Vector2i(
-					floori((global_position + facing * reach).x / 32.0),
-					floori((global_position + facing * reach).y / 32.0))
+					floori((global_position + direction * reach).x / 32.0),
+					floori((global_position + direction * reach).y / 32.0))
 			var s := ObstacleField.sample_cell(probe)
-			if not s.is_empty() and ObstacleField.DESTRUCTIBLE.has(s["kind"]):
+			if not s.is_empty():
+				if _obstacles_hit_this_swing.has(probe) or not ObstacleField.DESTRUCTIBLE.has(s["kind"]):
+					return
+				_obstacles_hit_this_swing[probe] = true
 				var k := ObstacleField.damage_cell(probe)
 				if k != "":
 					_on_obstacle_destroyed(probe, k)
@@ -1142,6 +1241,9 @@ func _damage_obstacle_ray() -> void:
 	if not is_obstacle:
 		return
 	var cell := Vector2i(floori(hit.position.x / 32.0), floori(hit.position.y / 32.0))
+	if _obstacles_hit_this_swing.has(cell):
+		return
+	_obstacles_hit_this_swing[cell] = true
 	var kind := ObstacleField.damage_cell(cell)
 	if kind != "":
 		_on_obstacle_destroyed(cell, kind)

@@ -70,9 +70,8 @@ var _scan_accum := 0.0
 const HIT_STOP_CONTROLLER := preload("res://scripts/combat/hit_stop_controller.gd")
 const TOWN_DOOR := preload("res://scripts/main/town_door.gd")
 # --- 世界 v5 探索层 ---
-## 迷雾揭示节奏与半径（3×3 格 = 12000px 带，与流式视距同量级）
-const FOG_REVEAL_INTERVAL := 0.5
-const FOG_REVEAL_RADIUS := 1
+## 128px细格、1600px圆形探索；与2400px半径雷达分开，保留未知边缘。
+const FOG_REVEAL_INTERVAL := 0.25
 ## 地标视觉标记的进出半径（发现 Area 常驻，视觉节点按需生成）
 const LANDMARK_VIS_RADIUS := 1400.0
 
@@ -1053,26 +1052,18 @@ func _make_animated_prop(frames_path: String, pos: Vector2, scale := 2.0) -> Nod
 	return node
 
 
-## 战争迷雾揭示：玩家所在 3×3 格入档（跨格才动笔，版本号通知小地图重建）
+## 探索只在室外移动跨128px格时写入；室内传送不能揭开口袋周围的大陆。
 func _reveal_fog() -> void:
 	if _inside_town_room():
 		return
 	var player := get_tree().get_first_node_in_group("player") as Node2D
 	if player == null or not player.visible:
 		return
-	var cell := GameState.fog_cell_of(player.global_position)
+	var cell := ExplorationFog.cell_of(player.global_position)
 	if cell == _fog_last_cell:
 		return
 	_fog_last_cell = cell
-	var revealed := false
-	for dy in range(-FOG_REVEAL_RADIUS, FOG_REVEAL_RADIUS + 1):
-		for dx in range(-FOG_REVEAL_RADIUS, FOG_REVEAL_RADIUS + 1):
-			if not GameState.fog_is_explored(cell.x + dx, cell.y + dy):
-				GameState.fog_reveal_cell(cell.x + dx, cell.y + dy)
-				revealed = true
-	if revealed:
-		GameState.fog_version += 1
-		GameState._queue_save()
+	GameState.fog_reveal_position(player.global_position)
 
 
 ## 地标视觉标记：地标精灵探图（assets/landmarks/<种类>.png，缺图回退纯圆环；美术 v5 起默认回退圆环，NA 风格地标图到位后放回即生效）

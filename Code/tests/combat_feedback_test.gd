@@ -11,6 +11,7 @@ var _stop: Node
 var _monsters: Array[MonsterBase] = []
 var _damage_events := 0
 var _stop_requests := 0
+var _accepted_stops := 0
 var _capture_dir := ""
 
 func _ready() -> void:
@@ -38,7 +39,8 @@ func _on_sim_death(inst: MonsterInstance, _cause: String) -> void:
 
 func _on_hit_stop(duration: float) -> void:
 	_stop_requests += 1
-	_stop.request(duration)
+	if _stop.request(duration):
+		_accepted_stops += 1
 
 func _on_damage(_pos: Vector2, _damage: int, hurt: bool, _effective: bool) -> void:
 	if not hurt:
@@ -97,6 +99,7 @@ func _run() -> void:
 	var hp_a := a.current_hp
 	var hp_b := b.current_hp
 	var requests := _stop_requests
+	var accepted := _accepted_stops
 	var audio := SfxManager._next_channel
 	TouchInput.queue_attack()
 	for i in 35:
@@ -105,7 +108,7 @@ func _run() -> void:
 			break
 	_check(a.current_hp < hp_a and b.current_hp < hp_b, "触屏普攻真实形状命中两只怪")
 	_check(_damage_events == 2, "单次攻击每目标恰好结算一次")
-	_check(_stop.active and _stop_requests == requests + 1, "AOE 共享一次极短顿帧")
+	_check(_accepted_stops == accepted + 1 and _stop_requests == requests + 1, "AOE 共享一次极短顿帧")
 	_check(SfxManager._next_channel == (audio + 1) % SfxManager.CHANNEL_COUNT,
 		"群体命中同一音频窗只播一次已有 SFX")
 	_check(a._impact_feedback != null and a._impact_feedback.active \
@@ -135,7 +138,11 @@ func _run() -> void:
 			TouchInput.queue_attack()
 		await _frames(2)
 		Input.action_release("attack")
-		await _wall(0.24)
+		# 有真实前摇和逐帧扫掠后，顿帧会拉长壁钟时间；观察实际双目标结算。
+		for frame in 80:
+			if a.current_hp < hp_a and b.current_hp < hp_b:
+				break
+			await _frames()
 		_check(a.current_hp < hp_a and b.current_hp < hp_b, "重复输入第%d刀重新命中" % (swing + 2))
 	_check(_player._combo == 3, "三段连击时序保持")
 	# 重击真实输入与原有消耗；空挥不制造命中顿帧。
@@ -159,6 +166,7 @@ func _run() -> void:
 	a.position = _player.position + Vector2(130, 0)
 	b.position = _player.position + Vector2(350, 0)
 	a._knockback = Vector2.ZERO
+	a._knockback_rearm = 0.0
 	hp_a = a.current_hp
 	var events := _damage_events
 	for i in 8:
@@ -189,6 +197,7 @@ func _run() -> void:
 	a.position = _player.position + Vector2(28, 0)
 	a._nav.avoidance_enabled = false
 	a._knockback = Vector2.ZERO
+	a._knockback_rearm = 0.0
 	a._attack_cd = 0.0
 	a.state = MonsterBase.S_ATTACK
 	a.set_physics_process(true)

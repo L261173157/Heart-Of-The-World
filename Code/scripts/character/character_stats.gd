@@ -99,14 +99,60 @@ const PASSIVE_POOL := [
 	{"id": "xp", "name": "好学", "desc": "经验获取 +10%"},
 	{"id": "heal_power", "name": "圣光", "desc": "治疗量 +30%"},
 	{"id": "knock", "name": "重锤", "desc": "击退 +30%"},
+	{"id": "sword_sweep", "name": "阔刃", "desc": "普攻扇形更宽，伤害降低"},
+	{"id": "bolt_seek", "name": "寻星", "desc": "法弹微追踪，飞行变慢"},
+	{"id": "bolt_split", "name": "碎星", "desc": "命中分成两片，主弹伤害降低"},
 ]
 
 
+## 武器效果只取一阶；旧的数值赐福保留原有叠加方式。
+const WEAPON_PASSIVES := ["sword_sweep", "bolt_seek", "bolt_split"]
+const SWORD_ARC_BONUS := 20.0  # 半角；全扇形 +40°
+const SWORD_SWEEP_DAMAGE := 0.85
+const BOLT_SEEK_SPEED := 0.85
+const BOLT_SPLIT_DAMAGE := 0.80
+const BOLT_SHARD_DAMAGE := 0.35
+
+
+static func passive_known(id: String) -> bool:
+	for entry: Dictionary in PASSIVE_POOL:
+		if entry["id"] == id:
+			return true
+	return false
+
+
 func passive_level(id: String) -> int:
-	return int(passives.get(id, 0))
+	var rank := maxi(0, int(passives.get(id, 0)))
+	return mini(rank, 1) if id in WEAPON_PASSIVES else rank
+
+
+func passive_available(id: String) -> bool:
+	return passive_known(id) and (id not in WEAPON_PASSIVES or passive_level(id) == 0)
+
+
+func sword_arc_bonus() -> float:
+	return deg_to_rad(SWORD_ARC_BONUS) * passive_level("sword_sweep")
+
+
+func sword_damage_mult() -> float:
+	return SWORD_SWEEP_DAMAGE if passive_level("sword_sweep") > 0 else 1.0
+
+
+func bolt_effects() -> Dictionary:
+	return {"seek": passive_level("bolt_seek") > 0, "split": passive_level("bolt_split") > 0}
+
+
+func bolt_speed_mult() -> float:
+	return BOLT_SEEK_SPEED if passive_level("bolt_seek") > 0 else 1.0
+
+
+func bolt_damage_mult() -> float:
+	return BOLT_SPLIT_DAMAGE if passive_level("bolt_split") > 0 else 1.0
 
 
 func add_passive(id: String) -> void:
+	if not passive_available(id):
+		return
 	passives[id] = passive_level(id) + 1
 	changed.emit()
 
@@ -116,20 +162,36 @@ func ensure_passive_choices() -> void:
 	if pending_passive_picks <= 0:
 		passive_choices.clear()
 		return
-	if not passive_choices.is_empty():
+	var seen: Array[String] = []
+	for id: String in passive_choices:
+		if passive_available(id) and not seen.has(id):
+			seen.append(id)
+	if seen.size() == 3 and passive_choices.size() == 3:
 		return
 	var pool: Array[String] = []
+	var branches: Array[String] = []
 	for entry: Dictionary in PASSIVE_POOL:
-		pool.append(entry["id"])
+		if passive_available(entry["id"]):
+			pool.append(entry["id"])
+			if entry["id"] in WEAPON_PASSIVES:
+				branches.append(entry["id"])
 	pool.shuffle()
 	passive_choices.assign(pool.slice(0, mini(3, pool.size())))
+	# 新卡组至少给一个未学武器效果，首升就能做战斗形态选择；旧合法卡组不重抽。
+	if not branches.is_empty():
+		var has_branch := false
+		for id: String in passive_choices:
+			has_branch = has_branch or id in WEAPON_PASSIVES
+		if not has_branch:
+			passive_choices[0] = branches.pick_random()
 	passive_offer_id += 1
 
 
 ## 先完成「消耗一次资格 + 发放被动 + 下一组卡」，再通知观察者。
 ## changed 的订阅者即使同步保存，也只能看见完整事务，不会漏奖/重复发奖。
 func claim_passive(id: String, offer_id: int) -> bool:
-	if pending_passive_picks <= 0 or offer_id != passive_offer_id or not passive_choices.has(id):
+	if pending_passive_picks <= 0 or offer_id != passive_offer_id or not passive_choices.has(id) \
+			or not passive_available(id):
 		return false
 	pending_passive_picks -= 1
 	passives[id] = passive_level(id) + 1
@@ -324,7 +386,11 @@ func benefit_snapshot() -> Dictionary:
 		"heavy_cooldown": HEAVY_COOLDOWN * cooldown_mult(),
 		"lifesteal": lifesteal_per_hit(), "gold": gold_mult(),
 		"xp": passive_mult("xp", 1.1) * (1.0 + equip_affix("xp")),
-		"knock": knockback_mult()}
+		"knock": knockback_mult(),
+		"sword_arc_bonus": rad_to_deg(sword_arc_bonus()) * 2.0,
+		"sword_damage_mult": sword_damage_mult(), "bolt_speed_mult": bolt_speed_mult(),
+		"bolt_damage_mult": bolt_damage_mult(), "bolt_seek": passive_level("bolt_seek"),
+		"bolt_split": passive_level("bolt_split")}
 
 
 func preview_attribute(attribute: String) -> Dictionary:
@@ -336,11 +402,30 @@ func preview_attribute(attribute: String) -> Dictionary:
 
 func preview_passive(id: String) -> Dictionary:
 	var after := _preview_copy()
-	for entry: Dictionary in PASSIVE_POOL:
-		if entry["id"] == id:
-			after.passives[id] = after.passive_level(id) + 1
-			break
-	return {"before": benefit_snapshot(), "after": after.benefit_snapshot()}
+	if after.passive_available(id):
+		after.passives[id] = after.passive_level(id) + 1
+	var preview := {"before": benefit_snapshot(), "after": after.benefit_snapshot()}
+	if id in WEAPON_PASSIVES:
+		preview["effect"] = _weapon_preview_text(id, after)
+	return preview
+
+
+func _weapon_preview_text(id: String, after: CharacterStats) -> String:
+	if not passive_available(id):
+		return "已到上限（1阶）"
+	match id:
+		"sword_sweep":
+			return "扇形增宽  +%d° → +%d°\n普攻伤害  %d%% → %d%%\n只影响普攻，射程不变" % [
+				roundi(rad_to_deg(sword_arc_bonus()) * 2), roundi(rad_to_deg(after.sword_arc_bonus()) * 2),
+				roundi(sword_damage_mult() * 100), roundi(after.sword_damage_mult() * 100)]
+		"bolt_seek":
+			return "直线 → 可见目标微追踪\n速度/射程  %d%% → %d%%\n不穿墙，精力仍为 %d" % [
+				roundi(bolt_speed_mult() * 100), roundi(after.bolt_speed_mult() * 100), int(BOLT_COST)]
+		"bolt_split":
+			return "命中 → 两枚直线碎片\n主弹伤害  %d%% → %d%%\n碎片各%d%%，不再分裂\n精力仍为 %d" % [
+				roundi(bolt_damage_mult() * 100), roundi(after.bolt_damage_mult() * 100),
+				roundi(BOLT_SHARD_DAMAGE * 100), int(BOLT_COST)]
+	return ""
 
 
 func preview_equipment(item: Dictionary) -> Dictionary:
