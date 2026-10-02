@@ -21,7 +21,8 @@ iOS 优先的 2D 动作游戏：ACT 无锁定战斗 + 角色养成 + **怪物生
 GODOT="/path/to/Godot" python3 Code/tests/run_headless.py
 # 可用 --only save,save_lifecycle,ui_flow 或 --log-dir /tmp/hotw-tests 做定向检查
 ```
-此入口运行既有八测、三组生命周期回归（弹幕池、世界持久化、独立进程存档）及三组表现层回归，共十四测。
+此入口运行既有八测、三组生命周期回归（弹幕池、世界持久化、独立进程存档）三组表现层回归及五组玩法回归，共十九测。
+玩法定向入口：`--only gameplay_combat,gameplay_ecology,gameplay_world,gameplay_equipment,gameplay_navigation`，覆盖真实冲锋/法弹/攻击子类、Boss 锚点与任务耗尽、检查点冷启动、装备锁定与实际触屏、局部导航与反复读档。新增玩法必须继续测真实场景/输入/碰撞，不得以辅助函数测试代替闭环。
 表现层定向入口：`--only ui_visual,menu_layout,animation`，覆盖 HUD 安全区/模态与输入、主菜单反复开关/取消/焦点、实际动画帧时长/出招朝向/死亡复活；修改共享主题或动画接线后必须跑。
 不只检查退出码：还要求完成标记，并拒绝脚本/物理运行错误；仅豁免基线已有的退出资源诊断和存档测试故意构造的精确 JSON 错误。
 干净检出采用两轮导入：首轮仅允许默认中文字体尚未生成缓存的四条已知诊断，第二轮导入及全部运行检查仍须严格通过。

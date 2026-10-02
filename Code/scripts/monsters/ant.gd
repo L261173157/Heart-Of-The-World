@@ -7,11 +7,10 @@ class_name Ant
 extends MonsterBase
 
 
-func _perform_attack(player: Node2D) -> void:
-	var bonus := 1.0 + inst.species.pack_bonus_per \
+## 只覆写伤害倍率，出招动画/挤压/命中特效继续走基类唯一执行路径。
+func _melee_damage_mult() -> float:
+	return 1.0 + inst.species.pack_bonus_per \
 			* mini(inst.species.pack_bonus_max, _pack_count())
-	if player.has_method("take_damage"):
-		player.take_damage(CombatMath.physical_damage(inst.attack_power() * bonus), global_position, inst.display_name())
 
 
 ## 蚁群计数短缓存：蚁海互攻时避免每次攻击都全量组遍历

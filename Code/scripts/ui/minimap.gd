@@ -1,158 +1,300 @@
-## 小地图：世界总览纹理 + 玩家白点 + 怪物实时彩点。
-## 世界 v5：底图不再预载离线 world_map.png——game_world 按当前世界种子在
-## 加载期后台栅格化生成（EventBus.world_overview_ready 送达后替换占位），
-## 每个存档一个全新世界，底图天然对应脚下世界。怪物彩点只显示已生成的
-## 表现节点（流式生成后即玩家附近，天然局部雷达）。
-## 让"犬牙交错的群系"与生态迁徙/扩张一眼可视（本作核心卖点的常驻展示位）。
+## 局部雷达：以玩家为中心、北向上。模拟活体补足流式圈外的附近怪群，
+## 已探索迷雾/已发现地标仍是信息边界；不改探索、任务或生态状态。
 class_name Minimap
 extends Control
 
 const REDRAW_INTERVAL := 0.25
-## 运行时生成的总览底图（world_overview_ready 送达前为 null——画占位深色）
-var _map_texture: ImageTexture = null
-## 迷雾纹理：常驻 Image + 增量更新（揭示只增不减；fog_version 变化时只把
-## GameState.fog_dirty 的新揭示格写透明并 update 纹理。曾经每版本全量
-## 40000 像素 set_pixel 重建，跑图期间 ~2 次/s 是移动尖峰——真机性能优化
-## 2026-09-19。首次（读档后）按 explored 全量建一次）
-const FOG_BLACK := Color(0.02, 0.03, 0.04, 1.0)
-const FOG_CLEAR := Color(0, 0, 0, 0)
-var _fog_image: Image = null
-var _fog_texture: ImageTexture = null
-var _fog_version_drawn := -1
+const RADAR_RADIUS := 2400.0
+const NEARBY_RADIUS := 6000.0
+const ARRIVAL_RADIUS := 96.0
+const TARGET_COLOR := Color("ffd166")
+const MONSTER_COLOR := Color("ff8477")
+const OBJECTIVE_COLOR := Color("75dcb8")
 
 var _accum := 0.0
-## 营地聚合点缓存：gkey("region|species") → {pos, tint}。营地位置确定性派生
-## （EcologySim.camp_pos，与巢穴/种群据点同址），换世界（sim 身份变化）时清空
-var _camp_cache_sim: EcologySim = null
-var _camp_cache: Dictionary = {}
-## 聚合结果缓存（真机性能优化二轮）：880 实例分组统计从 4Hz 降到 1Hz——
-## 战略地图层不需要更快，玩家/怪物实时点仍 4Hz
-var _camp_groups_cache: Dictionary = {}
-var _camp_groups_sim: EcologySim = null
-var _camp_groups_ms := 0
+var _sim_seen: EcologySim
+var _bounty_species := ""
+var _player_pos := Vector2.ZERO
+var _has_player := false
+var _target: Dictionary = {}
+var _markers: Array[Dictionary] = []
+var _camp_positions: Dictionary = {}
+var _category: Label
+var _target_name: Label
+var _direction: Label
+var _distance: Label
 
 
 func _ready() -> void:
-	# 底图下采样 10:1，最近邻会闪烁成噪点——小地图单独走线性过滤
-	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	EventBus.world_overview_ready.connect(_on_overview_ready)
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 不消费/清空全局 fog_dirty：局部窗只读少量格，读档、重置与同种子换档
+	# 都无需依赖纹理缓存失效，也不会把另一个观察者的脏格吃掉。
+	_category = _make_label("TargetCategory", 14, Color("a4c8d0"))
+	_target_name = _make_label("TargetName", 16, Color.WHITE)
+	_direction = _make_label("TargetDirection", 16, TARGET_COLOR)
+	_distance = _make_label("TargetDistance", 14, Color("d9e3e4"))
+	resized.connect(_layout_labels)
+	EventBus.bounty_target_changed.connect(_on_bounty_target_changed)
+	_layout_labels()
+	_refresh_navigation()
 
 
-func _on_overview_ready(texture: ImageTexture) -> void:
-	_map_texture = texture
+func _make_label(node_name: String, font_size: int, color: Color) -> Label:
+	var label := Label.new()
+	label.name = node_name
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", color)
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	label.clip_text = true
+	add_child(label)
+	return label
+
+
+func _layout_labels() -> void:
+	var left := _radar_rect().end.x + 10.0
+	var width := maxf(0.0, size.x - left - 8.0)
+	var labels: Array[Label] = [_category, _target_name, _direction, _distance]
+	for i in labels.size():
+		labels[i].position = Vector2(left, 25.0 + i * 21.0)
+		labels[i].size = Vector2(width, 21.0)
 	queue_redraw()
 
 
+func _on_bounty_target_changed(species_name: String) -> void:
+	# 信号携带语义，不从中文赏金文案反解析物种。
+	if _sim_seen != WorldSim.sim:
+		_camp_positions.clear()
+	_sim_seen = WorldSim.sim
+	_bounty_species = species_name
+	_accum = REDRAW_INTERVAL
+
+
 func _process(delta: float) -> void:
-	# 暂停期间世界冻结，画面内容不变——跳过周期性全量重绘（含怪物组遍历）
 	if get_tree().paused:
 		return
 	_accum += delta
 	if _accum >= REDRAW_INTERVAL:
 		_accum = 0.0
-		queue_redraw()
+		_refresh_navigation()
+
+
+## 每轮从权威活体重选，击杀/捣巢/任务完成后最多一帧雷达周期移除旧指引。
+## 约 880 个体只做坐标/距离过滤；不构建全世界营地纹理，不保留节点引用。
+func _refresh_navigation() -> void:
+	if _sim_seen != WorldSim.sim:
+		_sim_seen = WorldSim.sim
+		_bounty_species = ""
+		_camp_positions.clear()
+	_target = {}
+	_markers.clear()
+	var player := get_tree().get_first_node_in_group("player") as Node2D
+	_has_player = player != null and player.visible and WorldSim.sim != null
+	if _has_player:
+		_player_pos = player.global_position
+		var candidates := _known_candidates()
+		_target = _select_target(candidates)
+		for candidate: Dictionary in candidates:
+			if _inside_radar(candidate["pos"]):
+				_markers.append(candidate)
+	_update_labels()
+	queue_redraw()
+
+
+func _known_candidates() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var live_positions := {}
+	# 表现层位置覆盖模拟出生点，追击、击退与迁徙不产生幽灵双点。
+	for body in get_tree().get_nodes_in_group("monsters"):
+		var monster := body as MonsterBase
+		if monster != null and monster.inst != null and monster.inst.is_alive \
+				and monster.state != MonsterBase.S_CORPSE and not monster.is_queued_for_deletion():
+			live_positions[monster.inst.id] = monster.global_position
+	for inst: MonsterInstance in WorldSim.sim.instances.values():
+		if not inst.is_alive:
+			continue
+		var pos: Vector2 = live_positions.get(inst.id, inst.spawn_pos)
+		if not _is_known_position(pos):
+			continue
+		result.append({"id": "monster:%d" % inst.id, "kind": "monster", "pos": pos,
+			"name": inst.species.species_name, "species": inst.species.species_name,
+			"ambient": inst.species.ambient, "streamed": live_positions.has(inst.id)})
+	for key: String in WorldSim.sim.nests:
+		if not bool(WorldSim.sim.nests[key].get("active", false)):
+			continue
+		var region: SimRegion = WorldSim.sim.regions.get(key.get_slice("|", 0))
+		var species: SpeciesData = WorldSim.sim.find_species(key.get_slice("|", 1))
+		if region == null or species == null:
+			continue
+		if not _camp_positions.has(key):
+			_camp_positions[key] = WorldSim.sim.camp_pos(region, species)
+		var pos: Vector2 = _camp_positions[key]
+		if _is_known_position(pos):
+			result.append({"id": "nest:" + key, "kind": "nest", "pos": pos,
+				"name": species.species_name + "巢穴"})
+	for id: String in GameState.discovered_landmarks:
+		var lm := LandmarkRegistry.landmark(id)
+		if not lm.is_empty():
+			result.append({"id": "landmark:" + id, "kind": "landmark",
+				"pos": lm["pos"], "name": lm["kind"]})
+	var checkpoints := WorldConfig.checkpoints()
+	for id: String in GameState.discovered_checkpoints:
+		if checkpoints.has(id):
+			var checkpoint: Dictionary = checkpoints[id]
+			result.append({"id": "checkpoint:" + id, "kind": "checkpoint",
+				"pos": checkpoint["position"], "name": checkpoint["name"]})
+	return result
+
+
+## 任务只指向已知、仍有效的对象。探索任务不泄露未发现地标；没有已知
+## 任务线索时仍给附近活怪/已发现目的地，不让全世界随机赏金把雷达锁死。
+func _select_target(candidates: Array[Dictionary]) -> Dictionary:
+	var best: Dictionary = {}
+	var best_priority := 99
+	var best_distance := INF
+	for candidate: Dictionary in candidates:
+		var distance := _player_pos.distance_to(candidate["pos"])
+		var priority := 99
+		var category := ""
+		for quest: Dictionary in GameState.quests.get("active", []):
+			if distance > NEARBY_RADIUS:
+				continue
+			if int(quest.get("progress", 0)) >= int(quest.get("need", 1)):
+				continue
+			if quest.get("kind", "") == "hunt" and candidate["kind"] == "monster" \
+					and candidate["species"] == quest.get("species", ""):
+				priority = 0
+				category = "委托 · 猎杀"
+			elif quest.get("kind", "") == "ransack" and candidate["kind"] == "nest":
+				priority = 0
+				category = "委托 · 捣巢"
+			elif quest.get("kind", "") == "collect" and candidate["kind"] == "monster" \
+					and EconomyMath.material_for(candidate["species"]) == quest.get("item", ""):
+				priority = 0
+				category = "委托 · 材料"
+		if priority > 0 and candidate["kind"] == "monster" and _bounty_species != "" \
+				and candidate["species"] == _bounty_species and distance <= NEARBY_RADIUS:
+			priority = 1
+			category = "赏金目标"
+		if priority > 1 and candidate["kind"] == "monster" and not candidate["ambient"] \
+				and distance <= NEARBY_RADIUS:
+			priority = 2
+			category = "附近敌人" if candidate["streamed"] else "附近怪群"
+		if candidate["kind"] in ["landmark", "checkpoint"] and distance > ARRIVAL_RADIUS:
+			priority = 3
+			category = "已发现地标" if candidate["kind"] == "landmark" else "已发现营地"
+		if priority < best_priority or (priority == best_priority and distance < best_distance):
+			if priority == 99:
+				continue
+			best = candidate.duplicate()
+			best["category"] = category
+			best["distance_px"] = distance
+			best_priority = priority
+			best_distance = distance
+	return best
+
+
+func _is_known_position(pos: Vector2) -> bool:
+	if not pos.is_finite() or not Rect2(Vector2.ZERO, WorldConfig.WORLD_SIZE).has_point(pos):
+		return false
+	var cell := GameState.fog_cell_of(pos)
+	return GameState.fog_is_explored(cell.x, cell.y)
+
+
+func _update_labels() -> void:
+	if _category == null:
+		return
+	if _target.is_empty():
+		_category.text = "附近暂无目标" if _has_player else "等待启程"
+		_target_name.text = "继续探索" if _has_player else ""
+		_direction.text = "北向上"
+		_distance.text = "1格 = 32像素"
+		return
+	_category.text = _target["category"]
+	_target_name.text = _target["name"]
+	_direction.text = _direction_text((_target["pos"] as Vector2) - _player_pos)
+	# 格长来自实际地表网格，不把像素冒充米；近距离向上取整防止未到先显示 0。
+	_distance.text = "%d格 · 直线" % ceili(float(_target["distance_px"]) / ObstacleField.CELL)
+
+
+static func _direction_text(delta: Vector2) -> String:
+	if delta.length() <= 24.0:
+		return "就在附近"
+	var directions := ["东", "东南", "南", "西南", "西", "西北", "北", "东北"]
+	var index := posmod(roundi(delta.angle() / (PI / 4.0)), 8)
+	return "向" + directions[index]
+
+
+func _radar_rect() -> Rect2:
+	return Rect2(6, 25, maxf(1.0, size.x * 0.44 - 2.0), maxf(1.0, size.y - 32.0))
+
+
+func _radar_scale() -> float:
+	return _radar_rect().size.y / (RADAR_RADIUS * 2.0)
+
+
+func _radar_point(pos: Vector2) -> Vector2:
+	return _radar_rect().get_center() + (pos - _player_pos) * _radar_scale()
+
+
+func _inside_radar(pos: Vector2) -> bool:
+	return _radar_rect().grow(-5.0).has_point(_radar_point(pos))
+
+
+## 超出局部窗的已知目标仍沿真实方位落在边框内，不伪装成近处怪点。
+func _target_marker_position(pos: Vector2) -> Vector2:
+	var rect := _radar_rect().grow(-7.0)
+	var center := rect.get_center()
+	var delta := _radar_point(pos) - center
+	var half := rect.size * 0.5
+	var factor := maxf(absf(delta.x) / half.x, absf(delta.y) / half.y)
+	return center + delta / maxf(1.0, factor)
 
 
 func _draw() -> void:
-	if WorldSim.sim == null or WorldSim.sim.regions.is_empty():
+	draw_rect(Rect2(Vector2.ZERO, size), Color("14242bed"))
+	draw_rect(Rect2(Vector2.ZERO, size), Color("7a8f85"), false, 1.0)
+	var font := get_theme_default_font()
+	draw_string(font, Vector2(8, 18), "附近", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("a4c8d0"))
+	var legend := [[54.0, Color.WHITE, "你"], [94.0, MONSTER_COLOR, "怪"],
+		[134.0, OBJECTIVE_COLOR, "地标"], [191.0, TARGET_COLOR, "目标"]]
+	for item: Array in legend:
+		draw_circle(Vector2(item[0], 13), 2.5, item[1])
+		draw_string(font, Vector2(item[0] + 6, 18), item[2], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("d9e3e4"))
+	var rect := _radar_rect()
+	draw_rect(rect, Color("090f17"))
+	if not _has_player:
 		return
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.35))
-
-	var world := Rect2(Vector2.ZERO, WorldConfig.WORLD_SIZE)
-	if world.size.x <= 0.0 or world.size.y <= 0.0:
-		return
-	var s := minf(size.x / world.size.x, size.y / world.size.y)
-	var offset := (size - world.size * s) * 0.5
-	if _map_texture != null:
-		draw_texture_rect(_map_texture, Rect2(offset, world.size * s), false)
-	# 战争迷雾：未探索格盖黑（200×200 位图 → 一像素一格；按版本增量更新）
-	_sync_fog_texture()
-	if _fog_texture != null:
-		draw_texture_rect(_fog_texture, Rect2(offset, world.size * s), false)
-	# 已发现地标图标（类型色点；未发现不显示——保住未知感）
-	for id: String in GameState.discovered_landmarks:
-		var lm: Dictionary = LandmarkRegistry.landmark(id)
-		if lm.is_empty():
-			continue
-		draw_circle(offset + (lm["pos"] - world.position) * s, 2.4,
-				LandmarkRegistry.kind_color(lm["kind"]))
-
-	# 族群营地怪群点：把模拟层活体按「区域|物种」聚合到所属营地据点画色点
-	# （据点制语义：怪属于地图营地，个体实时点只覆盖玩家 2400px——全图底图
-	# 只画局部节点会让玩家误读为"全世界没怪"）。只画已探索迷雾格内的营地，
-	# 未探索区域不显示保住开荒未知感；营地被清剿/物种灭绝时聚合数为 0 自然熄灭。
-	# 分组统计 880 实例按 1s 缓存（重绘仍 4Hz，实时玩家/怪物点不缓存）
-	if _camp_cache_sim != WorldSim.sim:
-		_camp_cache_sim = WorldSim.sim
-		_camp_cache.clear()
-		_camp_groups_sim = null
-	if _camp_groups_sim != WorldSim.sim:
-		_camp_groups_sim = WorldSim.sim
-		_camp_groups_cache = {}
-	if Time.get_ticks_msec() - _camp_groups_ms >= 1000 or _camp_groups_cache.is_empty():
-		_camp_groups_ms = Time.get_ticks_msec()
-		var fresh: Dictionary = {}
-		for inst: MonsterInstance in WorldSim.sim.instances.values():
-			if not inst.is_alive:
-				continue
-			var gkey := "%s|%s" % [inst.region_id, inst.species.species_name]
-			fresh[gkey] = int(fresh.get(gkey, 0)) + 1
-		_camp_groups_cache = fresh
-	for gkey: String in _camp_groups_cache:
-		var camp: Dictionary = _camp_cache.get(gkey, {})
-		if camp.is_empty():
-			var camp_region: SimRegion = WorldSim.sim.regions.get(gkey.get_slice("|", 0))
-			var camp_species: SpeciesData = WorldSim.sim.find_species(gkey.get_slice("|", 1))
-			if camp_region == null or camp_species == null:
-				continue
-			camp = {"pos": WorldSim.sim.camp_pos(camp_region, camp_species),
-				"tint": camp_species.tint}
-			_camp_cache[gkey] = camp
-		var camp_pos: Vector2 = camp["pos"]
-		var cell: Vector2i = GameState.fog_cell_of(camp_pos)
-		if not GameState.fog_is_explored(cell.x, cell.y):
-			continue
-		# 深色描边 + 物种色面：与白色玩家点（3.5px，常与出生营地重叠）可区分
-		var camp_screen: Vector2 = offset + (camp_pos - world.position) * s
-		draw_circle(camp_screen, 2.8, Color(0.05, 0.06, 0.08, 0.9))
-		draw_circle(camp_screen, 2.0, camp["tint"] as Color)
-
-	for body in get_tree().get_nodes_in_group("monsters"):
-		var monster := body as MonsterBase
-		if monster == null or monster.inst == null or monster.state == MonsterBase.S_CORPSE:
-			continue
-		draw_circle(offset + (monster.global_position - world.position) * s, 2.0,
-				monster.inst.species.tint)
-
-	var player := get_tree().get_first_node_in_group("player") as Node2D
-	if player != null and player.visible:
-		draw_circle(offset + (player.global_position - world.position) * s, 3.5, Color.WHITE)
-
-	# 金色细描边圈出面板轮廓：开局迷雾几乎全黑、底图未送达时，
-	# 纯黑矩形贴在暗色地形上认不出"这是小地图"——描边是常驻的面板证据
-	draw_rect(Rect2(Vector2.ZERO, size), Color(1.0, 0.85, 0.45, 0.4), false, 2.0)
-
-
-## 迷雾纹理增量维护：首次按 explored 全量建图（读档/换世界后也走这里），
-## 之后版本变化只把脏格写透明并整图 update 上传（160KB，远小于全量重建）
-func _sync_fog_texture() -> void:
-	if _fog_texture == null:
-		_fog_image = Image.create(GameState.FOG_GRID, GameState.FOG_GRID,
-				false, Image.FORMAT_RGBA8)
-		for y in GameState.FOG_GRID:
-			for x in GameState.FOG_GRID:
-				_fog_image.set_pixel(x, y,
-						FOG_BLACK if not GameState.fog_is_explored(x, y) else FOG_CLEAR)
-		_fog_texture = ImageTexture.create_from_image(_fog_image)
-		GameState.fog_dirty.clear()
-		_fog_version_drawn = GameState.fog_version
-		return
-	if GameState.fog_version == _fog_version_drawn:
-		return
-	_fog_version_drawn = GameState.fog_version
-	if GameState.fog_dirty.is_empty():
-		return
-	for cell: Vector2i in GameState.fog_dirty:
-		_fog_image.set_pixel(cell.x, cell.y, FOG_CLEAR)
-	GameState.fog_dirty.clear()
-	_fog_texture.update(_fog_image)
+	# 只画局部窗相交的迷雾格，通常 4~9 格；不泄露未知地形、营地或地标。
+	var step := WorldConfig.WORLD_SIZE.x / float(GameState.FOG_GRID)
+	var world_start := _player_pos - rect.size * 0.5 / _radar_scale()
+	var world_end := _player_pos + rect.size * 0.5 / _radar_scale()
+	for gy in range(maxi(0, floori(world_start.y / step)), mini(GameState.FOG_GRID, ceili(world_end.y / step))):
+		for gx in range(maxi(0, floori(world_start.x / step)), mini(GameState.FOG_GRID, ceili(world_end.x / step))):
+			if GameState.fog_is_explored(gx, gy):
+				var cell_rect := Rect2(_radar_point(Vector2(gx, gy) * step), Vector2.ONE * step * _radar_scale())
+				draw_rect(cell_rect.intersection(rect), Color("294149"))
+	var center := rect.get_center()
+	draw_line(Vector2(center.x, rect.position.y), Vector2(center.x, rect.end.y), Color(0.6, 0.75, 0.8, 0.15))
+	draw_line(Vector2(rect.position.x, center.y), Vector2(rect.end.x, center.y), Color(0.6, 0.75, 0.8, 0.15))
+	for marker: Dictionary in _markers:
+		var point := _radar_point(marker["pos"])
+		if marker["kind"] == "monster":
+			draw_circle(point, 2.3, MONSTER_COLOR if not marker["ambient"] else Color("c1b6a0"))
+		elif marker["kind"] != "nest":
+			draw_rect(Rect2(point - Vector2(2.5, 2.5), Vector2(5, 5)), OBJECTIVE_COLOR)
+	if not _target.is_empty():
+		var point := _target_marker_position(_target["pos"])
+		var delta: Vector2 = (_target["pos"] as Vector2) - _player_pos
+		if delta.length() > 24.0:
+			var direction := delta.normalized()
+			var side := direction.orthogonal()
+			draw_line(center, point, Color(1, 0.82, 0.4, 0.55), 1.0)
+			draw_colored_polygon(PackedVector2Array([point + direction * 5,
+				point - direction * 4 + side * 3.5, point - direction * 4 - side * 3.5]), TARGET_COLOR)
+		else:
+			draw_arc(point, 6.0, 0, TAU, 16, TARGET_COLOR, 1.5)
+	draw_circle(center, 4.5, Color("14242b"))
+	draw_circle(center, 3.0, Color.WHITE)
+	draw_string(font, rect.position + Vector2(4, 15), "北", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("d9e3e4"))
+	draw_rect(rect, Color("58727c"), false, 1.0)

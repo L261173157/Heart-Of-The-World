@@ -101,6 +101,8 @@ var _sell_btns: Dictionary = {}
 var _inv_layer: Control
 var _inv_grid: GridContainer
 var _inv_hint: Label
+var _equipment_labels: Dictionary = {}
+var _equipment_lock_buttons: Dictionary = {}
 ## 战斗快捷槽：固定优先级取背包里最高级恢复品（零配置绑定；
 ## life-pot 应急性最强置顶，水壶垫底——HP 恢复是战斗刚需）
 const QUICK_PRIORITY := ["life-pot", "medipack", "sushi", "onigiri", "water-pot"]
@@ -774,7 +776,7 @@ func _setup_hud_hierarchy() -> void:
 	%BtnEco.position = Vector2(362, 18)
 	%BtnEco.size = Vector2(80, 80)
 	_add_button_caption(%BtnEco, "生态")
-	for pair: Array in [[%BtnBag, "物品"], [%BtnCodex, "图鉴"], [%BtnShop, "商店"], [%PauseBtn, "暂停"]]:
+	for pair: Array in [[%BtnBag, "背包"], [%BtnCodex, "图鉴"], [%BtnShop, "商店"], [%PauseBtn, "暂停"]]:
 		_add_button_caption(pair[0], pair[1])
 	%Minimap.offset_top = 24
 	%Minimap.offset_bottom = 144
@@ -932,7 +934,7 @@ func _snap_lerp(bar: ProgressBar, target: float, t: float) -> void:
 		bar.value = v
 
 
-## 键盘开关生态面板（Tab）/ 图鉴（C）/ 商店（B）/ 物品栏（I）/ 暂停（ESC）；触屏走按钮
+## 键盘开关生态面板（Tab）/ 图鉴（C）/ 商店（B）/ 背包（O）/ 暂停（ESC）；触屏走按钮
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_echo():
 		return
@@ -1534,7 +1536,7 @@ func _setup_inventory_layer() -> void:
 	var vb := VBoxContainer.new()
 	margin.add_child(vb)
 
-	var title := HotwTheme.ribbon_tag("物品栏", 2, 200.0)
+	var title := HotwTheme.ribbon_tag("装备与物品", 2, 240.0)
 	title.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	vb.add_child(title)
 
@@ -1555,11 +1557,38 @@ func _setup_inventory_layer() -> void:
 	_inv_grid.add_theme_constant_override("h_separation", 10)
 	_inv_grid.add_theme_constant_override("v_separation", 10)
 	_inv_grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	scroll.add_child(_inv_grid)
+	var contents := VBoxContainer.new()
+	contents.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	contents.add_theme_constant_override("separation", 12)
+	scroll.add_child(contents)
+	var equipment_help := Label.new()
+	equipment_help.text = "装备默认锁定，保留当前词条；同槽新掉落折金。\n点击解锁才会按词条百分比总和自动换装。"
+	equipment_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	equipment_help.add_theme_font_size_override("font_size", 16)
+	contents.add_child(equipment_help)
+	for slot: String in GameState.EQUIP_SLOTS:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		contents.add_child(row)
+		var detail := Label.new()
+		detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		detail.add_theme_font_size_override("font_size", 16)
+		row.add_child(detail)
+		_equipment_labels[slot] = detail
+		var lock_button := Button.new()
+		lock_button.name = "EquipmentLock_" + slot
+		lock_button.custom_minimum_size = Vector2(152, 72)
+		lock_button.toggle_mode = true
+		lock_button.toggled.connect(_on_equipment_lock_toggled.bind(slot))
+		row.add_child(lock_button)
+		_equipment_lock_buttons[slot] = lock_button
+	contents.add_child(HSeparator.new())
+	contents.add_child(_inv_grid)
 
 	var close := Button.new()
 	close.name = "InventoryClose"
-	close.text = "关闭（I）"
+	close.text = "关闭（O）"
 	close.custom_minimum_size = Vector2(0, 56)
 	close.pressed.connect(_close_inventory)
 	vb.add_child(close)
@@ -1587,6 +1616,7 @@ func _toggle_inventory() -> void:
 
 
 func _refresh_inventory() -> void:
+	_refresh_equipment()
 	# 先摘除再延迟释放：queue_free 是帧末生效，同帧连刷（拾取信号 + 使用后刷新）
 	# 会把待释放格子留在树里，格数统计与布局都失真
 	for child in _inv_grid.get_children().duplicate():
@@ -1616,7 +1646,28 @@ func _refresh_inventory() -> void:
 		btn.pressed.connect(_on_inv_cell.bind(id))
 		_inv_grid.add_child(btn)
 	_inv_hint.text = "消耗品点击即使用 ｜ 材料可整叠售予营地行商" if shown > 0 \
-			else "背包空空——猎杀野兽有机会拾取材料与补给"
+			else "暂无材料与补给——猎杀野兽有机会拾取"
+
+
+## 开关用目标布尔值而非反转：同一回调重复交付也不会翻回原状态。
+func _on_equipment_lock_toggled(locked: bool, slot: String) -> void:
+	if _inv_layer == null or not _inv_layer.visible:
+		return
+	GameState.set_equipment_locked(slot, locked)
+	_refresh_equipment()
+
+
+func _refresh_equipment() -> void:
+	for slot: String in _equipment_labels:
+		var item: Dictionary = GameState.stats.equips.get(slot, {})
+		var label: Label = _equipment_labels[slot]
+		var button: Button = _equipment_lock_buttons[slot]
+		var locked := GameState.is_equipment_locked(slot)
+		label.text = "%s：%s" % [GameState.SLOT_NAMES[slot],
+				"尚未装备" if item.is_empty() else GameState.equip_description(item)]
+		button.disabled = item.is_empty()
+		button.set_pressed_no_signal(locked)
+		button.text = "空槽" if item.is_empty() else ("已锁定\n点击解锁" if locked else "自动换装\n点击锁定")
 
 
 ## 物品格子点击：消耗品 → 经 item_use_requested 交 player 应用（满血拦截也在那）；
@@ -1694,6 +1745,8 @@ func _on_progress_changed(level: int, xp: int, xp_needed: int, pending_points: i
 	xp_bar.max_value = xp_needed
 	_xp_target = xp
 	_refresh_stats_label(level, pending_points)
+	if _inv_layer != null and _inv_layer.visible:
+		_refresh_equipment()
 
 
 func _on_gold_changed(_amount: int) -> void:

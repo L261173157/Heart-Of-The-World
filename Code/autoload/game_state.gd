@@ -11,8 +11,9 @@ const SAVE_DEBOUNCE := 2.0
 ## v4（世界 v5）增加 world_seed（每档全新世界）+ 探索进度（explored/discovered）；
 ## v5 增加 destroyed（已摧毁障碍格）+ quests（任务进度）；
 ## v6（玩法 v7）增加 inventory（物品栏：消耗品/材料）；
-## v7 增加未领取赐福/当前选卡与城塞宝箱领取状态（旧字段原样兼容）
-const SAVE_VERSION := 7
+## v7 增加未领取赐福/当前选卡与城塞宝箱领取状态；
+## v8 增加装备槽锁定与已发现检查点（旧字段原样兼容）
+const SAVE_VERSION := 8
 
 ## 世界种子（世界 v5）：「新的冒险」重掷，游戏内 BiomeMap.configure 消费；
 ## v3 旧档无此键 → DEFAULT_SEED（旧世界与旧 ecology 存档严丝合缝）
@@ -28,6 +29,8 @@ var fog_version := 0
 var fog_dirty: Array[Vector2i] = []
 ## 已发现地标 id 列表（lm_{patch}_{k}，确定性 id 随种子稳定）
 var discovered_landmarks: Array[String] = []
+## 已亲自发现的检查点；合法定义来自 WorldConfig，旧档由世界装配迁移已发现地标。
+var discovered_checkpoints: Array[String] = []
 ## 已摧毁障碍格（"x,y" 字符串列表；game_world 装配时灌回 ObstacleField）
 var destroyed_cells: Array[String] = []
 ## 城塞宝箱已领取：patch_id -> true，Boss 实际重生后才清除对应条目。
@@ -37,6 +40,8 @@ var quests := {"active": [], "completed": {}}
 ## 物品栏（玩法 v7，存档 v6）：id -> 数量（钳 ITEM_MAX）。合法 id 真源是
 ## EconomyMath 的价格表（纯逻辑层，随迁服务端）；表现元数据在 ItemCatalog
 var inventory: Dictionary = {}
+## 已占用槽位默认锁定；false 是玩家明确选择的按总词条自动换装。
+var equipment_locks: Dictionary = {}
 const ITEM_MAX := 99
 
 ## stats 对象被重建（reset_all）时通知常驻订阅者（如 SfxManager）重连信号
@@ -244,16 +249,35 @@ func _roll_affix(slot: String, id: String, rarity: int) -> float:
 	return lerpf(float(rangev[0]), float(rangev[1]), t * randf())
 
 
-## 掉落结算：按物品槽位比较评分，更高则替换该槽返回 true；否则按稀有度折金返回 false。
-## 换下的旧装备同样按稀有度折金（EconomyMath 契约：替换与拒收同口径结算——
-## 旧件直接蒸发会让经济总量随换装次数单向流失，连续换装时无声吞掉旧史诗）
+## 锁定是保留构筑的默认值：旧档缺字段、新装备入空槽都不会被下一件静默换掉。
+## 空槽无需锁；只有玩家在背包明确解锁后，才启用旧有的总词条自动比较。
+func is_equipment_locked(slot: String) -> bool:
+	return slot in EQUIP_SLOTS and not stats.equips.get(slot, {}).is_empty() \
+			and bool(equipment_locks.get(slot, true))
+
+
+func set_equipment_locked(slot: String, locked: bool) -> bool:
+	if not slot in EQUIP_SLOTS or stats.equips.get(slot, {}).is_empty():
+		return false
+	if is_equipment_locked(slot) == locked:
+		return false
+	equipment_locks[slot] = locked
+	_queue_save()
+	return true
+
+
+## 掉落结算：空槽穿上并锁定；锁定槽保留当前装备，新掉落按稀有度折金。
+## 只有明确解锁的槽位按总词条比较自动替换，换下的旧件同样折金。
 func try_equip(item: Dictionary) -> bool:
 	var slot := str(item.get("slot", "weapon"))
 	if not slot in EQUIP_SLOTS:
 		slot = "weapon"
 	var current: Dictionary = stats.equips.get(slot, {})
-	if stats.equip_score(item) > stats.equip_score(current):
+	if current.is_empty() or (not is_equipment_locked(slot) \
+			and stats.equip_score(item) > stats.equip_score(current)):
 		stats.equips[slot] = item
+		if current.is_empty():
+			equipment_locks[slot] = true
 		stats.changed.emit()
 		if not current.is_empty():
 			add_gold(EconomyMath.sell_price(int(current.get("rarity", 0))))
@@ -414,6 +438,15 @@ func discover_landmark(id: String) -> bool:
 	return true
 
 
+## 只有定义内的检查点可被发现；重复触发 Area2D 不重复写档。
+func discover_checkpoint(id: String) -> bool:
+	if discovered_checkpoints.has(id) or not WorldConfig.checkpoints().has(id):
+		return false
+	discovered_checkpoints.append(id)
+	_queue_save()
+	return true
+
+
 ## 设置应用（音量即时生效）与写入
 func set_setting(key: String, value) -> void:
 	settings[key] = value
@@ -444,10 +477,12 @@ func reset_all() -> void:
 	explored = PackedByteArray()
 	fog_dirty.clear()
 	discovered_landmarks = []
+	discovered_checkpoints = []
 	destroyed_cells = []
 	chest_claims = {}
 	quests = {"active": [], "completed": {}}
 	inventory = {}
+	equipment_locks = {}
 	save_now()
 	stats_rebuilt.emit()
 	EventBus.player_progress_changed.emit(stats.level, stats.xp, stats.xp_to_next(), stats.pending_points)
@@ -547,6 +582,7 @@ func save_now(include_ecology := true) -> bool:
 		},
 		"passives": stats.passives,
 		"equips": stats.equips,
+		"equipment_locks": equipment_locks,
 		"age_days": stats.age_days,
 		"lifespan_days": stats.lifespan_days,
 		"codex": codex,
@@ -587,6 +623,8 @@ func save_now(include_ecology := true) -> bool:
 		data["explored"] = Marshalls.raw_to_base64(explored)
 	if not discovered_landmarks.is_empty():
 		data["landmarks"] = discovered_landmarks.duplicate()
+	if not discovered_checkpoints.is_empty():
+		data["checkpoints"] = discovered_checkpoints.duplicate()
 	# 世界运行时覆盖层是真源；菜单冷启动尚未装配 ObstacleField，必须保留读档缓存。
 	if WorldSim.sim != null:
 		destroyed_cells.assign(ObstacleField.destroyed_list())
@@ -800,6 +838,7 @@ func _load() -> void:
 	for threshold in [10.0, 5.0, 1.0]:
 		if stats.lifespan_remaining() <= threshold:
 			_lifespan_warned.append(threshold)
+	stats.equips = {}
 	var saved_equips: Variant = data.get("equips", {})
 	if typeof(saved_equips) == TYPE_DICTIONARY:
 		# 只收合法槽位，旧档遗留字段不带入；内层字段级消毒（存档可能被手改/工具写坏）：
@@ -815,6 +854,13 @@ func _load() -> void:
 	if typeof(legacy_equip) == TYPE_DICTIONARY and not legacy_equip.is_empty() \
 			and not stats.equips.has("weapon"):
 		stats.equips["weapon"] = _sanitize_equip_item("weapon", legacy_equip)
+	# 缺键/坏值默认锁定，既有输出/吸血构筑升级后立即受保护；仅布尔 false 可解锁。
+	equipment_locks = {}
+	var saved_locks: Variant = data.get("equipment_locks", {})
+	if typeof(saved_locks) == TYPE_DICTIONARY:
+		for slot: String in EQUIP_SLOTS:
+			if stats.equips.has(slot) and typeof(saved_locks.get(slot)) == TYPE_BOOL:
+				equipment_locks[slot] = saved_locks[slot]
 	var saved_achv: Variant = data.get("achievements", {})
 	if typeof(saved_achv) == TYPE_DICTIONARY:
 		achievements = {}
@@ -862,6 +908,7 @@ func _load() -> void:
 		if decoded.size() == FOG_GRID * 25:
 			explored = decoded
 	discovered_landmarks = []
+	discovered_checkpoints = []
 	destroyed_cells = []
 	chest_claims = {}
 	var saved_claims: Variant = data.get("chest_claims", {})
@@ -912,6 +959,15 @@ func _load() -> void:
 		for id in saved_marks:
 			if typeof(id) == TYPE_STRING and id.begins_with("lm_"):
 				discovered_landmarks.append(id)
+	var saved_checkpoints: Variant = data.get("checkpoints", [])
+	if typeof(saved_checkpoints) == TYPE_ARRAY and not saved_checkpoints.is_empty():
+		# 校验必须使用本档世界种子，不能借用上一档残留的地标定义。
+		BiomeMap.configure(world_seed)
+		var valid_checkpoints := WorldConfig.checkpoints()
+		for id: Variant in saved_checkpoints:
+			if typeof(id) == TYPE_STRING and valid_checkpoints.has(id) \
+					and not discovered_checkpoints.has(id):
+				discovered_checkpoints.append(id)
 	# 物品栏（v6+）：逐条消毒——未知 id / 非 String 键丢弃，数量只收正整数钳
 	# ITEM_MAX（手改档负数/浮点/超限都按边界收敛，不中断整个背包）
 	inventory = {}

@@ -47,6 +47,8 @@ signal boss_hp_changed(current: float, maximum: float)
 
 # --- 赏金任务（bounty_manager 发出，HUD 呈现） ---
 signal bounty_updated(bounty_text: String)
+## 雷达消费结构化目标；空串表示交接/失效，不从本地化文案反解析。
+signal bounty_target_changed(species_name: String)
 signal bounty_completed(bounty_text: String)
 
 # --- 世界事件（world_event_watcher 检测生态快照的戏剧性变化，HUD 播报） ---

@@ -168,14 +168,14 @@ func _ready() -> void:
 	GameState.ecology_snapshot = null  # 一次性引导数据，消费即清
 	var resumed := false
 	if snapshot != null and typeof(snapshot) == TYPE_DICTIONARY:
-		resumed = _sim.restore_from_dict(regions, species_list, snapshot)
+		resumed = _sim.restore_from_dict(regions, species_list, snapshot, WorldConfig.boss_anchors())
 	if not resumed:
 		# 恢复失败回退新世界：restore 重放信号已生成的节点/待生成池/巢穴实体
 		# 属于旧世界线（实例已不在新 sim 里，留着会变成打不死的残桩），一并清场；
 		# setup 随后重建模拟状态并重放信号，表现层从零接新世界
 		_discard_streamed_world()
 		GameState.clear_chest_claims()
-		_sim.setup(regions, species_list, WorldConfig.initial_population())
+		_sim.setup(regions, species_list, WorldConfig.initial_population(), WorldConfig.boss_anchors())
 	else:
 		# 读档续玩：首个区域提交只静默切 BGM 不播报（见 _process 提交分支）
 		_skip_first_region_announce = true
@@ -208,6 +208,7 @@ func _ready() -> void:
 	_spawn_region_labels()
 	_setup_landmarks()
 	_setup_camp()
+	_restore_discovered_checkpoints()
 	# 首个区域即时提交（点查询，不等总览任务/Area 建立）：读档静默接回区域曲
 	# 与新开图播报的旧时序保持——Area 建立后同区域的 enter 事件被
 	# "region_id == _current_region_id" 分支吸收，不会重复播报
@@ -341,6 +342,7 @@ func _process(delta: float) -> void:
 		_scan_accum = 0.0
 		_update_landmark_markers()
 		_process_camp(scan_delta)
+		_discover_nearby_checkpoints()
 	_fog_accum += delta
 	if _fog_accum >= FOG_REVEAL_INTERVAL:
 		_fog_accum = 0.0
@@ -847,7 +849,10 @@ func _setup_landmarks() -> void:
 
 func _on_landmark_area_entered(_body: Node2D, id: String) -> void:
 	var lm: Dictionary = LandmarkRegistry.landmark(id)
-	if lm.is_empty() or not GameState.discover_landmark(id):
+	if lm.is_empty():
+		return
+	_unlock_checkpoint("landmark:" + id)
+	if not GameState.discover_landmark(id):
 		return
 	EventBus.landmark_discovered.emit(id, lm["patch_id"], lm["kind"], lm["pos"])
 	EventBus.world_event.emit("🧭 发现地标「%s」" % lm["kind"])
@@ -856,6 +861,30 @@ func _on_landmark_area_entered(_body: Node2D, id: String) -> void:
 	if marker != null:
 		marker.discovered = true
 		marker.queue_redraw()
+
+
+## 旧档只继承确实发现过的驻守营地，不把已探索大格或全部安全区当作检查点。
+func _restore_discovered_checkpoints() -> void:
+	GameState.discover_checkpoint("home")
+	for id: String in GameState.discovered_landmarks:
+		GameState.discover_checkpoint("landmark:" + id)
+	_discover_nearby_checkpoints()
+
+
+func _unlock_checkpoint(id: String) -> void:
+	if GameState.discover_checkpoint(id):
+		var point: Dictionary = WorldConfig.checkpoints()[id]
+		EventBus.world_event.emit("复活点已解锁：%s（倒下后就近返回）" % point["name"])
+
+
+func _discover_nearby_checkpoints() -> void:
+	var player := get_tree().get_first_node_in_group("player") as Player
+	if player == null or not player.visible or player._is_dead:
+		return
+	# 城塞入口没有地标 Area，沿现有 4Hz 探索扫描解锁；只检查两座城塞。
+	for dg: Dictionary in _dungeon_list():
+		if player.global_position.distance_squared_to(dg["center"]) <= 800.0 * 800.0:
+			_unlock_checkpoint("fortress:" + dg["patch_id"])
 
 
 ## 地标视觉标记：玩家附近才有实体（微光圈 + 图腾点；发现后高亮）
