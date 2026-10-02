@@ -118,7 +118,7 @@ func _known_candidates() -> Array[Dictionary]:
 			continue
 		result.append({"id": "monster:%d" % inst.id, "kind": "monster", "pos": pos,
 			"name": inst.species.species_name, "species": inst.species.species_name,
-			"ambient": inst.species.ambient, "streamed": live_positions.has(inst.id)})
+			"ambient": inst.species.ambient, "streamed": live_positions.has(inst.id), "region_id": inst.region_id})
 	for key: String in WorldSim.sim.nests:
 		if not bool(WorldSim.sim.nests[key].get("active", false)):
 			continue
@@ -156,13 +156,15 @@ func _select_target(candidates: Array[Dictionary]) -> Dictionary:
 		var distance := _player_pos.distance_to(candidate["pos"])
 		var priority := 99
 		var category := ""
-		for quest: Dictionary in GameState.quests.get("active", []):
-			if distance > NEARBY_RADIUS:
+		for quest: Dictionary in _tracked_quests():
+			if distance > NEARBY_RADIUS and (GameState.tracked_quest_id.is_empty() \
+					or str(quest.get("id", "")) != GameState.tracked_quest_id):
 				continue
 			if int(quest.get("progress", 0)) >= int(quest.get("need", 1)):
 				continue
 			if quest.get("kind", "") == "hunt" and candidate["kind"] == "monster" \
-					and candidate["species"] == quest.get("species", ""):
+					and candidate["species"] == quest.get("species", "") \
+					and (quest.get("hunt_region", "") == "" or candidate.get("region_id", "") == quest["hunt_region"]):
 				priority = 0
 				category = "委托 · 猎杀"
 			elif quest.get("kind", "") == "ransack" and candidate["kind"] == "nest":
@@ -173,7 +175,11 @@ func _select_target(candidates: Array[Dictionary]) -> Dictionary:
 				priority = 0
 				category = "委托 · 材料"
 		if priority > 0 and candidate["kind"] == "monster" and _bounty_species != "" \
-				and candidate["species"] == _bounty_species and distance <= NEARBY_RADIUS:
+				and candidate["species"] == _bounty_species \
+				and distance <= (BountyManager.NEIGHBOR_RADIUS if not GameState.bounty.is_empty() else NEARBY_RADIUS) \
+				and (GameState.bounty.is_empty() or candidate.get("region_id", "") == GameState.bounty.get("region_id", "")) \
+				and (not GameState.bounty.has("target_ids") \
+					or str(candidate["id"]).trim_prefix("monster:").to_int() in GameState.bounty["target_ids"]):
 			priority = 1
 			category = "赏金目标"
 		if priority > 1 and candidate["kind"] == "monster" and not candidate["ambient"] \
@@ -192,6 +198,15 @@ func _select_target(candidates: Array[Dictionary]) -> Dictionary:
 			best_priority = priority
 			best_distance = distance
 	return best
+
+
+## 只有选中的委托能抢占自动附近目标；兼容缺少追踪字段的旧存档首单。
+func _tracked_quests() -> Array:
+	var active: Array = GameState.quests.get("active", [])
+	for quest: Dictionary in active:
+		if str(quest.get("id", "")) == GameState.tracked_quest_id:
+			return [quest]
+	return [active[0]] if not active.is_empty() else []
 
 
 func _is_known_position(pos: Vector2) -> bool:

@@ -74,6 +74,9 @@ var _cd_elapsed := 0.0
 var _cd_durations := [0.0, 0.0, 0.0, 0.0, 0.0]
 ## 最近已知蓝量（技能槽"蓝不足"置灰用）
 var _mp_now := 0.0
+var _mp_max_cache := 1.0
+var _hp_known := false
+var _mp_known := false
 ## 是否满血（治疗槽"满血无效"置灰用）
 var _hp_full := false
 ## 三选一点击去重：下一帧才接受下一张，避免同帧重复按钮事件连领。
@@ -103,8 +106,21 @@ var _inv_grid: GridContainer
 var _inv_hint: Label
 var _equipment_labels: Dictionary = {}
 var _equipment_lock_buttons: Dictionary = {}
-## 战斗快捷槽：固定优先级取背包里最高级恢复品（零配置绑定；
-## life-pot 应急性最强置顶，水壶垫底——HP 恢复是战斗刚需）
+## 单件候选只在背包比较，不在战斗中弹层；按钮绑定本次 offer，旧回调不能处理新件。
+var _equipment_offer: VBoxContainer
+var _equipment_badge: Label
+var _equipment_pick_locked := false
+var _task_layer: Control
+var _task_rows: VBoxContainer
+var _task_snapshot: Array = []
+var _tracked_quest_id := ""
+var _stat_layer: Control
+var _stat_preview: Label
+var _stat_owned: Label
+var _stat_confirm: Button
+var _stat_attribute := ""
+var _passive_owned: Label
+## 同类优先使用高恢复品；满生命时跳过食物改用缺少的精力补给。
 const QUICK_PRIORITY := ["life-pot", "medipack", "sushi", "onigiri", "water-pot"]
 var _quick_btn: Button
 var _quick_icon: TextureRect
@@ -162,9 +178,9 @@ func _ready() -> void:
 	EventBus.hint_requested.connect(func(text: String) -> void: _toast(text))
 	_setup_fps_label()
 
-	%BtnStrength.pressed.connect(func(): GameState.allocate("strength"))
-	%BtnAgility.pressed.connect(func(): GameState.allocate("agility"))
-	%BtnIntellect.pressed.connect(func(): GameState.allocate("intellect"))
+	%BtnStrength.pressed.connect(_open_stat_preview.bind("strength"))
+	%BtnAgility.pressed.connect(_open_stat_preview.bind("agility"))
+	%BtnIntellect.pressed.connect(_open_stat_preview.bind("intellect"))
 
 	%AttackBtn.button_down.connect(TouchInput.queue_attack)
 	%DashBtn.button_down.connect(TouchInput.queue_dash)
@@ -181,6 +197,7 @@ func _ready() -> void:
 	%BtnBag.pressed.connect(_toggle_inventory)
 	# v7 物品：拾取播报 + 背包变化刷新快捷槽/物品栏（lambda 无捕获，安全）
 	EventBus.item_gained.connect(_on_item_gained)
+	EventBus.equipment_offer_changed.connect(_on_equipment_offer_changed)
 	EventBus.inventory_changed.connect(func() -> void:
 		_refresh_quick_slot()
 		if _inv_layer != null and _inv_layer.visible:
@@ -189,7 +206,8 @@ func _ready() -> void:
 	EventBus.bounty_updated.connect(func(text: String) -> void: bounty_label.text = text)
 	# 任务行（世界 v5 地标 NPC 委托）：空串隐藏（无任务时不占行高）
 	EventBus.quest_updated.connect(_on_quest_updated)
-	# P1：任务行可点击放弃首个任务（读档注释遗留项；桌面/触屏同通道）
+	# 任务行只打开小列表，跟踪与放弃为两个明确动作。
+	EventBus.quest_list_changed.connect(_on_quest_list_changed)
 	quest_label.mouse_filter = Control.MOUSE_FILTER_STOP
 	quest_label.gui_input.connect(_on_quest_label_input)
 	EventBus.bounty_completed.connect(func(text: String) -> void: _toast(text))
@@ -240,11 +258,14 @@ func _ready() -> void:
 	_setup_dialogue_bubble()
 	_setup_shop_tabs()
 	_setup_inventory_layer()
+	_setup_choice_layers()
 	_setup_quick_slot()
 	_apply_theme()
 	_setup_icon_buttons()
 	_setup_stats_row()
 	_setup_hud_hierarchy()
+	_equipment_badge = HotwTheme.add_badge(%BtnBag, "")
+	_on_equipment_offer_changed()
 	_apply_vignette()
 	# 初值用真源实值：读档进世界（如 Lv.7 带 3 待分配点）时 HUD 不再闪显 Lv.1 空经验条
 	_on_progress_changed(GameState.stats.level, GameState.stats.xp,
@@ -958,7 +979,11 @@ func _unhandled_input(event: InputEvent) -> void:
 ## ESC 先关最上层弹层（设置→图鉴→物品栏→商店），全关后才切暂停——
 ## 否则世界解除暂停恢复战斗，设置层却还悬浮在画面上挡操作
 func _close_top_layer_or_toggle_pause() -> void:
-	if pause_settings_layer.visible:
+	if passive_layer.visible:
+		return
+	if _choice_layer_visible():
+		_close_choice_layer()
+	elif pause_settings_layer.visible:
 		_close_pause_settings()
 	elif codex_layer.visible:
 		_close_codex()
@@ -1057,6 +1082,9 @@ func _toggle_pause() -> void:
 		return
 	if passive_layer.visible:
 		return  # 三选一未选时不允许暂停卡死流程
+	if _choice_layer_visible():
+		_close_choice_layer()
+		return
 	if _inv_layer != null and _inv_layer.visible:
 		_toggle_inventory()
 		return
@@ -1097,6 +1125,12 @@ func _sync_modal_focus(preferred: Control = null) -> void:
 	if passive_layer.visible:
 		active = passive_layer
 		fallback = passive_cards[0]
+	elif _stat_layer != null and _stat_layer.visible:
+		active = _stat_layer
+		fallback = _stat_layer.find_child("ChoiceClose", true, false)
+	elif _task_layer != null and _task_layer.visible:
+		active = _task_layer
+		fallback = _task_layer.find_child("ChoiceClose", true, false)
 	elif pause_settings_layer.visible:
 		active = pause_settings_layer
 		fallback = %PauseSettingsClose
@@ -1188,6 +1222,8 @@ func _on_player_died() -> void:
 # --- 图鉴与成就 ---
 
 func _toggle_codex() -> void:
+	if _choice_layer_visible():
+		return
 	if _inv_layer != null and _inv_layer.visible:
 		return
 	# 暂停菜单/三选一已占住屏幕时不响应（键 C 穿透暂停层打开图鉴会造成
@@ -1220,7 +1256,11 @@ func _refresh_codex() -> void:
 	for i in species_names.size():
 		var kills: int = int(GameState.codex.get(species_names[i], 0))
 		if kills > 0:
-			lines.append("✓ %s  累计猎杀 %d" % [species_names[i], kills])
+			var species: SpeciesData = WorldSim.sim.species_list[i]
+			var status := WorldEventDetector.species_status_text(species_names[i],
+					WorldSim.sim.alive_count_of_species(species_names[i]), WorldSim.sim.player_extinct,
+					species.is_boss, WorldSim.sim.reintroduction_enabled)
+			lines.append("✓ %s  累计猎杀 %d\n    %s" % [species_names[i], kills, status])
 		else:
 			# 未猎杀隐藏名字（收集悬念），但给序号让玩家能感知收集进度
 			lines.append("？ #%02d 未曾猎杀" % [i + 1])
@@ -1239,6 +1279,7 @@ func _refresh_codex() -> void:
 	if GameState.stats.aging_decay() < 1.0:
 		life_line += "（风烛残年：上限 ×%.0f%%）" % (GameState.stats.aging_decay() * 100.0)
 	lines.append(life_line)
+	lines.append(_owned_passive_text())
 	codex_content.text = "\n".join(lines)
 	var ach_lines: Array[String] = []
 	for id in AchievementManager.ACHIEVEMENTS:
@@ -1273,13 +1314,21 @@ func _open_passive_pick() -> void:
 			var lv: int = GameState.stats.passive_level(entry["id"])
 			btn.icon = PASSIVE_ICONS.get(entry["id"], PASSIVE_ICON_DEFAULT)
 			btn.expand_icon = true
-			btn.text = "%s\n%s\n（当前 %d 级）" % [entry["name"], entry["desc"], lv]
+			btn.text = "%s  %d → %d 级\n%s" % [entry["name"], lv, lv + 1,
+					_benefit_text(GameState.stats.preview_passive(entry["id"]))]
 			btn.set_meta("passive_id", entry["id"])
 			btn.set_meta("passive_offer_id", GameState.stats.passive_offer_id)
 			btn.visible = true
 		else:
 			btn.visible = false
-	# 读卡时暂停世界：全屏选卡层挡操作，怪物却仍在攻击——升级应是奖励不是惩罚
+	_passive_owned.text = _owned_passive_text()
+	# 升级可发生于读取/调试信号中断：先收起旧模态，再把赐福放到最上层。
+	for layer: Control in [_inv_layer, _task_layer, _stat_layer, codex_layer,
+			pause_layer, pause_settings_layer, shop_panel]:
+		if layer != null:
+			layer.visible = false
+	passive_layer.get_parent().move_child(passive_layer, -1)
+	# 读卡时暂停世界，领取后不会遗留隐藏模态的暂停态。
 	passive_layer.visible = true
 	get_tree().paused = true
 	TouchInput.clear_queues()
@@ -1315,17 +1364,14 @@ func _on_quest_updated(text: String) -> void:
 	quest_label.visible = text != ""
 
 
-## 任务行点击 → 放弃首个任务（QuestManager 单点处理并刷新 HUD 行）
+## 行点击只打开列表，不改任务。真实触摸和鼠标经同一 GUI 输入通道。
 func _on_quest_label_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed \
-			and event.button_index == MOUSE_BUTTON_LEFT:
-		var qm := get_tree().get_first_node_in_group("quest_manager")
-		if qm == null:
-			return
-		var msg: String = qm.abandon_first()
-		if msg != "":
-			SfxManager.play("menu")
-			_toast(msg)
+	var clicked: bool = event is InputEventMouseButton and event.pressed \
+			and event.button_index == MOUSE_BUTTON_LEFT
+	var touched: bool = event is InputEventScreenTouch and event.pressed
+	if clicked or touched:
+		quest_label.accept_event()
+		_open_task_list()
 
 
 func _on_day_phase(night: bool) -> void:
@@ -1342,6 +1388,8 @@ func _on_day_phase(night: bool) -> void:
 # --- 游商营地 ---
 
 func _toggle_shop() -> void:
+	if _choice_layer_visible():
+		return
 	if pause_layer.visible or pause_settings_layer.visible or passive_layer.visible or codex_layer.visible:
 		return
 	# 物品栏开着（世界暂停）时开商店会留下"商店可点而世界冻结"的怪态——先收起
@@ -1562,9 +1610,13 @@ func _setup_inventory_layer() -> void:
 	contents.add_theme_constant_override("separation", 12)
 	scroll.add_child(contents)
 	var equipment_help := Label.new()
-	equipment_help.text = "装备默认锁定，保留当前词条；同槽新掉落折金。\n点击解锁才会按词条百分比总和自动换装。"
+	equipment_help.text = "锁定槽保留 1 件待比较装备；选择后换下或放弃的装备折金。\n候选未处理时，后续掉落直接折金。解锁可启用总词条自动换装。"
 	equipment_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	equipment_help.add_theme_font_size_override("font_size", 16)
+	_equipment_offer = VBoxContainer.new()
+	_equipment_offer.name = "EquipmentOffer"
+	_equipment_offer.add_theme_constant_override("separation", 8)
+	contents.add_child(_equipment_offer)
 	contents.add_child(equipment_help)
 	for slot: String in GameState.EQUIP_SLOTS:
 		var row := HBoxContainer.new()
@@ -1595,6 +1647,8 @@ func _setup_inventory_layer() -> void:
 
 
 func _toggle_inventory() -> void:
+	if _choice_layer_visible():
+		return
 	# 暂停菜单/设置/三选一/图鉴已占屏时不响应（与 _toggle_codex 同防穿层）
 	if _inv_layer == null:
 		return
@@ -1617,6 +1671,7 @@ func _toggle_inventory() -> void:
 
 func _refresh_inventory() -> void:
 	_refresh_equipment()
+	_refresh_equipment_offer()
 	# 先摘除再延迟释放：queue_free 是帧末生效，同帧连刷（拾取信号 + 使用后刷新）
 	# 会把待释放格子留在树里，格数统计与布局都失真
 	for child in _inv_grid.get_children().duplicate():
@@ -1684,7 +1739,7 @@ func _on_inv_cell(id: String) -> void:
 			EconomyMath.item_sell_price(id)])
 
 
-## 战斗快捷槽：零配置绑定——按 QUICK_PRIORITY 取背包里最高级的恢复品，
+## 战斗快捷槽：零配置绑定——按 QUICK_PRIORITY 取当前资源有缺口的恢复品，
 ## 显示持有数；点击经 item_use_requested 交 player（满血满蓝拦截在 player 侧）
 func _setup_quick_slot() -> void:
 	_quick_btn = %QuickSlotBtn
@@ -1700,7 +1755,11 @@ func _refresh_quick_slot() -> void:
 		return
 	var pick := ""
 	for id: String in QUICK_PRIORITY:
-		if GameState.count_item(id) > 0:
+		if GameState.count_item(id) <= 0:
+			continue
+		var needs_hp := _hp_known and not _hp_full and CharacterStats.ITEM_HP_FRAC.has(id)
+		var needs_mp := _mp_known and _mp_now < _mp_max_cache - 0.5 and CharacterStats.ITEM_MP_FRAC.has(id)
+		if needs_hp or needs_mp:
 			pick = id
 			break
 	_quick_id = pick
@@ -1710,12 +1769,14 @@ func _refresh_quick_slot() -> void:
 
 
 func _on_quick_slot() -> void:
+	_refresh_quick_slot()
 	if _quick_id == "":
 		return
 	EventBus.item_use_requested.emit(_quick_id)
 
 
 func _on_hp_changed(current: float, maximum: float) -> void:
+	_hp_known = true
 	if _hp_value != null:
 		_hp_value.text = "%d / %d" % [ceili(current), ceili(maximum)]
 	hp_bar.max_value = maximum
@@ -1731,14 +1792,18 @@ func _on_hp_changed(current: float, maximum: float) -> void:
 	if current > _hp_ghost:
 		_hp_ghost = current  # 回血：残影立即抬升
 	_hp_target = current
+	_refresh_quick_slot()
 
 
 func _on_mp_changed(current: float, maximum: float) -> void:
+	_mp_known = true
+	_mp_max_cache = maximum
 	_mp_now = current
 	if _mp_value != null:
 		_mp_value.text = "%d / %d" % [ceili(current), ceili(maximum)]
 	mp_bar.max_value = maximum
 	_mp_target = current
+	_refresh_quick_slot()
 
 
 func _on_progress_changed(level: int, xp: int, xp_needed: int, pending_points: int) -> void:
@@ -1747,6 +1812,9 @@ func _on_progress_changed(level: int, xp: int, xp_needed: int, pending_points: i
 	_refresh_stats_label(level, pending_points)
 	if _inv_layer != null and _inv_layer.visible:
 		_refresh_equipment()
+		_refresh_equipment_offer()
+	if _stat_layer != null and _stat_layer.visible:
+		_refresh_stat_preview()
 
 
 func _on_gold_changed(_amount: int) -> void:
@@ -1852,3 +1920,301 @@ func _toast(message: String) -> void:
 		toast_label.text = message
 	toast_label.modulate.a = 1.0
 	_toast_timer = TOAST_DURATION
+
+
+# --- 选择前的实际收益（CharacterStats 的只读快照，展示层不重算养成公式） ---
+const BENEFIT_NAMES := {
+	"max_hp": "生命上限", "hp_regen": "生命回复/秒", "max_mp": "精力上限",
+	"mp_regen": "精力回复/秒", "physical": "物理攻击", "magic": "魔法攻击",
+	"heal": "治疗回复", "move": "移动速度", "attack_interval": "攻击间隔",
+	"heavy_cooldown": "重击冷却", "lifesteal": "普攻吸血", "gold": "金币倍率",
+	"xp": "经验倍率", "knock": "击退倍率",
+}
+
+
+func _benefit_value(key: String, value: float) -> String:
+	if key in ["gold", "xp", "knock"]:
+		return "×%.2f" % value
+	if key in ["attack_interval", "heavy_cooldown"]:
+		return "%.2f秒" % value
+	return "%.2f" % value
+
+
+func _benefit_text(preview: Dictionary, include_key_stats := false) -> String:
+	var lines: Array[String] = []
+	var before: Dictionary = preview["before"]
+	var after: Dictionary = preview["after"]
+	for key: String in BENEFIT_NAMES:
+		if not is_equal_approx(float(before[key]), float(after[key])) \
+				or (include_key_stats and key in ["max_hp", "physical"]):
+			lines.append("%s  %s → %s" % [BENEFIT_NAMES[key],
+					_benefit_value(key, before[key]), _benefit_value(key, after[key])])
+	return "\n".join(lines) if not lines.is_empty() else "当前数值已到上限，无额外提升"
+
+
+func _owned_passive_text() -> String:
+	var parts: Array[String] = []
+	for entry: Dictionary in CharacterStats.PASSIVE_POOL:
+		var rank := GameState.stats.passive_level(entry["id"])
+		if rank > 0:
+			parts.append("%s%d级" % [entry["name"], rank])
+	return "已获赐福：" + ("、".join(parts) if not parts.is_empty() else "暂无")
+
+
+func _readable_label(text := "", font_size := 18) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.add_theme_font_size_override("font_size", font_size)
+	return label
+
+
+## 通用的小型阅读层：可滚动正文和固定关闭按钮，继承 Root 的实际安全区。
+func _new_choice_layer(layer_name: String, title: String) -> Control:
+	var layer := Control.new()
+	layer.name = layer_name
+	layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.visible = false
+	get_node("Root").add_child(layer)
+	var dim := ColorRect.new()
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.color = Color(0, 0, 0, 0.5)
+	layer.add_child(dim)
+	var panel := PanelContainer.new()
+	panel.name = "Panel"
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.offset_left = -332
+	panel.offset_right = 332
+	panel.offset_top = -266
+	panel.offset_bottom = 266
+	HotwTheme.paper_panel(panel, HotwTheme.PAPER_SPECIAL)
+	layer.add_child(panel)
+	var margin := MarginContainer.new()
+	for edge: String in ["left", "top", "right", "bottom"]:
+		margin.add_theme_constant_override("margin_" + edge, 20)
+	panel.add_child(margin)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 12)
+	margin.add_child(content)
+	var ribbon := HotwTheme.ribbon_tag(title, 0, 260)
+	ribbon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	content.add_child(ribbon)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content.add_child(scroll)
+	var body := VBoxContainer.new()
+	body.name = "Body"
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 12)
+	scroll.add_child(body)
+	var close := Button.new()
+	close.name = "ChoiceClose"
+	close.text = "关闭 / 返回"
+	close.custom_minimum_size = Vector2(0, 56)
+	close.pressed.connect(_close_choice_layer)
+	content.add_child(close)
+	return layer
+
+
+func _setup_choice_layers() -> void:
+	_task_layer = _new_choice_layer("TaskListLayer", "当前委托")
+	_task_rows = _task_layer.find_child("Body", true, false)
+	_stat_layer = _new_choice_layer("StatPreviewLayer", "属性点收益")
+	var body: VBoxContainer = _stat_layer.find_child("Body", true, false)
+	_stat_preview = _readable_label()
+	_stat_preview.name = "StatPreview"
+	body.add_child(_stat_preview)
+	_stat_owned = _readable_label("", 16)
+	body.add_child(_stat_owned)
+	_stat_confirm = Button.new()
+	_stat_confirm.name = "ConfirmAttribute"
+	_stat_confirm.custom_minimum_size = Vector2(0, 60)
+	_stat_confirm.pressed.connect(_confirm_stat_point)
+	body.add_child(_stat_confirm)
+	_passive_owned = _readable_label("", 16)
+	_passive_owned.name = "OwnedPassives"
+	_passive_owned.custom_minimum_size.x = 860
+	_passive_owned.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	passive_layer.get_node("PassiveVB").add_child(_passive_owned)
+	for card: Button in passive_cards:
+		card.custom_minimum_size = Vector2(280, 192)
+		card.add_theme_font_size_override("font_size", 18)
+
+
+func _choice_layer_visible() -> bool:
+	return (_task_layer != null and _task_layer.visible) \
+			or (_stat_layer != null and _stat_layer.visible)
+
+
+func _can_open_choice() -> bool:
+	return not passive_layer.visible and not pause_layer.visible and not pause_settings_layer.visible \
+			and not codex_layer.visible and not _choice_layer_visible() \
+			and not (_inv_layer != null and _inv_layer.visible)
+
+
+func _open_choice_layer(layer: Control) -> void:
+	shop_panel.visible = false
+	layer.visible = true
+	layer.get_parent().move_child(layer, -1)
+	get_tree().paused = true
+	TouchInput.clear_queues()
+	_sync_modal_focus()
+
+
+func _close_choice_layer() -> void:
+	if not _choice_layer_visible() or passive_layer.visible:
+		return
+	_task_layer.visible = false
+	_stat_layer.visible = false
+	_stat_attribute = ""
+	get_tree().paused = false
+	TouchInput.clear_queues()
+	_sync_modal_focus()
+
+
+func _open_stat_preview(attribute: String) -> void:
+	if not _can_open_choice() or GameState.stats.pending_points <= 0:
+		return
+	_stat_attribute = attribute
+	_refresh_stat_preview()
+	_open_choice_layer(_stat_layer)
+
+
+func _refresh_stat_preview() -> void:
+	var names := {"strength": "力量", "agility": "敏捷", "intellect": "智力"}
+	if not names.has(_stat_attribute):
+		return
+	var points := GameState.stats.pending_points
+	_stat_preview.text = "%s +1（可分配 %d 点）\n\n%s" % [names[_stat_attribute], points,
+			_benefit_text(GameState.stats.preview_attribute(_stat_attribute))]
+	_stat_owned.text = _owned_passive_text()
+	_stat_confirm.text = "确认分配 1 点%s" % names[_stat_attribute]
+	_stat_confirm.disabled = points <= 0
+
+
+func _confirm_stat_point() -> void:
+	if _stat_layer == null or not _stat_layer.visible or passive_layer.visible \
+			or GameState.stats.pending_points <= 0:
+		return
+	var attribute := _stat_attribute
+	# 先关闭并清空目标；重复/延迟回调不能再次消费属性点。
+	_close_choice_layer()
+	GameState.allocate(attribute)
+
+
+func _on_quest_list_changed(active_quests: Array, tracked_quest_id: String) -> void:
+	_task_snapshot = active_quests.duplicate(true)
+	_tracked_quest_id = tracked_quest_id
+	if _task_layer != null and _task_layer.visible:
+		_refresh_task_list()
+		_sync_modal_focus()
+
+
+func _open_task_list() -> void:
+	if not _can_open_choice():
+		return
+	_task_snapshot = GameState.quests.get("active", []).duplicate(true)
+	_tracked_quest_id = GameState.tracked_quest_id
+	_refresh_task_list()
+	_open_choice_layer(_task_layer)
+
+
+func _refresh_task_list() -> void:
+	for child: Node in _task_rows.get_children():
+		_task_rows.remove_child(child)
+		child.queue_free()
+	if _task_snapshot.is_empty():
+		_task_rows.add_child(_readable_label("暂无进行中的委托"))
+		return
+	for quest: Dictionary in _task_snapshot.slice(0, 3):
+		var id := str(quest.get("id", ""))
+		var row := VBoxContainer.new()
+		_task_rows.add_child(row)
+		row.add_child(_readable_label("%s  %d/%d" % [quest.get("title", "委托"),
+				int(quest.get("progress", 0)), int(quest.get("need", 1))]))
+		var actions := HBoxContainer.new()
+		actions.add_theme_constant_override("separation", 12)
+		row.add_child(actions)
+		var track := Button.new()
+		track.name = "Track_" + id
+		track.text = "正在跟踪" if id == _tracked_quest_id else "跟踪此委托"
+		track.custom_minimum_size = Vector2(188, 56)
+		track.disabled = id == _tracked_quest_id
+		track.pressed.connect(_request_quest_action.bind(id, false))
+		actions.add_child(track)
+		var abandon := Button.new()
+		abandon.name = "Abandon_" + id
+		abandon.text = "放弃委托"
+		abandon.custom_minimum_size = Vector2(148, 56)
+		abandon.pressed.connect(_request_quest_action.bind(id, true))
+		actions.add_child(abandon)
+
+
+func _request_quest_action(id: String, abandon: bool) -> void:
+	if _task_layer == null or not _task_layer.visible or passive_layer.visible:
+		return
+	if abandon:
+		EventBus.quest_abandon_requested.emit(id)
+	else:
+		EventBus.quest_track_requested.emit(id)
+
+
+func _on_equipment_offer_changed() -> void:
+	if _equipment_badge != null:
+		_equipment_badge.text = "待比较" if not GameState.pending_equipment.is_empty() else ""
+	if _inv_layer != null and _inv_layer.visible:
+		_refresh_equipment_offer()
+		_refresh_equipment()
+		_sync_modal_focus()
+
+
+func _refresh_equipment_offer() -> void:
+	if _equipment_offer == null:
+		return
+	for child: Node in _equipment_offer.get_children():
+		_equipment_offer.remove_child(child)
+		child.queue_free()
+	var candidate: Dictionary = GameState.pending_equipment
+	_equipment_offer.visible = not candidate.is_empty()
+	if candidate.is_empty():
+		return
+	var slot := str(candidate.get("slot", "weapon"))
+	var current: Dictionary = GameState.stats.equips.get(slot, {})
+	var token := GameState.equipment_offer_id
+	_equipment_offer.add_child(_readable_label("待比较 · " + str(GameState.SLOT_NAMES.get(slot, slot)), 20))
+	_equipment_offer.add_child(_readable_label("当前：" + (GameState.equip_description(current)
+			if not current.is_empty() else "空槽") + "\n候选：" + GameState.equip_description(candidate), 16))
+	var preview := GameState.stats.preview_equipment(candidate)
+	var effect := _benefit_text(preview, true)
+	var element_names := {"": "无", "fire": "火焰", "ice": "寒冰"}
+	if slot == "weapon":
+		effect += "\n武器元素  %s → %s" % [element_names.get(str(current.get("element", "")), "无"),
+				element_names.get(str(candidate.get("element", "")), "无")]
+	var benefit := _readable_label(effect, 16)
+	benefit.name = "EquipmentBenefit"
+	_equipment_offer.add_child(benefit)
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 12)
+	_equipment_offer.add_child(actions)
+	for equip_new: bool in [true, false]:
+		var button := Button.new()
+		button.name = "EquipCandidate" if equip_new else "KeepEquipment"
+		button.text = "装备候选 / 出售旧件" if equip_new else "保留当前 / 出售候选"
+		button.custom_minimum_size = Vector2(268, 60)
+		button.add_theme_font_size_override("font_size", 16)
+		button.pressed.connect(_resolve_equipment_offer.bind(equip_new, token))
+		actions.add_child(button)
+	_equipment_offer.add_child(HSeparator.new())
+
+
+func _resolve_equipment_offer(equip_new: bool, token: int) -> void:
+	if _equipment_pick_locked or _inv_layer == null or not _inv_layer.visible or passive_layer.visible:
+		return
+	_equipment_pick_locked = true
+	GameState.resolve_pending_equipment(equip_new, token)
+	_refresh_inventory()
+	_sync_modal_focus()
+	await get_tree().process_frame
+	_equipment_pick_locked = false

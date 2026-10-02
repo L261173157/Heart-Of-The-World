@@ -32,6 +32,10 @@ CASES = {
     "gameplay_world": (["res://tests/gameplay_world_test.tscn", "--quit-after", "10000"], "=== 玩法世界回归全部通过"),
     "gameplay_equipment": (["res://tests/gameplay_equipment_test.tscn", "--quit-after", "10000"], "=== GAMEPLAY EQUIPMENT PASSED"),
     "gameplay_navigation": (["res://tests/gameplay_navigation_test.tscn", "--quit-after", "10000"], "=== GAMEPLAY NAVIGATION PASSED"),
+    "boss_age_balance": (["res://tests/boss_age_balance_test.tscn", "--quit-after", "100000"], "=== BOSS AGE BALANCE PASS"),
+    "ecology_feedback": (["res://tests/ecology_feedback_test.tscn", "--quit-after", "10000"], "=== ECOLOGY FEEDBACK PASSED"),
+    "gameplay_choices_ui": (["res://tests/gameplay_choices_ui_test.tscn", "--quit-after", "10000"], "=== GAMEPLAY CHOICES UI PASSED"),
+    "gameplay_tasks": (["res://tests/gameplay_tasks_test.tscn", "--quit-after", "10000"], "=== GAMEPLAY TASKS PASSED"),
     "pacing": (["res://tests/pacing_test.tscn", "--quit-after", "100000"], "=== 节奏验证全部通过 ==="),
 }
 

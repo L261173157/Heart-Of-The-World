@@ -997,7 +997,8 @@ func _die_by_player() -> void:
 		var slot: String = slots[randi() % slots.size()]
 		var item := GameState.roll_equipment(drop_rarity, slot)
 		var had_prev: bool = not GameState.stats.equips.get(slot, {}).is_empty()
-		if GameState.try_equip(item):
+		var disposition := GameState.receive_equipment(item)
+		if disposition == "equipped":
 			# 换装成功：旧装备按稀有度折金（金币计数器即时可见），首件装备则无折算
 			if had_prev:
 				EventBus.hint_requested.emit("✨ 换装 %s（%s）→ 旧装备已折算金币" % [
@@ -1005,10 +1006,12 @@ func _die_by_player() -> void:
 			else:
 				EventBus.hint_requested.emit("✨ 装备 %s（%s，已锁定；背包可解锁）" % [
 					GameState.equip_description(item), GameState.SLOT_NAMES[slot]])
+		elif disposition == "pending":
+			EventBus.hint_requested.emit("✨ 待比较 %s（背包 O：选择换装或出售）" % GameState.equip_description(item))
 		else:
-			EventBus.hint_requested.emit("获得 %s（%s，折算金币）" % [
+			EventBus.hint_requested.emit("获得 %s（%s，已折算金币）" % [
 				GameState.equip_description(item),
-				"当前%s已锁定" % GameState.SLOT_NAMES[slot] if GameState.is_equipment_locked(slot) else "词条总和未提高"])
+				"待比较位已占用，保留首件候选" if GameState.is_equipment_locked(slot) else "自动模式：词条总和未提高"])
 	# 打击感：击杀轻震，精英击杀重震 + 短顿帧（大怪倒下的"重量"）；Boss 战绩播报
 	if inst.species.is_boss:
 		EventBus.camera_shake_requested.emit(9.0)

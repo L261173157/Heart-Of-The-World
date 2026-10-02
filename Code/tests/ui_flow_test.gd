@@ -227,8 +227,12 @@ func _test_world_death_respawn() -> void:
 	_check(viewport_rect.encloses(inv_panel.get_global_rect()), "物品栏弹层完整位于屏幕内")
 	_check(hud._quick_btn.disabled, "空背包时快捷槽置灰")
 	GameState.add_item("medipack", 2)
+	_check(hud._quick_btn.disabled and hud._quick_id == "",
+			"满生命时拾取食物不把无效补给设为可用")
+	player.current_hp = player.stats.max_hp() - 20.0
+	EventBus.player_hp_changed.emit(player.current_hp, player.stats.max_hp())
 	_check(not hud._quick_btn.disabled and hud._quick_badge.text == "2",
-			"拾取恢复品后快捷槽自动绑定（×2）")
+			"生命缺口事件后快捷槽自动绑定可用恢复品（×2）")
 	hud._refresh_inventory()
 	_check(hud._inv_grid.get_child_count() == 1, "物品栏格子按持有点亮（1 格）")
 	hud._toggle_inventory()

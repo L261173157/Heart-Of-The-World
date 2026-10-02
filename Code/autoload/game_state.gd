@@ -12,8 +12,9 @@ const SAVE_DEBOUNCE := 2.0
 ## v5 增加 destroyed（已摧毁障碍格）+ quests（任务进度）；
 ## v6（玩法 v7）增加 inventory（物品栏：消耗品/材料）；
 ## v7 增加未领取赐福/当前选卡与城塞宝箱领取状态；
-## v8 增加装备槽锁定与已发现检查点（旧字段原样兼容）
-const SAVE_VERSION := 8
+## v8 增加装备槽锁定与已发现检查点；
+## v9 增加单件待比较装备、自动赏金与所追踪委托（旧字段原样兼容）
+const SAVE_VERSION := 9
 
 ## 世界种子（世界 v5）：「新的冒险」重掷，游戏内 BiomeMap.configure 消费；
 ## v3 旧档无此键 → DEFAULT_SEED（旧世界与旧 ecology 存档严丝合缝）
@@ -42,6 +43,14 @@ var quests := {"active": [], "completed": {}}
 var inventory: Dictionary = {}
 ## 已占用槽位默认锁定；false 是玩家明确选择的按总词条自动换装。
 var equipment_locks: Dictionary = {}
+## 单个待比较位：首件保留到明确选择，满位后新掉落折金，不覆盖未查看的候选。
+var pending_equipment: Dictionary = {}
+## 每次新候选递增；按钮保存此凭证，重复/延迟输入不能处理后来的装备。
+var equipment_offer_id: int = 0
+## 自动赏金跨场景/进程持久化；{} 表示交接期。
+var bounty: Dictionary = {}
+## 当前追踪的已接 NPC 委托；无效 ID 由任务管理器回退。
+var tracked_quest_id := ""
 const ITEM_MAX := 99
 
 ## stats 对象被重建（reset_all）时通知常驻订阅者（如 SfxManager）重连信号
@@ -266,25 +275,62 @@ func set_equipment_locked(slot: String, locked: bool) -> bool:
 	return true
 
 
-## 掉落结算：空槽穿上并锁定；锁定槽保留当前装备，新掉落按稀有度折金。
-## 只有明确解锁的槽位按总词条比较自动替换，换下的旧件同样折金。
-func try_equip(item: Dictionary) -> bool:
+## 掉落入口返回实际处置，避免表现层把“待比较”误报为“已出售”。
+## 空槽自动穿戴，明确解锁仍按旧有评分自动换装；默认锁定槽保留一个候选。
+## 同时只保留一件：待比较期间的后续掉落折金且明确播报，不覆盖首件或无声丢失。
+func receive_equipment(item: Dictionary) -> String:
+	if item.is_empty():
+		return "invalid"
 	var slot := str(item.get("slot", "weapon"))
 	if not slot in EQUIP_SLOTS:
-		slot = "weapon"
+		return "invalid"
+	var clean := _sanitize_equip_item(slot, item)
 	var current: Dictionary = stats.equips.get(slot, {})
 	if current.is_empty() or (not is_equipment_locked(slot) \
-			and stats.equip_score(item) > stats.equip_score(current)):
-		stats.equips[slot] = item
+			and stats.equip_score(clean) > stats.equip_score(current)):
+		stats.equips[slot] = clean
 		if current.is_empty():
 			equipment_locks[slot] = true
 		stats.changed.emit()
 		if not current.is_empty():
 			add_gold(EconomyMath.sell_price(int(current.get("rarity", 0))))
-		_queue_save()
-		return true
-	add_gold(EconomyMath.sell_price(int(item.get("rarity", 0))))
-	return false
+		_invalidate_world_save_cache()
+		return "equipped"
+	if is_equipment_locked(slot) and pending_equipment.is_empty():
+		equipment_offer_id += 1
+		pending_equipment = clean
+		_invalidate_world_save_cache()
+		EventBus.equipment_offer_changed.emit()
+		return "pending"
+	add_gold(EconomyMath.sell_price(int(clean.get("rarity", 0))))
+	_invalidate_world_save_cache()
+	return "sold"
+
+
+## 旧调用点的兼容布尔接口：仅已经穿上才返回 true。
+func try_equip(item: Dictionary) -> bool:
+	return receive_equipment(item) == "equipped"
+
+
+## 先撤销候选凭证，再变更属性/金币并广播；重复点按与信号重入最多结算一次。
+func resolve_pending_equipment(equip_new: bool, expected_offer_id: int) -> bool:
+	if pending_equipment.is_empty() or expected_offer_id != equipment_offer_id:
+		return false
+	var item := pending_equipment.duplicate(true)
+	pending_equipment.clear()
+	var sold: Dictionary = item
+	if equip_new:
+		var slot: String = item["slot"]
+		sold = stats.equips.get(slot, {}).duplicate(true)
+		stats.equips[slot] = item
+		# 玩家明确选中的构筑继续受保护，不沿用途中切换的自动模式。
+		equipment_locks[slot] = true
+		stats.changed.emit()
+	if not sold.is_empty():
+		add_gold(EconomyMath.sell_price(int(sold.get("rarity", 0))))
+	_invalidate_world_save_cache()
+	EventBus.equipment_offer_changed.emit()
+	return true
 
 
 ## 装备描述文本（HUD 图鉴/掉落 toast 用）
@@ -483,6 +529,10 @@ func reset_all() -> void:
 	quests = {"active": [], "completed": {}}
 	inventory = {}
 	equipment_locks = {}
+	pending_equipment = {}
+	equipment_offer_id += 1
+	bounty = {}
+	tracked_quest_id = ""
 	save_now()
 	stats_rebuilt.emit()
 	EventBus.player_progress_changed.emit(stats.level, stats.xp, stats.xp_to_next(), stats.pending_points)
@@ -583,6 +633,10 @@ func save_now(include_ecology := true) -> bool:
 		"passives": stats.passives,
 		"equips": stats.equips,
 		"equipment_locks": equipment_locks,
+		"pending_equipment": pending_equipment.duplicate(true),
+		"equipment_offer_id": equipment_offer_id,
+		"bounty": bounty.duplicate(true),
+		"tracked_quest_id": tracked_quest_id,
 		"age_days": stats.age_days,
 		"lifespan_days": stats.lifespan_days,
 		"codex": codex,
@@ -681,7 +735,7 @@ func _safe_int(value: Variant, fallback: int) -> int:
 		TYPE_INT:
 			return value
 		TYPE_FLOAT:
-			return int(value)
+			return int(value) if is_finite(value) else fallback
 		_:
 			return fallback
 
@@ -746,6 +800,46 @@ func _sanitize_equip_item(slot: String, item: Dictionary) -> Dictionary:
 	var element := str(item.get("element", ""))
 	if element == "fire" or element == "ice":
 		clean["element"] = element
+	return clean
+
+
+## 赏金仍由管理器按真实世界可行性复核，这里只恢复完整、有限、合法的状态。
+func _sanitize_bounty(value: Variant) -> Dictionary:
+	if typeof(value) != TYPE_DICTIONARY or value.is_empty():
+		return {}
+	var raw: Dictionary = value
+	if typeof(raw.get("species")) != TYPE_STRING or str(raw["species"]).is_empty() \
+			or typeof(raw.get("region_id")) != TYPE_STRING or str(raw["region_id"]).is_empty():
+		return {}
+	for key: String in ["need", "progress", "gold", "xp"]:
+		if typeof(raw.get(key)) not in [TYPE_INT, TYPE_FLOAT] \
+				or not is_finite(float(raw[key])):
+			return {}
+	var need := clampi(int(raw["need"]), 1, 7)
+	var original_need := clampi(_safe_int(raw.get("original_need", need), need), need, 7)
+	var clean := {
+		"species": SpeciesCatalog.migrate_name(raw["species"]),
+		"region_id": str(raw["region_id"]), "need": need,
+		"progress": clampi(int(raw["progress"]), 0, need),
+		"gold": clampi(int(raw["gold"]), 0, 100000),
+		"xp": clampi(int(raw["xp"]), 0, 100000),
+		"original_need": original_need,
+		"original_gold": clampi(_safe_int(raw.get("original_gold", raw["gold"]), 0), 0, 100000),
+		"original_xp": clampi(_safe_int(raw.get("original_xp", raw["xp"]), 0), 0, 100000),
+		"adjusted": raw.get("adjusted", false) == true if typeof(raw.get("adjusted", false)) == TYPE_BOOL else false,
+	}
+
+	if raw.has("target_ids") and typeof(raw["target_ids"]) == TYPE_ARRAY:
+		var ids: Array[int] = []
+		for id: Variant in raw["target_ids"]:
+			if typeof(id) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(id)):
+				continue
+			var value_id := int(id)
+			if value_id > 0 and float(value_id) == float(id) and not ids.has(value_id):
+				ids.append(value_id)
+			if ids.size() >= 7:
+				break
+		clean["target_ids"] = ids
 	return clean
 
 
@@ -861,6 +955,20 @@ func _load() -> void:
 		for slot: String in EQUIP_SLOTS:
 			if stats.equips.has(slot) and typeof(saved_locks.get(slot)) == TYPE_BOOL:
 				equipment_locks[slot] = saved_locks[slot]
+	# 旧档缺候选即为空；坏候选不会成为可领取的免费金币。
+	pending_equipment = {}
+	equipment_offer_id = maxi(0, _safe_int(data.get("equipment_offer_id", 0), 0))
+	var saved_offer: Variant = data.get("pending_equipment", {})
+	if typeof(saved_offer) == TYPE_DICTIONARY and not saved_offer.is_empty() \
+			and typeof(saved_offer.get("slot")) == TYPE_STRING \
+			and saved_offer.get("slot") in EQUIP_SLOTS \
+			and typeof(saved_offer.get("name")) == TYPE_STRING \
+			and typeof(saved_offer.get("affixes")) == TYPE_DICTIONARY:
+		pending_equipment = _sanitize_equip_item(saved_offer["slot"], saved_offer)
+		equipment_offer_id = maxi(1, equipment_offer_id)
+	bounty = _sanitize_bounty(data.get("bounty", {}))
+	tracked_quest_id = str(data.get("tracked_quest_id", "")) \
+			if typeof(data.get("tracked_quest_id", "")) == TYPE_STRING else ""
 	var saved_achv: Variant = data.get("achievements", {})
 	if typeof(saved_achv) == TYPE_DICTIONARY:
 		achievements = {}

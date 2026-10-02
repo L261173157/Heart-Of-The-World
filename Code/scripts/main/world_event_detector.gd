@@ -1,19 +1,20 @@
-## 世界事件检测（纯逻辑，RefCounted，无 Node / 无 autoload 依赖 → 可在 -s 单测中直接实例化）。
-## 对比相邻两次生态快照，产出戏剧性事件文本：全球灭绝 / 复苏 / 区域入侵潮（0→≥3）/ 区域饱和；
-## 同类事件 30s 节流防刷屏。Node 壳（world_event_watcher.gd）只负责订阅快照与转发 EventBus。
+## 生态反馈纯观察者：快照判定存量变化，真实信号说明变化原因，不改模拟规则。
+## 常规新闻只关心玩家所在区域；灭绝/复苏保留结构化事件供成就消费。
 class_name WorldEventDetector
 extends RefCounted
 
 const EVENT_COOLDOWN := 30.0
-const INVASION_THRESHOLD := 3
 
-## 上一次快照：物种全球总数 { species: int } 与各区域物种构成 { rid: {species: int} }
+var _initialized := false
 var _global_totals := {}
 var _region_species := {}
+var _region_full := {}
+var _permanent := {}
 var _cooldowns := {}
-## Boss 物种名单：Boss 有重生倒计时，"已从世界上永远消失"是假信息——
-## 击杀（顶点陨落）与重生（盘踞）已有专属播报，灭绝/复苏检测跳过
 var _boss_names := {}
+## 一个 tick 内同类真实事件合并，避免每个个体各发一条新闻。
+var _changes := {}
+var _deaths := {}
 
 
 func _init(p_boss_names: Array = []) -> void:
@@ -21,54 +22,133 @@ func _init(p_boss_names: Array = []) -> void:
 		_boss_names[boss_name] = true
 
 
-## 对比上一快照产出事件列表；首帧（无历史）只记录不播报。
-## 事件为结构化字典 {kind, species, text}：kind ∈ {extinct, revive, invade, full}，
-## species 为物种名（区域级事件为空串）——成就等判定消费 kind/species，
-## 不再依赖文案子串匹配（文案一改就静默断链）
-func detect_events(summary: Dictionary) -> Array[Dictionary]:
+func record_spawn(species: String, region_id: String, generation: int, age: int) -> void:
+	# 成年重引入不是出生，读档重放也不能从快照差分伪造出生。
+	if generation > 0:
+		_record("split", species, region_id)
+	elif age == 0:
+		_record("birth", species, region_id)
+
+
+func record_migration(species: String, region_id: String) -> void:
+	_record("migrate", species, region_id)
+
+
+func record_death(species: String, region_id: String, cause: String) -> void:
+	_deaths[species] = {"region_id": region_id, "cause": cause}
+	if cause == EcologySim.DEATH_KILLED:
+		_record("kill", species, region_id)
+
+
+func _record(kind: String, species: String, region_id: String) -> void:
+	if _boss_names.has(species):
+		return
+	var key := "%s|%s|%s" % [kind, region_id, species]
+	if not _changes.has(key):
+		_changes[key] = {"kind": kind, "species": species, "region_id": region_id, "count": 0}
+	_changes[key]["count"] += 1
+
+
+## context 只带观察数据：local_region_id / player_extinct / reintroduction_enabled。
+## first snapshot 只建基线；空世界也算有效基线。priority 仅控制文本顺序，不改成就。
+func detect_events(summary: Dictionary, context: Dictionary = {}) -> Array[Dictionary]:
 	var events: Array[Dictionary] = []
 	var totals := {}
 	var regions_state := {}
+	var full_state := {}
+	var local_id: String = context.get("local_region_id", "")
+	var permanent: Dictionary = context.get("player_extinct", {})
+	var can_recover: bool = context.get("reintroduction_enabled", true)
 	for region: Dictionary in summary["regions"]:
 		var rid: String = region["id"]
 		regions_state[rid] = (region["species"] as Dictionary).duplicate()
-		for species_name: String in region["species"]:
-			totals[species_name] = totals.get(species_name, 0) + region["species"][species_name]
-	if not _global_totals.is_empty():
-		for species_name: String in _global_totals:
-			if _boss_names.has(species_name):
-				continue  # Boss 走重生循环，不参与灭绝播报
-			if _global_totals[species_name] > 0 and totals.get(species_name, 0) == 0:
-				_emit(events, "extinct:%s" % species_name, "extinct", species_name,
-					"✕ %s 已从世界上消失…" % species_name)
-		for species_name: String in totals:
-			if _boss_names.has(species_name):
+		full_state[rid] = int(region["capacity"]) > 0 and int(region["alive"]) >= int(region["capacity"])
+		for species: String in region["species"]:
+			totals[species] = int(totals.get(species, 0)) + int(region["species"][species])
+	if _initialized:
+		var tracked := _global_totals.duplicate()
+		for species: String in permanent:
+			tracked[species] = tracked.get(species, 0)
+		for species: String in tracked:
+			if _boss_names.has(species):
 				continue
-			if totals[species_name] > 0 and _global_totals.get(species_name, 0) == 0:
-				_emit(events, "revive:%s" % species_name, "revive", species_name,
-					"%s 的身影重新出现在世界上" % species_name)
-		for region: Dictionary in summary["regions"]:
-			var rid: String = region["id"]
-			var last_set: Dictionary = _region_species.get(rid, {})
-			for species_name: String in region["species"]:
-				if region["species"][species_name] >= INVASION_THRESHOLD \
-						and not last_set.has(species_name):
-					# 节流 key 用显示名而非斑块 id：多个斑块同名（如若干"丘陵"），
-					# 按 id 节流会同时播三条相同文案刷屏
-					_emit(events, "invade:%s:%s" % [species_name, region["name"]], "invade", species_name,
-						"⚠ %s 大举迁入%s！" % [species_name, region["name"]])
-			if region["alive"] >= region["capacity"]:
-				_emit(events, "full:%s" % region["name"], "full", "",
-					"%s 种群饱和，扩张在即" % region["name"])
+			var newly_permanent := permanent.has(species) and not _permanent.has(species)
+			if int(totals.get(species, 0)) == 0 and (int(tracked[species]) > 0 or newly_permanent):
+				var player_caused := permanent.has(species)
+				var text := "× %s 暂时消失，仍可能从世界边缘迁回" % species
+				if player_caused:
+					text = "× 你的猎杀使%s在本世界永久灭绝，不会自然复苏" % species
+				elif not can_recover:
+					text = "× %s 已消失，当前世界未启用自然复苏" % species
+				var was_local := int((_region_species.get(local_id, {}) as Dictionary).get(species, 0)) > 0
+				_append(events, "extinct", species, text, 100 if player_caused else (70 if was_local else 20))
+				events.back()["permanent"] = player_caused
+				events.back()["cause"] = "player" if player_caused else str(_deaths.get(species, {}).get("cause", "unknown"))
+		for species: String in totals:
+			if _boss_names.has(species):
+				continue
+			if int(totals[species]) > 0 and int(_global_totals.get(species, 0)) == 0:
+				var is_local := int((regions_state.get(local_id, {}) as Dictionary).get(species, 0)) > 0
+				_append(events, "revive", species, "%s 重返世界，现存%d只" % [species, totals[species]], 65 if is_local else 20)
+		for change: Dictionary in _changes.values():
+			var species: String = change["species"]
+			var rid: String = change["region_id"]
+			var kind: String = change["kind"]
+			var count: int = change["count"]
+			var total: int = totals.get(species, 0)
+			if kind == "kill" and total > 0 and total < EcologySim.ENDANGERED_THRESHOLD:
+				_emit(events, "endangered:" + species, "endangered", species,
+					"你的猎杀后，%s全球仅剩%d只；杀光将永久灭绝" % [species, total], 90)
+			if rid != local_id or local_id == "":
+				continue
+			match kind:
+				"kill":
+					var local_count: int = (regions_state.get(rid, {}) as Dictionary).get(species, 0)
+					if local_count == 0 and total >= EcologySim.ENDANGERED_THRESHOLD:
+						_emit(events, "cleared:" + species, "cleared", species,
+							"猎杀后本区%s已清空，世界其他区域仍有%d只" % [species, total], 85)
+				"split":
+					_emit(events, "split:" + species, "split", species,
+						"你的猎杀触发分裂：本区新增%d只%s子代" % [count, species], 80)
+				"migrate":
+					_emit(events, "migrate:" + rid, "migrate", species,
+						"本区迁入%d只%s，族群正在扩张" % [count, species], 60)
+				"birth":
+					_emit(events, "birth:" + rid, "birth", species,
+						"本区%s繁衍出%d只幼体" % [species, count], 40)
+		if local_id != "" and bool(full_state.get(local_id, false)) and not bool(_region_full.get(local_id, false)):
+			_emit(events, "full:" + local_id, "full", "", "本区种群已满，繁衍暂无空间", 10)
+	_initialized = true
 	_global_totals = totals
 	_region_species = regions_state
+	_region_full = full_state
+	_permanent = permanent.duplicate()
+	_changes.clear()
+	_deaths.clear()
+	events.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["priority"] > b["priority"])
 	return events
 
 
-## 同类事件节流：冷却窗口内只播一次
-func _emit(events: Array[Dictionary], key: String, kind: String, species: String, text: String) -> void:
+static func species_status_text(species: String, count: int, player_extinct: Dictionary,
+		is_boss := false, reintroduction_enabled := true) -> String:
+	if count <= 0:
+		if is_boss:
+			return "等待重生"
+		if player_extinct.has(species):
+			return "玩家灭绝 · 本世界不会自然复苏"
+		return "暂时消失 · 仍可能自然复苏" if reintroduction_enabled else "已消失 · 未启用自然复苏"
+	if not is_boss and count < EcologySim.ENDANGERED_THRESHOLD:
+		return "濒危 · 全球仅%d只，杀光将永久灭绝" % count
+	return "全球%d只" % count
+
+
+func _append(events: Array[Dictionary], kind: String, species: String, text: String, priority: int) -> void:
+	events.append({"kind": kind, "species": species, "text": text, "priority": priority})
+
+
+func _emit(events: Array[Dictionary], key: String, kind: String, species: String, text: String, priority: int) -> void:
 	var now: float = Time.get_ticks_msec() / 1000.0
 	if now - float(_cooldowns.get(key, -9999.0)) < EVENT_COOLDOWN:
 		return
 	_cooldowns[key] = now
-	events.append({"kind": kind, "species": species, "text": text})
+	_append(events, kind, species, text, priority)

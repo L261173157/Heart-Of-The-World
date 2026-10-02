@@ -301,3 +301,51 @@ func lifesteal_per_hit() -> float:
 ## 击退乘子（重锤被动）
 func knockback_mult() -> float:
 	return passive_mult("knock", 1.3)
+
+
+## 预览仅复制养成输入，不发信号、不分配资格；全部数值仍调用实际战斗公式。
+## 不能临时改写当前角色再还原：同步存档或信号订阅者会看见尚未确认的选择。
+func _preview_copy() -> CharacterStats:
+	var copy := CharacterStats.new()
+	for field: String in ["level", "strength", "agility", "intellect", "upgrade_weapon",
+			"upgrade_staff", "upgrade_vigor", "age_days", "lifespan_days"]:
+		copy.set(field, get(field))
+	copy.passives = passives.duplicate(true)
+	copy.equips = equips.duplicate(true)
+	return copy
+
+
+## 原始伤害不预言敌人的抗性/年龄/元素克制；金币、经验显示结算前倍率。
+func benefit_snapshot() -> Dictionary:
+	return {"max_hp": max_hp(), "hp_regen": hp_regen_per_sec(), "max_mp": max_mp(),
+		"mp_regen": mp_regen_per_sec(), "physical": physical_attack(),
+		"magic": magic_attack(), "heal": heal_power() * HEAL_MULT,
+		"move": move_speed(), "attack_interval": attack_interval(),
+		"heavy_cooldown": HEAVY_COOLDOWN * cooldown_mult(),
+		"lifesteal": lifesteal_per_hit(), "gold": gold_mult(),
+		"xp": passive_mult("xp", 1.1) * (1.0 + equip_affix("xp")),
+		"knock": knockback_mult()}
+
+
+func preview_attribute(attribute: String) -> Dictionary:
+	var after := _preview_copy()
+	if attribute in ["strength", "agility", "intellect"]:
+		after.set(attribute, int(after.get(attribute)) + 1)
+	return {"before": benefit_snapshot(), "after": after.benefit_snapshot()}
+
+
+func preview_passive(id: String) -> Dictionary:
+	var after := _preview_copy()
+	for entry: Dictionary in PASSIVE_POOL:
+		if entry["id"] == id:
+			after.passives[id] = after.passive_level(id) + 1
+			break
+	return {"before": benefit_snapshot(), "after": after.benefit_snapshot()}
+
+
+func preview_equipment(item: Dictionary) -> Dictionary:
+	var after := _preview_copy()
+	var slot := str(item.get("slot", "weapon"))
+	if slot in ["weapon", "helmet", "armor", "boots"] and not item.is_empty():
+		after.equips[slot] = item.duplicate(true)
+	return {"before": benefit_snapshot(), "after": after.benefit_snapshot()}

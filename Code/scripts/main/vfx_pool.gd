@@ -14,7 +14,8 @@ static var _pools: Dictionary = {}
 static func take(kind: String) -> Node:
 	var pool: Array = _pools.get(kind, [])
 	while not pool.is_empty():
-		var node: Node = pool.pop_back()
+		# 先以 Variant 接住：已释放引用赋给 Node 会在有效性检查前抛错。
+		var node: Variant = pool.pop_back()
 		if is_instance_valid(node):
 			node.visible = true
 			return node
