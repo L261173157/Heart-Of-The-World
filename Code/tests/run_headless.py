@@ -60,6 +60,10 @@ BOOTSTRAP_DIAGNOSTICS = {
 def unexpected_errors(case: str, output: str) -> list[str]:
     bad = []
     for line in output.splitlines():
+        # Steam 版 Godot 在 Steam 客户端未运行（沙盒 HOME 也连不上 IPC）时打印
+        # [S_API] 运行时消息，属发行版噪音而非脚本/物理/解析错误；官方版与 CI 无此输出。
+        if line.startswith("[S_API"):
+            continue
         if "SCRIPT ERROR:" in line or re.search(r"\bFAIL\b", line):
             bad.append(line)
         elif line.startswith("ERROR:"):
