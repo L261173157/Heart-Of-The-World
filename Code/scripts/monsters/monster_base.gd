@@ -108,6 +108,8 @@ var state: int = S_PATROL
 
 ## 场景里 Visual 精灵的基础缩放（体型表现在此基础上乘 size_scale）
 var sprite_base_scale := Vector2.ONE
+## 只在 ready 读取场景锚点；流式 setup、动画和像素吸附均不得反向改写基准。
+var _visual_anchor := Vector2.ZERO
 ## 常态底色（精英为金色；受击闪红后回到它而不是纯白）
 var _base_modulate := Color.WHITE
 
@@ -173,6 +175,7 @@ func setup(p_inst: MonsterInstance) -> void:
 	else:
 		anchor = WorldSim.sim.get_region_center(inst.region_id)
 		global_position = anchor
+	_snap_visual_to_body()
 	# 读档恢复的怪带伤开局（hp_mirror 由受击/成长时 report_hp 维护；-1 = 满血）；
 	# 钳 [1, max] 防手改档超界——濒死个体恢复成 1 血而不是即死即崩
 	var max_now := inst.max_hp()
@@ -258,6 +261,8 @@ func _exit_tree() -> void:
 
 func _ready() -> void:
 	add_to_group("monsters")
+	_visual_anchor = visual.position
+	_snap_visual_to_body()
 	_nav = NavigationAgent2D.new()
 	_nav.path_desired_distance = 12.0
 	_nav.target_desired_distance = 20.0
@@ -489,6 +494,7 @@ func _far_tick(delta: float, player: Node2D) -> void:
 	velocity += _knockback
 	_knockback = _knockback.move_toward(Vector2.ZERO, KNOCKBACK_DECAY * delta)
 	_far_move(velocity * delta)
+	_snap_visual_to_body()
 
 
 ## 远档移动：move_and_collide + 法线滑行（两段）——撞障碍沿墙滑走，
@@ -639,10 +645,16 @@ func _update_anim() -> void:
 	var cycle := float(visual.frame + visual.frame_progress) / maxf(
 		float(visual.sprite_frames.get_frame_count(visual.animation)), 1.0)
 	visual.offset.y = roundf(sin(TAU * cycle * 2.0) * 0.9) if walking else 0.0
-	visual.global_position = visual.global_position.round()
+	_snap_visual_to_body()
 	if profiling:
 		prof_anim_ms += (Time.get_ticks_usec() - _ta) * 0.001
 		prof_anim_n += 1
+
+
+## 与英雄同约束：从身体及固定场景锚点重新计算，不能反馈上次吸附后的子节点坐标。
+## 这样任意移速、RVO/击退和大世界坐标下都不会累计素材与阴影/碰撞的分离。
+func _snap_visual_to_body() -> void:
+	visual.global_position = to_global(_visual_anchor).round()
 
 
 ## 动作事件显式重播并按真实条带时长适配现有表现窗（EP 为 2~12 帧不等）。
