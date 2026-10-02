@@ -67,6 +67,8 @@ const HERO_SKINS := {
 
 ## 视觉基础缩放（挤压回弹的恢复基准，_ready 时从场景读）
 var _visual_base_scale := Vector2.ONE
+## 场景约定的精灵锚点；像素吸附只从此基准计算，不能累加上一帧的吸附误差。
+var _visual_anchor := Vector2.ZERO
 ## 落地阴影 / 脚点 y（尘土等脚下元素共用，_ready 按帧脚点 meta 定） / 挤压 tween / 行走浮动相位
 var _shadow: ShadowBlob
 var _feet_y := 0.0
@@ -130,6 +132,7 @@ var _visual_bob := 0.0
 
 func _ready() -> void:
 	add_to_group("player")
+	_visual_anchor = visual.position
 	stats = GameState.stats
 	# 三忍皮肤：按存档外观换帧（动画名同构；场景默认已接蓝忍，非蓝才需要换）
 	var hero_skin: String = str(GameState.settings.get("hero_skin", "blue"))
@@ -148,6 +151,7 @@ func _ready() -> void:
 		cam.limit_right = int(WorldConfig.WORLD_SIZE.x)
 		cam.limit_bottom = int(WorldConfig.WORLD_SIZE.y)
 	_visual_base_scale = visual.scale
+	_snap_visual_to_body()
 	_shadow = ShadowBlob.new()
 	_shadow.z_index = -1
 	# 阴影贴真实脚点（与怪物侧同源公式；2026-10-01 修复：60ea6d7 帧重切
@@ -294,6 +298,7 @@ func _physics_process(delta: float) -> void:
 			if key_emp or pad_emp:
 				_try_empower()
 			move_and_slide()
+			_snap_visual_to_body()
 			return
 
 	if _attack_buffered:
@@ -323,9 +328,7 @@ func _physics_process(delta: float) -> void:
 			visual.flip_h = dir.x < 0.0
 		_spawn_dust(delta)
 	move_and_slide()
-	# 像素稳定：精灵世界坐标吸附整数网格（相机画布吸附稳世界；精灵自身
-	# 浮点坐标仍会逐帧跳格采样——毛刺闪动的第二来源）
-	visual.global_position = visual.global_position.round()
+	_snap_visual_to_body()
 
 	# 双通道输入先各自取值再合并：or 短路会让触摸队列滞留一帧后误触发
 	var key_attack := Input.is_action_just_pressed("attack")
@@ -465,6 +468,13 @@ func _squash(amount: Vector2, dur := 0.16) -> void:
 	_squash_tween.tween_property(visual, "scale", _visual_base_scale * amount, dur * 0.4)
 	_squash_tween.tween_property(visual, "scale", _visual_base_scale, dur * 0.6)\
 		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
+
+
+## 保留物理身体的亚像素移动，只对本帧的权威锚点做至多半像素的绘制校正。
+## 不能 round(visual.global_position)：写回子节点会改变它的 local position，
+## 下一帧再取它就会累计误差，导致素材与阴影、碰撞和技能原点越走越远。
+func _snap_visual_to_body() -> void:
+	visual.global_position = to_global(_visual_anchor).round()
 
 
 ## 冲刺：消耗 MP，朝当前朝向高速位移，期间无敌（躲冲锋/重击/弹幕）；
@@ -938,6 +948,7 @@ func _respawn() -> void:
 	# 只回到实际发现过的营地/城塞入口；未探索地点不因死亡而免费解锁。
 	# 死亡窗口存档与真实复活使用同一个选择器。
 	global_position = WorldConfig.nearest_checkpoint_respawn(global_position, GameState.discovered_checkpoints)
+	_snap_visual_to_body()
 	current_hp = stats.max_hp()
 	current_mp = stats.max_mp()
 	visual.modulate = Color.WHITE

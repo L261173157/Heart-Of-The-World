@@ -26,6 +26,7 @@ CASES = {
     "world": (["res://tests/world_persistence_test.tscn", "--quit-after", "10000"], "=== 世界持久化回归全部通过 ==="),
     "ui_visual": (["res://tests/ui_visual_test.tscn", "--quit-after", "8000"], "=== UI VISUAL REGRESSION PASSED"),
     "menu_layout": (["res://tests/menu_layout_test.tscn", "--quit-after", "8000"], "=== MENU LAYOUT REGRESSION PASSED"),
+    "actor_alignment": (["res://tests/actor_alignment_test.tscn", "--quit-after", "10000"], "=== ACTOR ALIGNMENT PASS"),
     "animation": (["res://tests/animation_polish_test.tscn", "--quit-after", "8000"], "=== ANIMATION POLISH PASS"),
     "gameplay_combat": (["res://tests/gameplay_combat_test.tscn", "--quit-after", "100000"], "=== GAMEPLAY COMBAT PASS"),
     "gameplay_ecology": (["res://tests/gameplay_ecology_test.tscn", "--quit-after", "10000"], "=== 玩法生态回归全部通过"),
