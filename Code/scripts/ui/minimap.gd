@@ -1,4 +1,4 @@
-## 局部雷达：以玩家为中心、北向上。模拟活体补足流式圈外的附近怪群，
+## 局部地形图：以玩家为中心、北向上。实时活体和巢穴只在当前视野内，
 ## 已探索迷雾/已发现地标仍是信息边界；不改探索、任务或生态状态。
 class_name Minimap
 extends Control
@@ -10,8 +10,12 @@ const ARRIVAL_RADIUS := 96.0
 const TARGET_COLOR := Color("ffd166")
 const MONSTER_COLOR := Color("ff8477")
 const OBJECTIVE_COLOR := Color("75dcb8")
+const VISIBLE_RADIUS := ExplorationFog.REVEAL_RADIUS
 const QuestView := preload("res://scripts/ui/quest_presentation.gd")
 
+var _terrain := MinimapTerrain.new()
+var _exploration_seen: ExplorationFog
+var _terrain_redraw := 0.0
 var _accum := 0.0
 var _sim_seen: EcologySim
 var _bounty_species := ""
@@ -37,6 +41,7 @@ func _ready() -> void:
 	_distance = _make_label("TargetDistance", 14, Color("d9e3e4"))
 	resized.connect(_layout_labels)
 	EventBus.bounty_target_changed.connect(_on_bounty_target_changed)
+	EventBus.obstacle_destroyed.connect(_on_obstacle_destroyed)
 	_layout_labels()
 	_refresh_navigation()
 
@@ -75,6 +80,11 @@ func _on_bounty_target_changed(species_name: String) -> void:
 func _process(delta: float) -> void:
 	if get_tree().paused:
 		return
+	if _has_player and _interior_index < 0:
+		_terrain_redraw += delta
+		if _terrain.step() > 0 and _terrain_redraw >= 0.10:
+			_terrain_redraw = 0.0
+			queue_redraw()
 	_accum += delta
 	if _accum >= REDRAW_INTERVAL:
 		_accum = 0.0
@@ -88,6 +98,7 @@ func _refresh_navigation() -> void:
 		_sim_seen = WorldSim.sim
 		_bounty_species = ""
 		_camp_positions.clear()
+		_terrain.clear()
 	_target = {}
 	_interior_index = -1
 	_markers.clear()
@@ -97,12 +108,21 @@ func _refresh_navigation() -> void:
 		_player_pos = player.global_position
 		_interior_index = ObstacleField.interior_index_at(_player_pos)
 		if _interior_index >= 0:
+			_terrain.clear()
 			var exit_pos := ObstacleField.interior_pocket(_interior_index) + Vector2(0, 113)
 			_target = {"id": "room_exit:%d" % _interior_index, "kind": "exit", "category": "室内出口",
 				"name": "返回营地", "pos": exit_pos, "distance_px": _player_pos.distance_to(exit_pos)}
 			_update_labels()
 			queue_redraw()
 			return
+		if _exploration_seen != GameState.exploration:
+			_exploration_seen = GameState.exploration
+			_terrain.clear()
+		var rect := _radar_rect()
+		var extent := rect.size / _radar_scale()
+		_terrain.prepare(Rect2(_player_pos - extent * 0.5, extent), GameState.world_seed,
+			GameState.fog_version, _is_known_position,
+			ExplorationFog.CELL if GameState.exploration.legacy.is_empty() else MinimapTerrain.CELL)
 		var candidates := _known_candidates()
 		_target = _select_target(candidates)
 		for candidate: Dictionary in candidates:
@@ -125,7 +145,7 @@ func _known_candidates() -> Array[Dictionary]:
 		if not inst.is_alive:
 			continue
 		var pos: Vector2 = live_positions.get(inst.id, inst.spawn_pos)
-		if not _is_known_position(pos):
+		if not _is_visible_position(pos):
 			continue
 		result.append({"id": "monster:%d" % inst.id, "kind": "monster", "pos": pos,
 			"name": inst.species.species_name, "species": inst.species.species_name,
@@ -140,7 +160,7 @@ func _known_candidates() -> Array[Dictionary]:
 		if not _camp_positions.has(key):
 			_camp_positions[key] = WorldSim.sim.camp_pos(region, species)
 		var pos: Vector2 = _camp_positions[key]
-		if _is_known_position(pos):
+		if _is_visible_position(pos):
 			result.append({"id": "nest:" + key, "kind": "nest", "pos": pos,
 				"name": species.species_name + "巢穴"})
 	for id: String in GameState.discovered_landmarks:
@@ -206,7 +226,7 @@ func _select_target(candidates: Array[Dictionary]) -> Dictionary:
 		if priority > 1 and candidate["kind"] == "monster" and not candidate["ambient"] \
 				and distance <= NEARBY_RADIUS:
 			priority = 2
-			category = "附近敌人" if candidate["streamed"] else "附近怪群"
+			category = "附近敌人"
 		if priority > 3 and candidate["kind"] in ["landmark", "checkpoint"] and distance > ARRIVAL_RADIUS:
 			priority = 3
 			category = "已发现地标" if candidate["kind"] == "landmark" else "已发现营地"
@@ -234,8 +254,17 @@ func _tracked_quests() -> Array:
 func _is_known_position(pos: Vector2) -> bool:
 	if not pos.is_finite() or not Rect2(Vector2.ZERO, WorldConfig.WORLD_SIZE).has_point(pos):
 		return false
-	var cell := GameState.fog_cell_of(pos)
-	return GameState.fog_is_explored(cell.x, cell.y)
+	return GameState.fog_knows_position(pos)
+
+
+func _is_visible_position(pos: Vector2) -> bool:
+	return _has_player and _interior_index < 0 and _is_known_position(pos) \
+		and _player_pos.distance_squared_to(pos) <= VISIBLE_RADIUS * VISIBLE_RADIUS
+
+
+func _on_obstacle_destroyed(cell: Vector2i, _pos: Vector2, _kind: String) -> void:
+	_terrain.invalidate_obstacle(cell)
+	_accum = REDRAW_INTERVAL
 
 
 func _update_labels() -> void:
@@ -310,15 +339,8 @@ func _draw() -> void:
 		draw_rect(room_rect.intersection(rect), Color("4e4436"))
 		draw_rect(room_rect.intersection(rect), Color("b9a27d"), false, 1.0)
 	else:
-		# 只画局部窗相交的迷雾格，通常 4~9 格；不泄露未知地形、营地或地标。
-		var step := WorldConfig.WORLD_SIZE.x / float(GameState.FOG_GRID)
-		var world_start := _player_pos - rect.size * 0.5 / _radar_scale()
-		var world_end := _player_pos + rect.size * 0.5 / _radar_scale()
-		for gy in range(maxi(0, floori(world_start.y / step)), mini(GameState.FOG_GRID, ceili(world_end.y / step))):
-			for gx in range(maxi(0, floori(world_start.x / step)), mini(GameState.FOG_GRID, ceili(world_end.x / step))):
-				if GameState.fog_is_explored(gx, gy):
-					var cell_rect := Rect2(_radar_point(Vector2(gx, gy) * step), Vector2.ONE * step * _radar_scale())
-					draw_rect(cell_rect.intersection(rect), Color("294149"))
+		_draw_terrain_and_fog(rect)
+
 	var center := rect.get_center()
 	draw_line(Vector2(center.x, rect.position.y), Vector2(center.x, rect.end.y), Color(0.6, 0.75, 0.8, 0.15))
 	draw_line(Vector2(rect.position.x, center.y), Vector2(rect.end.x, center.y), Color(0.6, 0.75, 0.8, 0.15))
@@ -326,7 +348,9 @@ func _draw() -> void:
 		var point := _radar_point(marker["pos"])
 		if marker["kind"] == "monster":
 			draw_circle(point, 2.3, MONSTER_COLOR if not marker["ambient"] else Color("c1b6a0"))
-		elif marker["kind"] != "nest":
+		elif marker["kind"] == "nest":
+			draw_arc(point, 2.5, 0, TAU, 8, Color("c8b489"), 1.0)
+		else:
 			draw_rect(Rect2(point - Vector2(2.5, 2.5), Vector2(5, 5)), OBJECTIVE_COLOR)
 	if not _target.is_empty():
 		var point := _target_marker_position(_target["pos"])
@@ -343,3 +367,67 @@ func _draw() -> void:
 	draw_circle(center, 3.0, Color.WHITE)
 	draw_string(font, rect.position + Vector2(4, 15), "北", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("d9e3e4"))
 	draw_rect(rect, Color("58727c"), false, 1.0)
+
+
+## 显示已知地形而非统一蓝色底；当前视野亮、历史记忆暗，未知固定雾纹无真源采样。
+func _draw_terrain_and_fog(rect: Rect2) -> void:
+	var scale_px := MinimapTerrain.CELL * _radar_scale()
+	var start := ExplorationFog.cell_of(_player_pos - rect.size * 0.5 / _radar_scale())
+	var end := ExplorationFog.cell_of(_player_pos + rect.size * 0.5 / _radar_scale())
+	var step := ExplorationFog.CELL * _radar_scale()
+	# 粗地被先填满探索轮廓；精细水岸和障碍随后覆盖。旧地形记忆同样受细雾裁切。
+	for y in range(start.y, end.y + 1):
+		for x in range(start.x, end.x + 1):
+			var pos := (Vector2(x, y) + Vector2.ONE * 0.5) * ExplorationFog.CELL
+			var base := Vector2i((pos / MinimapTerrain.BASE_CELL).floor())
+			if not _is_known_position(pos) or not _terrain.base_cells.has(base):
+				continue
+			var color: Color = _terrain.base_cells[base]
+			var brightness := _terrain_brightness(pos)
+			color = Color(color.r * brightness, color.g * brightness, color.b * brightness)
+			var tile := Rect2(_radar_point(Vector2(x, y) * ExplorationFog.CELL), Vector2.ONE * (step + 0.2))
+			draw_rect(tile.intersection(rect), color)
+	for key: Vector2i in _terrain.cells:
+		var pos := (Vector2(key) + Vector2.ONE * 0.5) * MinimapTerrain.CELL
+		if not _is_known_position(pos):
+			continue
+		var brightness := _terrain_brightness(pos)
+		var color: Color = _terrain.cells[key]["color"]
+		color = Color(color.r * brightness, color.g * brightness, color.b * brightness)
+		var tile := Rect2(_radar_point(Vector2(key) * MinimapTerrain.CELL), Vector2.ONE * (scale_px + 0.2))
+		draw_rect(tile.intersection(rect), color)
+	# 已知边缘的短线形成不规则海岸式雾沿，不能将未知格底色误画成地形。
+	for y in range(start.y, end.y + 1):
+		for x in range(start.x, end.x + 1):
+			var pos := (Vector2(x, y) + Vector2.ONE * 0.5) * ExplorationFog.CELL
+			if not _is_known_position(pos):
+				# 薄雾颗粒完全由格坐标决定，不读取该处的群系/液体/障碍。
+				if posmod(x * 7 + y * 11, 9) == 0:
+					var mist := Rect2(_radar_point(pos) - Vector2.ONE * 0.4, Vector2.ONE * 0.8)
+					if rect.encloses(mist):
+						draw_rect(mist, Color("18242d"))
+				continue
+			var top_left := _radar_point(Vector2(x, y) * ExplorationFog.CELL)
+			for edge: Vector2i in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+				if _is_known_position(pos + Vector2(edge) * ExplorationFog.CELL):
+					continue
+				var from := top_left
+				var to := top_left
+				if edge == Vector2i.UP or edge == Vector2i.DOWN:
+					from.y += step if edge == Vector2i.DOWN else 0.0
+					to = from + Vector2(step, 0)
+				else:
+					from.x += step if edge == Vector2i.RIGHT else 0.0
+					to = from + Vector2(0, step)
+				if rect.has_point(from) and rect.has_point(to):
+					draw_line(from, to, Color("6c887a"), 0.75)
+	var ring_radius := VISIBLE_RADIUS * _radar_scale()
+	if ring_radius * 2.0 < minf(rect.size.x, rect.size.y):
+		draw_arc(rect.get_center(), ring_radius, 0.0, TAU, 48, Color(0.73, 0.85, 0.76, 0.30), 0.75)
+
+
+func _terrain_brightness(pos: Vector2) -> float:
+	var distance := pos.distance_to(_player_pos)
+	if distance > VISIBLE_RADIUS:
+		return 0.37
+	return lerpf(1.0, 0.70, smoothstep(VISIBLE_RADIUS - 240.0, VISIBLE_RADIUS, distance))

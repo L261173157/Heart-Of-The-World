@@ -103,7 +103,7 @@ func _run() -> void:
 	player._combo = 0
 	player._try_attack()
 	player.set_physics_process(true)
-	await _verify_playback(player.visual, "attack1", 0.38, "英雄真实出招")
+	await _verify_playback(player.visual, player._attack_animation(), 0.38, "英雄真实方向武器组合出招")
 	player.set_physics_process(false)
 	_check(player.attack_shape.disabled, "纯视觉收招不延长 0.18s 命中窗口")
 	_check(player.visual.animation == "idle", "英雄收招结束回 idle")

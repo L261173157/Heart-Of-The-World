@@ -169,6 +169,7 @@ const PASSIVE_ICONS := {
 	"xp": preload("res://assets/ts/icons/star_gold.png"),
 	"heal_power": ICON_HEAL,
 	"knock": preload("res://assets/ts/icons/knock_axe.png"),
+	"sword_sweep": ICON_KATANA, "bolt_seek": ICON_BOLT, "bolt_split": ICON_FORK,
 }
 const PASSIVE_ICON_DEFAULT := preload("res://assets/ts/icons/cdr.png")
 
@@ -1399,6 +1400,7 @@ func _open_passive_pick() -> void:
 		get_tree().paused = false
 		_sync_modal_focus()
 		return
+	GameState.stats.ensure_passive_choices()
 	var chosen: Array[String] = GameState.stats.passive_choices
 	for i in 3:
 		var btn: Button = passive_cards[i]
@@ -1410,7 +1412,10 @@ func _open_passive_pick() -> void:
 			var lv: int = GameState.stats.passive_level(entry["id"])
 			btn.icon = PASSIVE_ICONS.get(entry["id"], PASSIVE_ICON_DEFAULT)
 			btn.expand_icon = true
-			btn.text = "%s  %d → %d 级\n%s" % [entry["name"], lv, lv + 1,
+			var rank_text := "%d → %d 级" % [lv, lv + 1]
+			if entry["id"] in CharacterStats.WEAPON_PASSIVES:
+				rank_text = "%d → %d 阶（上限1）" % [lv, lv + 1]
+			btn.text = "%s  %s\n%s" % [entry["name"], rank_text,
 					_benefit_text(GameState.stats.preview_passive(entry["id"]))]
 			btn.set_meta("passive_id", entry["id"])
 			btn.set_meta("passive_offer_id", GameState.stats.passive_offer_id)
@@ -2039,6 +2044,8 @@ func _benefit_value(key: String, value: float) -> String:
 
 
 func _benefit_text(preview: Dictionary, include_key_stats := false) -> String:
+	if preview.has("effect"):
+		return str(preview["effect"])
 	var lines: Array[String] = []
 	var before: Dictionary = preview["before"]
 	var after: Dictionary = preview["after"]
@@ -2055,7 +2062,8 @@ func _owned_passive_text() -> String:
 	for entry: Dictionary in CharacterStats.PASSIVE_POOL:
 		var rank := GameState.stats.passive_level(entry["id"])
 		if rank > 0:
-			parts.append("%s%d级" % [entry["name"], rank])
+			parts.append("%s%d阶（满）" % [entry["name"], rank]
+					if entry["id"] in CharacterStats.WEAPON_PASSIVES else "%s%d级" % [entry["name"], rank])
 	return "已获赐福：" + ("、".join(parts) if not parts.is_empty() else "暂无")
 
 

@@ -87,6 +87,8 @@ func _run() -> void:
 	_check(_target_id().is_empty(), "未知迷雾不泄露任何活怪/营地")
 	_reveal(near.spawn_pos)
 	_reveal(camp.spawn_pos)
+	_reveal(_sim.camp_pos(region, _miner))
+	_reveal(_sim.camp_pos(region, _goblin))
 	var fog_before := GameState.explored.duplicate()
 	var dirty_before := GameState.fog_dirty.duplicate()
 	_check(_target_id() == "monster:%d" % near.id, "最近存活敌人优先，不把被动动物当敌人")
@@ -111,17 +113,19 @@ func _run() -> void:
 	_check(_target_id() == "monster:%d" % near.id and _radar._direction.text == "向北",
 		"死亡立刻换活目标，导航追随实际追击位置")
 	_sim.report_killed(near.id)
-	_check(_target_id() == "monster:%d" % camp.id and _radar._category.text == "附近怪群",
-		"2400像素流式圈外仍能导航到模拟中的附近活怪群")
+	_check(_target_id().is_empty(), "已知但视野外的活体和种群变化不泄露")
 	_check(_radar._radar_rect().grow(-1).has_point(_radar._target_marker_position(camp.spawn_pos)),
-		"屏外目标箭头被夹在雷达边框内")
+		"屏外已发现地标箭头可夹在雷达边框内")
+	_player.position = camp.spawn_pos - Vector2(1000, 0)
+	_check(_target_id() == "monster:%d" % camp.id, "真实移动到视野范围后才出现活体")
+
 	display.queue_free()
 	await get_tree().process_frame
 	EventBus.bounty_target_changed.emit(_miner.species_name)
 	_check(_target_id() == "monster:%d" % camp.id and _radar._category.text == "赏金目标",
 		"结构化赏金事件正确驱动优先级")
 	var quest_enemy := _sim.spawn_instance(_goblin, region.id, 30, 0, 1.0, false,
-		_player.position + Vector2(4500, 0))
+		_player.position + Vector2(1200, 0))
 	_reveal(quest_enemy.spawn_pos)
 	GameState.quests["active"] = [{"kind": "hunt", "species": _goblin.species_name, "progress": 0, "need": 1}]
 	_check(_target_id() == "monster:%d" % quest_enemy.id and _radar._category.text == "委托 · 猎杀",
@@ -142,6 +146,7 @@ func _run() -> void:
 	GameState.quests["active"] = [{"kind": "collect", "item": "tea-leaf", "progress": 0, "need": 3}]
 	_check(_target_id() == "monster:%d" % camp.id and _radar._category.text == "委托 · 材料",
 		"材料委托沿EconomyMath真源找仍存活的掉落来源")
+	_player.position = region.center
 	GameState.quests["active"] = [{"kind": "ransack", "progress": 0, "need": 1}]
 	_reveal(_sim.camp_pos(region, _goblin))
 	_check(_target_id().begins_with("nest:"), "捣巢委托锁定未摧毁巢穴")
@@ -172,6 +177,8 @@ func _run() -> void:
 	replacement.setup([region], [_goblin, _miner, _sheep], {})
 	WorldSim.start(replacement)
 	GameState.explored = PackedByteArray()
+	GameState.exploration = ExplorationFog.new(GameState.world_seed)
+	GameState.fog_version += 1
 	GameState.fog_dirty.clear()
 	_check(_target_id().is_empty() and _radar._camp_positions.is_empty(), "换世界清除缓存和目标")
 	_check(not _radar._is_known_position(near.spawn_pos), "同种子重置不残留已探索格")
@@ -209,17 +216,17 @@ func _test_world_roundtrips() -> void:
 		var radar: Minimap = world.get_node("HUD/Root/Minimap")
 		world._reveal_fog()
 		radar._refresh_navigation()
-		_check(not radar._target.is_empty(), "正常出生/继续冒险有真实附近方向 第%d轮" % round)
-		if not radar._target.is_empty():
-			var id: String = radar._target["id"]
-			_check(id.begins_with("monster:"), "正常出生导航指向存活怪物 第%d轮" % round)
-			var live: MonsterInstance = WorldSim.sim.instances.get(id.trim_prefix("monster:").to_int())
-			_check(live != null and live.is_alive, "真实世界目标仍存活 第%d轮" % round)
-			var player: Player = world.get_node("Player")
-			var before: float = radar._target["distance_px"]
-			player.position = player.position.move_toward(radar._target["pos"], 160)
-			radar._refresh_navigation()
-			_check(float(radar._target.get("distance_px", INF)) < before, "向目标正常移动后距离缩短 第%d轮" % round)
+		_check(radar._has_player and radar._radar_point(radar._player_pos).is_equal_approx(
+			radar._radar_rect().get_center()), "出生/继续后地图仍以真实玩家为中心 第%d轮" % round)
+		for candidate: Dictionary in radar._known_candidates():
+			if candidate["kind"] in ["monster", "nest"]:
+				_check(radar._is_visible_position(candidate["pos"]), "重建地图不暴露未知活体 第%d轮" % round)
+		var player: Player = world.get_node("Player")
+		player.position += Vector2(0, 160)
+		world._reveal_fog()
+		radar._refresh_navigation()
+		_check(GameState.fog_knows_position(player.position), "继续冒险移动后继续揭示细探索 第%d轮" % round)
+
 		# 真正读写存档后重建世界，重复验证不靠保留旧Control/Node引用。
 		GameState.save_enabled = true
 		_check(GameState.save_now(), "真实导航世界快照保存成功 第%d轮" % round)
