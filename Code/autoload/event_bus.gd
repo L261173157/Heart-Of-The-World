@@ -74,6 +74,10 @@ signal landmark_discovered(landmark_id: String, patch_id: String, kind: String, 
 signal obstacle_destroyed(cell: Vector2i, pos: Vector2, kind: String)
 ## 任务进度行（QuestManager 发出，HUD 任务栏呈现；空串 = 清空）
 signal quest_updated(text: String)
+## 委托列表：HUD 只发请求，任务管理器验证实际已接任务后变更。
+signal quest_track_requested(quest_id: String)
+signal quest_abandon_requested(quest_id: String)
+signal quest_list_changed(active_quests: Array, tracked_quest_id: String)
 ## 任务完成结算播报
 signal quest_completed(text: String)
 ## NPC 对话（美术 v5）：NPC 交互键触发，HUD 对话气泡呈现。payload 含
@@ -96,3 +100,6 @@ signal inventory_changed
 ## 使用消耗品请求（HUD 快捷槽/物品栏发出）→ player 订阅：满血拦截与恢复
 ## 应用在 player（生命/精力的权威持有者），库存扣减在 GameState
 signal item_use_requested(item_id: String)
+
+## 单件装备候选变化：背包提示/比较面板刷新，不自动打断战斗。
+signal equipment_offer_changed

@@ -335,6 +335,22 @@ static func _water_at_cell(cell: Vector2i) -> bool:
 			BiomeMap.region_id_at(pos), true) == "water"
 
 
+## 单格导航判定：给分帧的小规模搜索用，避免一次请求同步烘焙整块256格。
+## 障碍死点/深水边缘规则与分块缓存同源，摧毁覆盖层仍由 sample_cell 消费。
+static func nav_blocked_cell(cell: Vector2i) -> bool:
+	_ensure()
+	var chunk := Vector2i(cell.x >> 4, cell.y >> 4)
+	if _nav_chunk_cache.has(chunk):
+		var local := cell - chunk * CHUNK_CELLS
+		return _nav_chunk_cache[chunk][local.y * CHUNK_CELLS + local.x] == 1
+	return is_nav_blocked(cell) or _has_water_neighbor(cell)
+
+
+static func _has_water_neighbor(cell: Vector2i) -> bool:
+	return _water_at_cell(cell + Vector2i.RIGHT) or _water_at_cell(cell + Vector2i.LEFT) \
+			or _water_at_cell(cell + Vector2i.DOWN) or _water_at_cell(cell + Vector2i.UP)
+
+
 ## 地形块的导航阻挡表：PackedByteArray 256 字节（16×16，行主序，1=不可走）。
 ## 死点填充需 1 格边距——内部多采一圈（18×18）障碍样本，仅缓存本块 16×16 结果
 static func nav_blocked_chunk(chunk_origin_px: Vector2i) -> PackedByteArray:
@@ -365,10 +381,7 @@ static func nav_blocked_chunk(chunk_origin_px: Vector2i) -> PackedByteArray:
 				# 深水导航缓冲：4 邻有水则本格也留洞——水碰撞 r14 + 怪 12 超过
 				# 单格洞余隙，贴边路径会物理卡死；湖边一圈不可走代价可接受
 				# （_water_at_cell 是独立纯函数，跨块边距无需展开）
-				var near_water: bool = _water_at_cell(base + Vector2i(dx + 1, dy)) \
-						or _water_at_cell(base + Vector2i(dx - 1, dy)) \
-						or _water_at_cell(base + Vector2i(dx, dy + 1)) \
-						or _water_at_cell(base + Vector2i(dx, dy - 1))
+				var near_water := _has_water_neighbor(base + Vector2i(dx, dy))
 				if near_water:
 					blocked = true
 			out[dy * CHUNK_CELLS + dx] = int(blocked)

@@ -136,14 +136,27 @@ func _on_kill(_xp: int, _gold: int, _monster_name: String, species_name: String)
 
 
 func _on_spawned(inst: MonsterInstance) -> void:
+	if not _is_local_event(inst.region_id):
+		return
 	if inst.generation > 0 and not _seen("split_seen"):
 		_hint("split_seen", "分裂发生了！小赤炎小魔不再分裂——每条血脉的总收益有上限")
 
 
-func _on_migrated(inst: MonsterInstance, _to_region_id: String) -> void:
+func _on_migrated(inst: MonsterInstance, to_region_id: String) -> void:
+	if not _is_local_event(to_region_id):
+		return
 	var news: String = FIRST_MIGRATION_NEWS.get(inst.species.species_name, "")
 	if news != "" and not _seen("migrate_" + inst.species.species_name):
 		_hint("migrate_" + inst.species.species_name, news)
+
+
+## 全局模拟持续运行，远处迁徙不能提前消耗玩家的首次亲历教学。
+func _is_local_event(region_id: String) -> bool:
+	var player := get_tree().get_first_node_in_group("player") as Node2D
+	if player == null or WorldSim.sim == null:
+		return false
+	var region := WorldSim.sim.region_of_point(player.global_position)
+	return region != null and region.id == region_id
 
 
 func _seen(key: String) -> bool:

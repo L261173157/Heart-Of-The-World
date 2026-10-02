@@ -19,6 +19,16 @@ func _ready() -> void:
 		"seed":
 			GameState.reset_all()
 			GameState.add_xp(500)
+			GameState.receive_equipment({"slot": "weapon", "name": "现用火刃", "rarity": 1,
+					"affixes": {"atk": 0.1}, "element": "fire"})
+			GameState.receive_equipment({"slot": "weapon", "name": "待选冰刃", "rarity": 3,
+					"affixes": {"lifesteal": 0.06}, "element": "ice"})
+			GameState.bounty = {"species": "火把哥布林", "region_id": "test_region",
+					"need": 5, "progress": 2, "gold": 40, "xp": 20,
+					"original_need": 5, "original_gold": 40, "original_xp": 20, "adjusted": false,
+					"target_ids": [3, 5, 7, 11, 13]}
+			GameState.tracked_quest_id = "test_quest"
+
 			GameState._notification(NOTIFICATION_APPLICATION_PAUSED)
 			var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(GameState.SAVE_PATH))
 			_check(int(data.get("pending_passive_picks", -1)) == GameState.stats.level - 1,
@@ -33,6 +43,15 @@ func _ready() -> void:
 					"全新进程自动读回待领取次数")
 			_check(stats.get("passive_choices") == expected.get("passive_choices", []),
 					"全新进程保持原三张卡，不重抽")
+			_check(_same_data(GameState.pending_equipment, expected.get("pending_equipment", {})),
+					"候选装备词条和元素跨进程保留")
+			_check(_same_data(GameState.bounty, expected.get("bounty", {})) and GameState.bounty.get("progress") == 2,
+					"赏金目标和部分进度跨进程保留")
+			_check(GameState.tracked_quest_id == "test_quest", "所追踪委托跨进程保留")
+			_check(GameState.resolve_pending_equipment(true, int(expected["equipment_offer_id"])),
+					"冷启动可选择待比较装备")
+			_check(GameState.stats.equip_element() == "ice" and GameState.is_equipment_locked("weapon"),
+					"主动换装应用元素并保护新选择")
 			if not stats.has_method("claim_passive") or expected.get("passive_choices", []).is_empty():
 				_check(false, "提供事务式赐福领取入口")
 			else:
@@ -42,6 +61,13 @@ func _ready() -> void:
 		"verify":
 			var expected: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(manifest_path))
 			var remaining := int(expected.get("pending_passive_picks", -1)) - 1
+			_check(GameState.pending_equipment.is_empty() and GameState.stats.equip_element() == "ice",
+					"再启动不会恢复已经处理的候选")
+			_check(not GameState.resolve_pending_equipment(true, int(expected["equipment_offer_id"])),
+					"跨进程重放装备凭证不能重复结算")
+			_check(GameState.bounty.get("progress") == 2 and GameState.tracked_quest_id == "test_quest",
+					"其它奖励领取不丢失赏金或追踪状态")
+
 			_check(stats.get("pending_passive_picks") == remaining, "再次冷启动只剩未领取资格")
 			if not expected.get("passive_choices", []).is_empty():
 				var id: String = expected["passive_choices"][0]
@@ -74,3 +100,26 @@ func _check(ok: bool, message: String) -> void:
 	print("  %s  %s" % ["PASS" if ok else "FAIL", message])
 	if not ok:
 		_fails += 1
+
+
+## JSON 数字读回都是浮点；递归比较值，不把 int/float 容器类型差异当作丢档。
+func _same_data(actual: Variant, expected: Variant) -> bool:
+	if typeof(actual) in [TYPE_INT, TYPE_FLOAT] and typeof(expected) in [TYPE_INT, TYPE_FLOAT]:
+		return is_equal_approx(float(actual), float(expected))
+	if typeof(actual) != typeof(expected):
+		return false
+	if typeof(actual) == TYPE_ARRAY:
+		if actual.size() != expected.size():
+			return false
+		for i in actual.size():
+			if not _same_data(actual[i], expected[i]):
+				return false
+		return true
+	if typeof(actual) == TYPE_DICTIONARY:
+		if actual.size() != expected.size():
+			return false
+		for key: Variant in actual:
+			if not expected.has(key) or not _same_data(actual[key], expected[key]):
+				return false
+		return true
+	return actual == expected

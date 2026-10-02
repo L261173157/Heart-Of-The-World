@@ -114,7 +114,7 @@ func _test_elite_mechanics() -> void:
 	_check(elite.display_name().begins_with("精英·"), "精英名称带前缀（%s）" % elite.display_name())
 
 
-## 世界事件检测：构造假快照喂 WorldEventWatcher.detect_events（纯函数，无需场景树）。
+## 世界事件检测：构造假快照喂 WorldEventDetector.detect_events（纯函数，无需场景树）。
 ## 快照只带 regions（检测器从 regions 重算全球总数），helper: {区域id: {物种: 数}}
 func _test_world_events() -> void:
 	_current = "世界事件"
@@ -127,17 +127,26 @@ func _test_world_events() -> void:
 	var first: Array[Dictionary] = detector.detect_events(_fake_summary({"west": {"赤炎小魔": 6}}))
 	_check(first.is_empty(), "首帧快照不触发事件")
 
-	# 入侵潮：east 从无长矛哥布林 → 4 只（断言结构化字段而非文案——文案改写不断链）
+	# 仅从 0→4 无法判断是迁徙还是出生，不能把快照增长伪报为入侵。
 	var invaded: Array[Dictionary] = detector.detect_events(
 		_fake_summary({"west": {"赤炎小魔": 6}, "east": {"长矛哥布林": 4}}))
-	_check(invaded.any(func(e: Dictionary) -> bool:
-		return e["kind"] == "invade" and e["species"] == "长矛哥布林"),
-		"区域入侵潮被播报（%s）" % str(invaded))
+	_check(invaded.all(func(e: Dictionary) -> bool:
+		return e["kind"] not in ["invade", "migrate"]),
+		"快照新增种群不伪造迁徙（%s）" % str(invaded))
 
-	# 同类入侵 30s 内节流：再来一次同样事件不重复
+	# 真实迁徙：两只也必须被观察到，且同类事件冷却期内不重复。
+	detector.record_migration("长矛哥布林", "east")
+	detector.record_migration("长矛哥布林", "east")
+	var migrated: Array[Dictionary] = detector.detect_events(
+		_fake_summary({"west": {"赤炎小魔": 6}, "east": {"长矛哥布林": 4}}),
+		{"local_region_id": "east"})
+	_check(migrated.any(func(e: Dictionary) -> bool: return e["kind"] == "migrate"),
+		"两只真实迁入被播报")
+	detector.record_migration("长矛哥布林", "east")
 	var again: Array[Dictionary] = detector.detect_events(
-		_fake_summary({"west": {"赤炎小魔": 5}, "east": {"长矛哥布林": 4}}))
-	_check(not again.any(func(e: Dictionary) -> bool: return e["kind"] == "invade"),
+		_fake_summary({"west": {"赤炎小魔": 5}, "east": {"长矛哥布林": 4}}),
+		{"local_region_id": "east"})
+	_check(not again.any(func(e: Dictionary) -> bool: return e["kind"] == "migrate"),
 		"同类事件冷却期内不刷屏")
 
 	# 全球灭绝：赤炎小魔从世界上消失

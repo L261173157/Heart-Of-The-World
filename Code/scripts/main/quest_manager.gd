@@ -21,7 +21,7 @@ const _GameWorld := preload("res://scripts/main/game_world.gd")
 
 
 func _ready() -> void:
-	# HUD 任务行点击放弃时经组名定位（跨模块不互相持有引用，铁律 3）
+	# 保留 NPC/既有测试的组查询；HUD 的追踪与放弃仅经 EventBus 请求
 	add_to_group("quest_manager")
 	EventBus.monster_killed_by_player.connect(_on_kill)
 	EventBus.nest_ransacked.connect(_on_ransack)
@@ -32,6 +32,8 @@ func _ready() -> void:
 	# 对话气泡按"是"接单（HUD 发出，气泡自己关闭）。方法引用连接：lambda 捕获
 	# self 不受"对象释放自动断连"保护，二周目世界的确认信号会悬空调用已释放的本节点
 	EventBus.dialogue_confirmed.connect(_on_dialogue_confirmed)
+	EventBus.quest_track_requested.connect(_on_track_requested)
+	EventBus.quest_abandon_requested.connect(_on_abandon_requested)
 	_reconcile_hunts()
 	_reconcile_collect()
 	_push_hud()
@@ -326,16 +328,37 @@ func _reconcile_collect() -> void:
 		GameState._queue_save()
 
 
-## 放弃任务（HUD 任务行点击触发；读档注释的"任务栏可手动放弃"遗留项落地）
+## 点击任务行只追踪；销单必须经过单独的明确放弃请求。
+func _on_track_requested(quest_id: String) -> void:
+	for quest: Dictionary in GameState.quests["active"]:
+		if str(quest["id"]) == quest_id:
+			GameState.tracked_quest_id = quest_id
+			GameState._queue_save()
+			_push_hud()
+			return
+
+
+func _on_abandon_requested(quest_id: String) -> void:
+	var message := abandon(quest_id)
+	if not message.is_empty():
+		EventBus.hint_requested.emit(message)
+
+
+func abandon(quest_id: String) -> String:
+	for quest: Dictionary in GameState.quests["active"]:
+		if str(quest["id"]) != quest_id:
+			continue
+		GameState.quests["active"].erase(quest)
+		GameState._queue_save()
+		_push_hud()
+		return "已放弃：%s" % quest["title"]
+	return ""
+
+
+## 仅兼容旧调用者；新的 HUD 不再调用此入口。
 func abandon_first() -> String:
-	var data: Dictionary = GameState.quests
-	if data["active"].is_empty():
-		return ""
-	var q: Dictionary = data["active"][0]
-	data["active"].erase(q)
-	GameState._queue_save()
-	_push_hud()
-	return "已放弃：%s" % q["title"]
+	var active: Array = GameState.quests["active"]
+	return abandon(str(active[0]["id"])) if not active.is_empty() else ""
 
 
 func _progress_match(predicate: Callable) -> void:
@@ -345,6 +368,7 @@ func _progress_match(predicate: Callable) -> void:
 		if not predicate.call(q):
 			continue
 		q["progress"] = int(q["progress"]) + 1
+		GameState._invalidate_world_save_cache()
 		changed = true
 		if int(q["progress"]) >= int(q["need"]):
 			_complete(q)
@@ -366,6 +390,7 @@ func _complete(quest: Dictionary) -> void:
 		_completing.erase(quest["id"])
 		return
 	data["active"].erase(quest)
+	GameState._invalidate_world_save_cache()
 	_completing.erase(quest["id"])
 	var landmark_id := str(quest.get("landmark_id", quest["id"]))
 	data["completed"][landmark_id] = int(data["completed"].get(landmark_id, 0)) + 1
@@ -396,17 +421,23 @@ func _complete(quest: Dictionary) -> void:
 		quest["title"], gold, xp, bonus_text])
 
 
-## HUD 任务行：首个进行中的任务（多任务时显示计数）
+## 追踪对象失效时仅回退到第一张剩余委托，不改变其进度或奖励。
 func _push_hud() -> void:
-	var data: Dictionary = GameState.quests
-	var n: int = data["active"].size()
-	if n == 0:
+	var active: Array = GameState.quests["active"]
+	var selected: Dictionary = {}
+	for quest: Dictionary in active:
+		if str(quest["id"]) == GameState.tracked_quest_id:
+			selected = quest
+			break
+	if selected.is_empty() and not active.is_empty():
+		selected = active[0]
+	var selected_id := str(selected.get("id", ""))
+	if selected_id != GameState.tracked_quest_id:
+		GameState.tracked_quest_id = selected_id
+		GameState._queue_save()
+	EventBus.quest_list_changed.emit(active.duplicate(true), selected_id)
+	if selected.is_empty():
 		EventBus.quest_updated.emit("")
 		return
-	if n == 1:
-		var q: Dictionary = data["active"][0]
-		EventBus.quest_updated.emit("📜 %s（%d/%d）" % [q["title"], q["progress"], q["need"]])
-	else:
-		var q0: Dictionary = data["active"][0]
-		EventBus.quest_updated.emit("📜 %s（%d/%d）+另 %d 项" % [
-			q0["title"], q0["progress"], q0["need"], n - 1])
+	var others := " +另 %d 项" % (active.size() - 1) if active.size() > 1 else ""
+	EventBus.quest_updated.emit("📜 %s（%d/%d）%s" % [selected["title"], selected["progress"], selected["need"], others])

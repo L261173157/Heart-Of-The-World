@@ -34,16 +34,33 @@ var death_pos: Vector2 = Vector2.INF
 var hp_mirror: float = -1.0
 
 
+## Boss 的长寿用于生态占位，不能把几十分钟存活直接换成数倍攻击/移速。
+## 前 200 tick 保留现有幼年/初生强度；此后 20 分钟只增加 100 个战斗成长 tick，
+## 再封顶。独立于 maturity_age / lifespan：不改成年、自然死亡、重生或存档年龄。
+## 普通怪仍使用原始线性成长；三项能力共用此曲线，避免只压伤害却留下追击失控。
+const BOSS_COMBAT_BASE_AGE := 200.0
+const BOSS_COMBAT_GROWTH_WINDOW := 1200.0
+const BOSS_COMBAT_EXTRA_AGE := 100.0
+
+
+func combat_age() -> float:
+	if not species.is_boss:
+		return float(age)
+	var young_age := minf(float(age), BOSS_COMBAT_BASE_AGE)
+	var later_growth := clampf((age - BOSS_COMBAT_BASE_AGE) / BOSS_COMBAT_GROWTH_WINDOW, 0.0, 1.0)
+	return young_age + later_growth * BOSS_COMBAT_EXTRA_AGE
+
+
 func strength() -> float:
-	return species.base_strength + species.strength_growth * age
+	return species.base_strength + species.strength_growth * combat_age()
 
 
 func agility() -> float:
-	return species.base_agility + species.agility_growth * age
+	return species.base_agility + species.agility_growth * combat_age()
 
 
 func intellect() -> float:
-	return species.base_intellect + species.intellect_growth * age
+	return species.base_intellect + species.intellect_growth * combat_age()
 
 
 func max_hp() -> float:

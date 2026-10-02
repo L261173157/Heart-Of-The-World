@@ -12,6 +12,7 @@ func _ready() -> void:
 	GameState.reset_all()
 	EventBus.hint_requested.connect(func(message: String) -> void: _hints.append(message))
 	_test_lock_choices()
+	_test_pending_transactions()
 	await _test_real_drop_path()
 	_test_persistence()
 	await _test_backpack()
@@ -46,7 +47,11 @@ func _test_lock_choices() -> void:
 	_check(not GameState.try_equip(money), "高总和金币/经验词条不覆盖攻击/吸血构筑")
 	_check(GameState.stats.equips["weapon"] == weapon and GameState.stats.equip_element() == "fire",
 			"锁定完整保留词条与元素")
-	_check(GameState.gold == gold_before + EconomyMath.sell_price(3), "锁定槽的新掉落只折金一次")
+	_check(GameState.gold == gold_before and GameState.pending_equipment == money, "锁定槽候选尚未出售")
+	var offer_id := GameState.equipment_offer_id
+	_check(GameState.resolve_pending_equipment(false, offer_id), "明确保留构筑才出售候选")
+	_check(GameState.gold == gold_before + EconomyMath.sell_price(3), "手动出售只折金一次")
+	_check(not GameState.resolve_pending_equipment(false, offer_id), "重复选择不重复给金币")
 	_check(GameState.set_equipment_locked("weapon", false), "可明确开启自动换装")
 	_check(not GameState.set_equipment_locked("weapon", false), "重复相同选择幂等")
 	gold_before = GameState.gold
@@ -60,6 +65,67 @@ func _test_lock_choices() -> void:
 	_check(GameState.try_equip(_item("helmet", "普通头盔", {})), "空槽零词条装备也能穿上")
 	_check(GameState.is_equipment_locked("helmet") and GameState.is_equipment_locked("weapon"),
 			"各槽位锁定独立")
+
+
+func _test_pending_transactions() -> void:
+	GameState.reset_all()
+	var old := _item("weapon", "高分寻金刀", {"gold": 0.3, "xp": 0.3}, 3)
+	var candidate := _item("weapon", "低分冰刃", {"atk": 0.05}, 1)
+	candidate["element"] = "ice"
+	GameState.receive_equipment(old)
+	var gold_before := GameState.gold
+	_check(GameState.receive_equipment(candidate) == "pending", "默认锁定保留低分候选供玩家选构筑")
+	var first_id := GameState.equipment_offer_id
+	var overflow := _item("weapon", "连续掉落火刃", {"atk": 0.15}, 2)
+	overflow["element"] = "fire"
+	_check(GameState.receive_equipment(overflow) == "sold", "单候选占位期间新掉落按明确规则折金")
+	_check(GameState.pending_equipment == candidate and GameState.equipment_offer_id == first_id,
+			"连续掉落不覆盖尚未选择的候选或更换凭证")
+	_check(GameState.gold == gold_before + roundi(EconomyMath.sell_price(2) * GameState.stats.gold_mult()),
+			"候选满位的新掉落不无声丢失且只结算一次")
+	_check(not GameState.resolve_pending_equipment(true, first_id - 1), "无效凭证不能改变装备和候选")
+	_check(GameState.resolve_pending_equipment(true, first_id), "玩家可明确选择总分更低但适合构筑的装备")
+	_check(GameState.stats.equips["weapon"] == candidate and GameState.stats.equip_element() == "ice",
+			"主动换装真正应用词条与元素")
+	_check(GameState.pending_equipment.is_empty() and GameState.is_equipment_locked("weapon"),
+			"处理后释放候选位且保护玩家主动选择")
+	var after_swap := GameState.gold
+	_check(not GameState.resolve_pending_equipment(false, first_id) and GameState.gold == after_swap,
+			"快速换装后重放出售不会重复出售新装备")
+	GameState.receive_equipment(overflow)
+	_check(GameState.equipment_offer_id > first_id, "后续候选取得新的凭证")
+	_check(not GameState.resolve_pending_equipment(false, first_id) and GameState.pending_equipment == overflow,
+			"延迟旧按钮事件不会把新候选卖掉")
+	var current_id := GameState.equipment_offer_id
+	GameState.save_enabled = true
+	_check(GameState.save_now(), "待比较候选可独立保存")
+	var stored: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(GameState.SAVE_PATH))
+	GameState.pending_equipment.clear()
+	GameState._load()
+	_check(GameState.pending_equipment == overflow and GameState.equipment_offer_id == current_id,
+			"加载完整恢复未决候选和凭证")
+	_check(GameState.resolve_pending_equipment(false, current_id), "恢复候选仍可明确出售")
+	_check(GameState.save_now(), "已处理候选落盘")
+	GameState._load()
+	_check(GameState.pending_equipment.is_empty() and not GameState.resolve_pending_equipment(false, current_id),
+			"重载不复活已售候选")
+	stored["version"] = 8
+	stored.erase("pending_equipment")
+	stored.erase("equipment_offer_id")
+	stored.erase("bounty")
+	stored.erase("tracked_quest_id")
+	_write_save(stored)
+	GameState._load()
+	_check(GameState.pending_equipment.is_empty() and GameState.bounty.is_empty() and GameState.tracked_quest_id.is_empty(),
+			"v8 迁移不凭空创建候选、赏金或追踪目标")
+	stored["pending_equipment"] = {"slot": "unknown", "name": "坏候选", "affixes": []}
+	stored["bounty"] = {"species": "火把哥布林", "region_id": "test", "need": "oops"}
+	stored["tracked_quest_id"] = []
+	_write_save(stored)
+	GameState._load()
+	_check(GameState.pending_equipment.is_empty() and GameState.bounty.is_empty() and GameState.tracked_quest_id.is_empty(),
+			"坏候选/赏金/追踪类型安全丢弃，不能变成免费奖励")
+	GameState.save_enabled = false
 
 
 ## 用实际怪物场景与 take_damage → _die_by_player → try_equip 链路，覆盖重复命中。
@@ -93,10 +159,10 @@ func _test_real_drop_path() -> void:
 	monster.take_damage(100000.0)
 	_check(monster.state == MonsterBase.S_CORPSE and not inst.is_alive, "真实伤害走完击杀与生态死亡链路")
 	_check(GameState.stats.equips == kept, "真实首领掉落也遵守四槽锁定")
-	_check(GameState.gold == gold_before + EconomyMath.kill_gold(inst) + EconomyMath.sell_price(3),
-			"真实击杀只给击杀奖励加一件被拒装备折金")
-	_check(_hints.any(func(message: String) -> bool: return message.contains("已锁定") and message.contains("折算金币")),
-			"掉落反馈明确解释锁定折金，不谎称词条更差")
+	_check(GameState.gold == gold_before + EconomyMath.kill_gold(inst) and not GameState.pending_equipment.is_empty(),
+			"真实击杀保留首领掉落供比较，尚未折金")
+	_check(_hints.any(func(message: String) -> bool: return message.contains("待比较") and message.contains("换装或出售")),
+			"掉落反馈明确指向背包选择，不谎称已出售")
 	var settled_gold := GameState.gold
 	monster.take_damage(100000.0)
 	_check(GameState.gold == settled_gold and GameState.stats.equips == kept,
