@@ -5,16 +5,42 @@ var _checks := 0
 var _fails := 0
 var _last_bounty := ""
 var _completed := 0
+var _kill_gold_sample := -1
+var _completion_gold := -1
+
+# 独立常数期望：满额的 .5 向上/普通向下取整；耗尽先 floor 基数再乘词条。
+const REWARD_CASES := [
+	{"gold": 25, "bonus": false, "depleted": false, "paid": 25},
+	{"gold": 25, "bonus": false, "depleted": true, "paid": 12},
+	{"gold": 26, "bonus": true, "depleted": false, "paid": 33},
+	{"gold": 25, "bonus": true, "depleted": false, "paid": 31},
+	{"gold": 25, "bonus": true, "depleted": true, "paid": 15},
+]
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	GameState.save_enabled = false
-	GameState.SAVE_PATH = "user://gameplay_tasks_%d.json" % OS.get_process_id()
 	WorldSim.set_process(false)
 	EventBus.bounty_updated.connect(func(text: String) -> void: _last_bounty = text)
-	EventBus.bounty_completed.connect(func(_text: String) -> void: _completed += 1)
-	_run.call_deferred()
+	# 必须早于真实世界的 BountyManager 订阅：击杀金币已到账，赏金尚未发。
+	EventBus.monster_killed_by_player.connect(func(_xp: int, _gold: int, _name: String, _species: String) -> void:
+		_kill_gold_sample = GameState.gold)
+	EventBus.bounty_completed.connect(func(_text: String) -> void:
+		_completed += 1
+		_completion_gold = GameState.gold)
+	var args := OS.get_cmdline_user_args()
+	if not args.is_empty() and args[0].begins_with("--reward-"):
+		if OS.get_environment("HOTW_TEST_SAVE").is_empty() or args.size() != 3 \
+				or args[0] not in ["--reward-settle", "--reward-verify"] \
+				or not args[1].is_valid_int() or int(args[1]) < 0 or int(args[1]) >= REWARD_CASES.size():
+			_check(false, "冷进程必须提供隔离 HOTW_TEST_SAVE 和合法案例编号")
+			get_tree().quit(1)
+			return
+		_cold_reward.call_deferred(args[0], int(args[1]), int(args[2]))
+	else:
+		GameState.SAVE_PATH = "user://gameplay_tasks_%d.json" % OS.get_process_id()
+		_run.call_deferred()
 
 
 func _check(ok: bool, label: String) -> void:
@@ -149,10 +175,7 @@ func _run() -> void:
 	for inst: MonsterInstance in WorldSim.sim.instances.values():
 		if inst.is_alive and inst.species.species_name == partial["species"] and inst.region_id == partial["region_id"]:
 			alive.append(inst)
-	WorldSim.sim.predation_enabled = false
-	WorldSim.sim.reintroduction_enabled = false
-	for species: SpeciesData in WorldSim.sim.species_list:
-		species.breeding_rate = 0.0
+	_isolate_reward_ticks()
 	for i in range(1, alive.size()):
 		alive[i].age = alive[i].lifespan
 	WorldSim.sim.tick()
@@ -174,12 +197,18 @@ func _run() -> void:
 	_check(GameState.bounty == adjusted and GameState.tracked_quest_id == ransack["id"],
 		"清内存并从磁盘恢复保留调整基数与所选任务")
 	var before_gold := GameState.gold
+	var gold_multiplier := GameState.stats.gold_mult()
+	_isolate_reward_ticks()
 	for inst: MonsterInstance in WorldSim.sim.instances.values():
 		if inst.is_alive and inst.species.species_name == partial["species"] and inst.region_id == partial["region_id"]:
 			inst.age = inst.lifespan
 	WorldSim.sim.tick()
 	_bounty()._process(BountyManager.EXTINCT_CHECK_INTERVAL)
-	var expected_gold := floori(float(partial["original_gold"]) / int(partial["original_need"]))
+	# 首次真实击杀可以随机掉落并装备金币词条；期望必须包含结算时的实际倍率。
+	var base_gold := floori(float(partial["original_gold"]) / int(partial["original_need"]))
+	var expected_gold := roundi(base_gold * gold_multiplier)
+	print("  BOUNTY_REWARD base=%d multiplier=%.6f actual=%d equips=%s" % [
+		base_gold, gold_multiplier, GameState.gold - before_gold, GameState.stats.equips])
 	_check(GameState.bounty.is_empty() and GameState.gold - before_gold == expected_gold and _completed == 1,
 		"耗尽按已杀贡献结算一次，既不丢奖励也不发整单")
 	_check(GameState.save_now(), "销单和奖励一同保存")
@@ -207,6 +236,7 @@ func _run() -> void:
 	_check(not is_instance_valid(interrupted) and _bounty() != null and not _bounty()._rolling,
 		"继续冒险使用全新管理器，旧协程无悬空引用")
 	_test_navigation_parity()
+	_test_reward_matrix()
 	_finish()
 
 
@@ -214,8 +244,7 @@ func _finish() -> void:
 	GameState.save_enabled = false
 	get_tree().paused = false
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(GameState.SAVE_PATH))
-	if _fails == 0:
-		print("=== GAMEPLAY TASKS PASSED (%d checks) ===" % _checks)
+	print("=== GAMEPLAY TASKS %s (%d checks, %d failures) ===" % ["PASSED" if _fails == 0 else "FAILED", _checks, _fails])
 	get_tree().quit(0 if _fails == 0 else 1)
 
 
@@ -322,3 +351,176 @@ func _test_individual_reachability() -> void:
 	manager.free()
 	player.free()
 	WorldSim.stop()
+
+
+## 物种资源必须复制；真实重装配/冷启动再隔离，不污染 ResourceLoader 缓存。
+func _isolate_reward_ticks() -> void:
+	var sim := WorldSim.sim
+	sim.predation_enabled = false
+	sim.reintroduction_enabled = false
+	var isolated := {}
+	for i in sim.species_list.size():
+		var species: SpeciesData = sim.species_list[i].duplicate()
+		species.breeding_rate = 0.0
+		species.migrate_count = 0
+		sim.species_list[i] = species
+		isolated[species.species_name] = species
+	for inst: MonsterInstance in sim.instances.values():
+		inst.species = isolated[inst.species.species_name]
+
+
+## 原真实流程保留随机掉落；专项矩阵锁定四槽，让无/有加成每次都被执行。
+func _reward_equipment(bonus: bool) -> Dictionary:
+	var result := {}
+	for slot: String in GameState.EQUIP_SLOTS:
+		var affixes := {"hp": 0.01}
+		if bonus and slot == "weapon":
+			affixes = {"gold": 0.15}
+		elif bonus and slot == "boots":
+			affixes = {"gold": 0.10}
+		result[slot] = {"slot": slot, "name": "赏金回归" + slot, "rarity": 1, "affixes": affixes}
+	return result
+
+
+func _test_reward_matrix() -> void:
+	GameState.save_enabled = false
+	GameState.stats.equips.clear()
+	GameState.stats.passives.clear()
+	# 固定世界中寻找仍存活的普通据点；不硬编码随机实体 ID。
+	var groups := {}
+	for inst: MonsterInstance in WorldSim.sim.instances.values():
+		if not inst.is_alive or inst.species.splits_on_death or not _bounty()._feasible(inst):
+			continue
+		var key := inst.region_id + "|" + inst.species.species_name
+		if not groups.has(key):
+			groups[key] = []
+		groups[key].append(inst.id)
+	var ids: Array = []
+	for group: Array in groups.values():
+		if group.size() >= 3:
+			ids = group.slice(0, 3)
+			break
+	_check(ids.size() == 3, "受控奖励有三只真实可战胜且不分裂的剩余目标")
+	if ids.is_empty():
+		return
+	var target: MonsterInstance = WorldSim.sim.instances[ids[0]]
+	for index in REWARD_CASES.size():
+		var test: Dictionary = REWARD_CASES[index]
+		GameState.stats.equips.clear()
+		GameState.pending_equipment.clear()
+		GameState.equipment_locks.clear()
+		for item: Dictionary in _reward_equipment(test["bonus"]).values():
+			_check(GameState.receive_equipment(item) == "equipped", "受控奖励装备进入空槽：%d/%s" % [index, item["slot"]])
+		GameState.gold = 100
+		GameState.bounty = {"species": target.species.species_name, "region_id": target.region_id,
+			"need": 4, "progress": 1 if test["depleted"] else 3, "gold": test["gold"], "xp": 1,
+			"original_need": 4, "original_gold": test["gold"], "original_xp": 1,
+			"adjusted": false, "target_ids": ids.duplicate()}
+		GameState.save_enabled = true
+		_check(GameState.save_now(), "未结算赏金/装备/生态真实保存：%d" % index)
+		GameState.save_enabled = false
+		var settled_gold := _run_reward_process("--reward-settle", index)
+		_run_reward_process("--reward-verify", index, settled_gold)
+		# 子进程改的是磁盘；父进程的活体/未结算任务不变，下一案例重新写档。
+
+
+func _run_reward_process(phase: String, index: int, expected_gold: int = -1) -> int:
+	var output: Array = []
+	var previous_save := OS.get_environment("HOTW_TEST_SAVE")
+	OS.set_environment("HOTW_TEST_SAVE", ProjectSettings.globalize_path(GameState.SAVE_PATH))
+	var exit_code := OS.execute(OS.get_executable_path(), PackedStringArray([
+		"--headless", "--path", ProjectSettings.globalize_path("res://"),
+		"res://tests/gameplay_tasks_test.tscn", "--quit-after", "10000", "--", phase, str(index), str(expected_gold)
+	]), output, true)
+	OS.set_environment("HOTW_TEST_SAVE", previous_save)
+	var marker := "=== BOUNTY COLD %s %d PASS ===" % [phase, index]
+	var completed := false
+	var settled_gold := -1
+	for entry: String in output:
+		print(entry)
+		completed = completed or marker in entry
+		for line: String in entry.split("\n"):
+			if line.begins_with("BOUNTY_COLD_BALANCE="):
+				settled_gold = line.trim_prefix("BOUNTY_COLD_BALANCE=").to_int()
+	_check(exit_code == 0 and completed and settled_gold >= 100, "独立冷进程完成 %s/%d" % [phase, index])
+	return settled_gold
+
+
+func _cold_reward(phase: String, index: int, expected_gold: int) -> void:
+	get_tree().paused = true
+	var test: Dictionary = REWARD_CASES[index]
+	var saved_gold := GameState.gold
+	var saved_bounty := GameState.bounty.duplicate(true)
+	var expected_equips := _reward_equipment(test["bonus"])
+	_check(GameState.stats.equips == expected_equips
+			and is_equal_approx(GameState.stats.gold_mult(), 1.25 if test["bonus"] else 1.0),
+			"冷读档保持受控装备与明确金币倍率")
+	for slot: String in GameState.EQUIP_SLOTS:
+		_check(GameState.is_equipment_locked(slot), "冷读档保留装备保护：" + slot)
+	get_tree().current_scene = null
+	var world := preload("res://scenes/main/main.tscn").instantiate()
+	get_tree().root.add_child(world)
+	get_tree().current_scene = world
+	_isolate_reward_ticks()
+	if phase == "--reward-settle":
+		_check(saved_gold == 100 and saved_bounty.get("need", 0) == 4
+				and saved_bounty.get("progress", 0) == (1 if test["depleted"] else 3)
+				and saved_bounty.get("original_gold", 0) == test["gold"]
+				and saved_bounty.get("target_ids", []).size() == 3
+				and GameState.bounty == saved_bounty and _completed == 0,
+				"冷装配保留未完成进度/基数/目标，不提前结算")
+		if GameState.bounty.is_empty():
+			_cold_reward_finish(phase, index)
+			return
+		var target: MonsterInstance = WorldSim.sim.instances[int(saved_bounty["target_ids"][0])]
+		var player: Player = world.get_node("Player")
+		player.global_position = target.spawn_pos + Vector2(100, 0)
+		world._stream_pass()
+		await _frames()  # 流式节点通过 call_deferred 挂入真实场景
+		var body: MonsterBase
+		for node: Node in get_tree().get_nodes_in_group("monsters"):
+			if node is MonsterBase and node.inst.id == target.id:
+				body = node
+		_check(body != null and target.is_alive, "冷读档目标真实流式生成并可击杀")
+		if body == null:
+			_cold_reward_finish(phase, index)
+			return
+		body.take_damage(1000000.0, player.global_position)
+		_check(not target.is_alive and _kill_gold_sample >= saved_gold, "真实击杀与赏金前金币采样都已发生")
+		var payout_before := _kill_gold_sample
+		if test["depleted"]:
+			_check(GameState.bounty.get("progress", 0) == 2 and _completed == 0,
+					"耗尽案例真实击杀增加贡献，仍不提前发奖")
+			payout_before = GameState.gold
+			for id: int in saved_bounty["target_ids"]:
+				var inst: MonsterInstance = WorldSim.sim.instances[id]
+				if inst.is_alive:
+					inst.age = inst.lifespan
+			WorldSim.sim.tick()
+			_bounty()._process(BountyManager.EXTINCT_CHECK_INTERVAL)
+		_check(GameState.bounty.is_empty() and _completed == 1
+				and _completion_gold - payout_before == int(test["paid"]),
+				"受控满额/耗尽奖励符合独立常数且只完成一次：%d" % index)
+		_check(GameState.stats.equips == expected_equips, "随机掉装不改变本次受控金币装备")
+	else:
+		_check(saved_bounty.is_empty() and GameState.bounty.is_empty()
+				and _completed == 0 and GameState.gold == saved_gold and saved_gold == expected_gold,
+				"再次冷装配保持销单与余额，未重复领奖")
+	var settled_gold := GameState.gold
+	var completed := _completed
+	for _repeat in 3:
+		_bounty()._reconcile()
+		_bounty()._complete()
+		_bounty()._on_kill(0, 0, "重复事件", str(saved_bounty.get("species", "")))
+	_check(GameState.bounty.is_empty() and GameState.gold == settled_gold and _completed == completed,
+			"重复结算及迟到击杀事件不重发金币/完成事件")
+	GameState.save_enabled = true
+	_check(GameState.save_now(), "销单与准确余额一起落盘")
+	GameState.save_enabled = false
+	_cold_reward_finish(phase, index)
+
+
+func _cold_reward_finish(phase: String, index: int) -> void:
+	print("BOUNTY_COLD_BALANCE=%d" % GameState.gold)
+	print("=== BOUNTY COLD %s %d %s ===" % [phase, index, "PASS" if _fails == 0 else "FAIL"])
+	get_tree().quit(0 if _fails == 0 else 1)
