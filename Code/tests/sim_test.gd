@@ -608,8 +608,13 @@ func _test_player_extinction() -> void:
 	region.capacity = 20
 	var hunted := _mortal_species("围猎种", 100000)  # 不老死：灭绝只能由玩家造成
 	var faded := _mortal_species("短命种", 3)  # 自然老死灭绝
+	# 全死快照会被读档保护拒绝；保留无繁衍/迁徙/捕食的第三种活体作为有效世界。
+	var survivor := _mortal_species("留存种", 100000)
 	var sim := EcologySim.new()
-	sim.setup([region], [hunted, faded], {"isle": {"围猎种": 2, "短命种": 2}})
+	# 本阶段只验证老死：tick 末尾的重引入可能在同一 tick 生成成年对，
+	# 使正确的自然恢复误报为“未老死归零”。恢复能力在下方读档后单独验证。
+	sim.reintroduction_enabled = false
+	sim.setup([region], [hunted, faded, survivor], {"isle": {"围猎种": 2, "短命种": 2, "留存种": 1}})
 	# 短命种年龄钉到寿命之上：setup 的随机年龄依赖全局 RNG 序列（营地避障
 	# 重试等消耗点会让序列漂移），赌"随机年龄≥寿命"曾偶发死前繁衍挂断言
 	for inst: MonsterInstance in sim.instances.values():
@@ -633,19 +638,33 @@ func _test_player_extinction() -> void:
 	# 物种比较必须按名字——restore 后 sim2 持有的是 duplicate() 副本，对象引用永不相等）
 	var snap := sim.to_dict()
 	var sim2 := EcologySim.new()
-	sim2.restore_from_dict([region], [hunted.duplicate(), faded.duplicate()], snap)
+	_check(sim2.restore_from_dict([region], [hunted.duplicate(), faded.duplicate(), survivor.duplicate()], snap),
+		"灭绝状态快照可恢复")
+	_check(sim2.reintroduction_enabled, "读档后的独立模拟启用自然重引入")
 	_check(sim2.player_extinct.has("围猎种"), "永久灭绝名单随存档往返")
+	_check(not sim2.player_extinct.has("短命种"), "自然灭绝读档后仍不计入永久名单")
 	var spawned := {"hunted": 0, "faded": 0}
 	sim2.instance_spawned.connect(func(inst: MonsterInstance) -> void:
 		if inst.species.species_name == "短命种":
 			spawned["faded"] += 1
 		elif inst.species.species_name == "围猎种":
 			spawned["hunted"] += 1)
-	for i in 300:
+	# 两种待测物种均已归零，无繁衍/迁徙/捕食掷骰。验证并重放首个成功掷骰，
+	# 不靠“300 tick 大概会触发”：自然物种必须立即复苏；若永久名单失效，
+	# 排在前面的围猎种会吃到同一成功掷骰，零重引入断言必定失败。
+	seed(13)
+	_check(randf() < EcologySim.REINTRODUCE_CHANCE, "夹具首个重引入掷骰明确成功")
+	seed(13)
+	sim2.tick()
+	_check(int(spawned["faded"]) == EcologySim.REINTRODUCE_COUNT
+			and sim2.alive_count_of_species("短命种") == EcologySim.REINTRODUCE_COUNT,
+		"自然灭绝物种在成功掷骰的同一 tick 恢复成年对")
+	for i in 299:
 		sim2.tick()
 	_check(int(spawned["hunted"]) == 0,
-		"玩家灭杀致绝 300 tick 零重引入（5%/tick 无豁免时置信度 >99.99%）")
+		"玩家灭杀致绝 300 tick 零重引入（含明确成功掷骰）")
 	_check(int(spawned["faded"]) > 0, "自然灭绝物种仍被重引入（%d 次）" % spawned["faded"])
+	randomize()  # 局部受控掷骰不固定其余生态用例的随机序列
 
 
 ## 测试用短命物种构造（不繁衍不迁徙，寿命可指定）
