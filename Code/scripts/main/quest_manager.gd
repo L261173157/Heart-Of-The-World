@@ -11,6 +11,11 @@ extends Node
 
 const MAX_ACTIVE := 3
 
+## 库存信号同步发出，交付会再次触发本管理器；守卫避免重复扣料/重复奖励。
+var _reconciling_collect := false
+var _collect_recheck := false
+var _completing: Dictionary = {}
+
 ## game_world 的表现场景登记表（狩猎目标过滤白骨兵物种用）
 const _GameWorld := preload("res://scripts/main/game_world.gd")
 
@@ -22,10 +27,13 @@ func _ready() -> void:
 	EventBus.nest_ransacked.connect(_on_ransack)
 	EventBus.landmark_discovered.connect(_on_discover)
 	# collect（P1）：进度 = 当前持有数（接单前的存量同样计入）
-	EventBus.item_gained.connect(_on_item_gained)
+	EventBus.inventory_changed.connect(_reconcile_collect)
+	EventBus.sim_tick_completed.connect(_on_sim_tick)
 	# 对话气泡按"是"接单（HUD 发出，气泡自己关闭）。方法引用连接：lambda 捕获
 	# self 不受"对象释放自动断连"保护，二周目世界的确认信号会悬空调用已释放的本节点
 	EventBus.dialogue_confirmed.connect(_on_dialogue_confirmed)
+	_reconcile_hunts()
+	_reconcile_collect()
 	_push_hud()
 
 
@@ -40,7 +48,7 @@ func _on_dialogue_confirmed(quest: Dictionary) -> void:
 func offer(landmark_id: String, quest_kind: String, giver: String) -> Dictionary:
 	var data: Dictionary = GameState.quests
 	for q: Dictionary in data["active"]:
-		if q["landmark_id"] == landmark_id:
+		if q.get("landmark_id", "") == landmark_id:
 			return {"kind": "info",
 				"text": "任务进行中——%s（%d/%d）" % [q["title"], q["progress"], q["need"]]}
 	if data["active"].size() >= MAX_ACTIVE:
@@ -59,6 +67,9 @@ func accept(quest: Dictionary) -> String:
 	for q: Dictionary in data["active"]:
 		if q["id"] == quest.get("id", ""):
 			return "%s：任务进行中——%s" % [quest.get("giver", ""), q["title"]]
+	# 气泡展示期间种群也会死亡/迁徙；确认时复核而不是把陈旧的 7 只写进任务栏。
+	if quest.get("kind", "") == "hunt":
+		_refresh_hunt(quest)
 	data["active"].append(quest)
 	# collect 边界：offer 生成到玩家确认隔最长 12s 气泡窗口，期间可能把材料
 	# 卖到低于 need——接单时按当前持有重算进度，旧快照虚标达标会误触结算
@@ -97,12 +108,14 @@ func _gen_quest(landmark_id: String, quest_kind: String, giver: String) -> Dicti
 		"progress": 0,
 	}
 	if quest_kind == "hunt":
-		var species := _pick_hunt_species(rng)
-		if species == "":
+		quest["hunt_origin_region"] = _hunt_origin_region(quest)
+		var target := _pick_hunt_target(quest, rng)
+		if target.is_empty():
 			return {}
-		quest["species"] = species
-		quest["need"] = 4 + rng.randi() % 4
-		quest["title"] = "狩猎：击杀 %s ×%d" % [species, quest["need"]]
+		quest["species"] = target["species"]
+		quest["hunt_region"] = target["region_id"]
+		quest["need"] = mini(4 + rng.randi() % 4, int(target["count"]))
+		_update_hunt_title(quest)
 	elif quest_kind == "ransack":
 		quest["need"] = 1 + rng.randi() % 2
 		quest["title"] = "捣毁巢穴 ×%d" % quest["need"]
@@ -126,30 +139,154 @@ func _gen_quest(landmark_id: String, quest_kind: String, giver: String) -> Dicti
 		quest["gold"] += roundi(EconomyMath.item_sell_price(quest["item"]) \
 				* quest["need"] * EconomyMath.COLLECT_PREMIUM)
 	quest["xp"] = EconomyMath.bounty_xp(quest["need"] + 2)
+	if quest_kind == "hunt":
+		_remember_hunt_reward(quest)
 	return quest
 
 
-func _pick_hunt_species(rng: RandomNumberGenerator) -> String:
+## NPC 所在区是任务范围的固定起点，存档后不跟着玩家漂移。
+func _hunt_origin_region(quest: Dictionary) -> String:
 	if WorldSim.sim == null:
 		return ""
-	var counts := {}
+	var stored := str(quest.get("hunt_origin_region", ""))
+	if WorldSim.sim.get_region(stored) != null:
+		return stored
+	var landmark := LandmarkRegistry.landmark(str(quest.get("landmark_id", "")))
+	var region_id := str(landmark.get("patch_id", ""))
+	if WorldSim.sim.get_region(region_id) != null:
+		return region_id
+	var player := get_tree().get_first_node_in_group("player") as Node2D if is_inside_tree() else null
+	if player != null:
+		var region := WorldSim.sim.region_of_point(player.global_position)
+		if region != null:
+			return region.id
+	# 无地标/玩家的合成世界兼容；真实 NPC 总能从注册表解析。
+	return str(WorldSim.sim.regions.keys()[0]) if not WorldSim.sim.regions.is_empty() else ""
+
+
+## 分三档：本区 → 邻区 → 已探索个体据点。未探索的遥远全局种群不发单。
+func _hunt_targets(quest: Dictionary, minimum: int = 1) -> Array:
+	if WorldSim.sim == null:
+		return []
+	var origin := WorldSim.sim.get_region(_hunt_origin_region(quest))
+	var groups: Array = [{}, {}, {}]
 	for inst: MonsterInstance in WorldSim.sim.instances.values():
-		if inst.is_alive and not inst.species.is_boss \
-				and _GameWorld.MONSTER_SCENES.has(inst.species.species_name):
-			counts[inst.species.species_name] = int(counts.get(inst.species.species_name, 0)) + 1
-	var candidates: Array = []
-	for n: String in counts:
-		if int(counts[n]) >= 3:
-			candidates.append(n)
-	if candidates.is_empty():
-		return ""
-	candidates.sort()
+		if not inst.is_alive or inst.species.is_boss \
+				or not _GameWorld.MONSTER_SCENES.has(inst.species.species_name):
+			continue
+		var tier := 2
+		if origin != null and inst.region_id == origin.id:
+			tier = 0
+		elif origin != null and inst.region_id in origin.neighbor_ids:
+			tier = 1
+		else:
+			if not inst.spawn_pos.is_finite():
+				continue
+			var cell := Vector2i(inst.spawn_pos / WorldConfig.WORLD_SIZE * GameState.FOG_GRID)
+			if not GameState.fog_is_explored(cell.x, cell.y):
+				continue
+		var key := "%s|%s" % [inst.species.species_name, inst.region_id]
+		if not groups[tier].has(key):
+			groups[tier][key] = {"species": inst.species.species_name,
+				"region_id": inst.region_id, "count": 0, "tier": tier}
+		groups[tier][key]["count"] += 1
+	var targets: Array = []
+	for group: Dictionary in groups:
+		var keys := group.keys()
+		keys.sort()
+		for key: String in keys:
+			if int(group[key]["count"]) >= minimum:
+				targets.append(group[key])
+	return targets
+
+
+func _pick_hunt_target(quest: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
+	var targets := _hunt_targets(quest, 3)
+	if targets.is_empty():
+		return {}
+	var tier: int = targets[0]["tier"]
+	var candidates := targets.filter(func(t: Dictionary) -> bool: return int(t["tier"]) == tier)
 	return candidates[rng.randi() % candidates.size()]
+
+
+func _remember_hunt_reward(quest: Dictionary) -> void:
+	if not quest.has("hunt_original_need"):
+		quest["hunt_original_need"] = maxi(1, int(quest["need"]))
+		quest["hunt_original_gold"] = int(quest.get("gold", 0))
+		quest["hunt_original_xp"] = int(quest.get("xp", 0))
+
+
+func _update_hunt_title(quest: Dictionary) -> void:
+	var region := WorldSim.sim.get_region(str(quest.get("hunt_region", ""))) if WorldSim.sim != null else null
+	var where := " · " + region.display_name if region != null else ""
+	var note := " · 等待本地目标" if quest.get("hunt_waiting", false) else ""
+	if quest.get("hunt_adjusted", false) and note == "":
+		note = " · 数量调整/按量结算"
+	quest["title"] = "猎杀：击杀 %s ×%d%s%s" % [quest.get("species", ""), quest["need"], where, note]
+
+
+## 留住已击杀进度；种群缩减只下调未完成部分，奖励按原单比例，不能白领整单。
+## 零进度且已无本地目标时换可完成的本地目标；无候选则明确等待，不静默丢单。
+func _refresh_hunt(quest: Dictionary) -> void:
+	if WorldSim.sim == null:
+		return
+	_remember_hunt_reward(quest)
+	quest["hunt_origin_region"] = _hunt_origin_region(quest)
+	var available := 0
+	var nearest := ""
+	for target: Dictionary in _hunt_targets(quest):
+		if target["species"] == quest.get("species", ""):
+			available += int(target["count"])
+			if nearest == "":
+				nearest = target["region_id"]
+	var progress := int(quest.get("progress", 0))
+	quest["hunt_waiting"] = false
+	if available == 0 and progress == 0:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash("quest-repair|%s" % quest.get("id", "")) & 0x7FFFFFFF
+		var target := _pick_hunt_target(quest, rng)
+		if target.is_empty():
+			quest["hunt_waiting"] = true
+		else:
+			quest["species"] = target["species"]
+			nearest = target["region_id"]
+			available = int(target["count"])
+	if nearest != "":
+		quest["hunt_region"] = nearest
+	if not quest["hunt_waiting"] and progress + available < int(quest["need"]):
+		quest["need"] = progress + available
+		quest["hunt_adjusted"] = true
+		var fraction := float(quest["need"]) / maxi(1, int(quest["hunt_original_need"]))
+		quest["gold"] = floori(int(quest["hunt_original_gold"]) * fraction)
+		quest["xp"] = floori(int(quest["hunt_original_xp"]) * fraction)
+	_update_hunt_title(quest)
+
+
+func _on_sim_tick(_summary: Dictionary) -> void:
+	_reconcile_hunts()
+
+
+func _reconcile_hunts() -> void:
+	if WorldSim.sim == null:
+		return
+	var changed := false
+	for quest: Dictionary in GameState.quests["active"].duplicate():
+		if quest.get("kind", "") != "hunt":
+			continue
+		var before := quest.duplicate(true)
+		_refresh_hunt(quest)
+		changed = changed or before != quest
+		if not quest.get("hunt_waiting", false) and int(quest["progress"]) >= int(quest["need"]):
+			_complete(quest)
+			changed = true
+	if changed:
+		GameState._queue_save()
+		_push_hud()
 
 
 func _on_kill(_xp: int, _gold: int, _monster_name: String, species_name: String) -> void:
 	_progress_match(func(q: Dictionary) -> bool:
-		return q["kind"] == "hunt" and q["species"] == species_name)
+		return q["kind"] == "hunt" and q.get("species", "") == species_name)
 
 
 func _on_ransack(_species_name: String) -> void:
@@ -161,18 +298,29 @@ func _on_discover(_id: String, _patch: String, _kind: String, _pos: Vector2) -> 
 
 
 ## collect 进度 = 当前持有数（接单前存量也计入；卖掉材料会回退进度）
-func _on_item_gained(item_id: String, _count: int, _total: int) -> void:
-	var data: Dictionary = GameState.quests
+func _reconcile_collect() -> void:
+	if _reconciling_collect:
+		_collect_recheck = true
+		return
+	_reconciling_collect = true
 	var changed := false
-	for q: Dictionary in data["active"].duplicate():
-		if q["kind"] != "collect" or q.get("item", "") != item_id:
-			continue
-		var have := mini(GameState.count_item(item_id), int(q["need"]))
-		if have != int(q["progress"]):
-			q["progress"] = have
-			changed = true
-		if int(q["progress"]) >= int(q["need"]):
-			_complete(q)
+	while true:
+		_collect_recheck = false
+		for q: Dictionary in GameState.quests["active"].duplicate():
+			if q["kind"] != "collect" or _completing.has(q["id"]):
+				continue
+			var have := mini(GameState.count_item(str(q.get("item", ""))), int(q["need"]))
+			if have != int(q["progress"]):
+				q["progress"] = have
+				changed = true
+			if int(q["progress"]) >= int(q["need"]):
+				_complete(q)
+				changed = true
+		# 后一单交付可能消耗前一单刚计入的材料，必须重访前面的单。
+		# 重入只标脏不递归；每次交付都销掉一单（最多 3 单），因此有界。
+		if not _collect_recheck:
+			break
+	_reconciling_collect = false
 	_push_hud()
 	if changed:
 		GameState._queue_save()
@@ -207,23 +355,31 @@ func _progress_match(predicate: Callable) -> void:
 
 func _complete(quest: Dictionary) -> void:
 	var data: Dictionary = GameState.quests
+	if not data["active"].has(quest) or _completing.has(quest["id"]):
+		return
+	_completing[quest["id"]] = true
 	# collect 先扣材料再销单：库存意外不足（接单后卖掉等边角）时不销单不计数，
 	# 进度回落到当前持有等再攒——先销单后扣料的旧顺序在扣料失败时任务已没了、
 	# 完成数已加、奖励没发（与"不结算不销单"的注释语义相反）
 	if quest["kind"] == "collect" and not GameState.remove_item(quest["item"], int(quest["need"])):
 		quest["progress"] = mini(GameState.count_item(str(quest["item"])), int(quest["need"]))
+		_completing.erase(quest["id"])
 		return
 	data["active"].erase(quest)
-	data["completed"][quest["landmark_id"]] = \
-			int(data["completed"].get(quest["landmark_id"], 0)) + 1
-	GameState.add_gold(quest["gold"])
-	GameState.add_xp(quest["xp"])
+	_completing.erase(quest["id"])
+	var landmark_id := str(quest.get("landmark_id", quest["id"]))
+	data["completed"][landmark_id] = int(data["completed"].get(landmark_id, 0)) + 1
+	# 老档消毒允许缺失奖励字段；恢复时自动结算同样必须安全回落。
+	var gold := maxi(0, int(quest.get("gold", 0)))
+	var xp := maxi(0, int(quest.get("xp", 0)))
+	GameState.add_gold(gold)
+	GameState.add_xp(xp)
 	# 物品奖励（P1）：collect 固定附金钥匙（lava 城塞的钥匙闭环）；其余任务
 	# 按 hash(单号) 确定性 30% 附一件随机补给（无 RNG——同单任何端结果一致）
 	var bonus := ""
 	if quest["kind"] == "collect":
 		bonus = EconomyMath.KEY_GOLD
-	elif hash("quest-bonus|%s" % quest["id"]) % 10 < 3:
+	elif not quest.get("hunt_adjusted", false) and hash("quest-bonus|%s" % quest["id"]) % 10 < 3:
 		var pool: Array = EconomyMath.BOSS_BONUS_POOL
 		bonus = pool[hash("quest-bonus2|%s" % quest["id"]) % pool.size()]
 	var bonus_text := ""
@@ -237,7 +393,7 @@ func _complete(quest: Dictionary) -> void:
 	SfxManager.play("quest")
 	SfxManager.play("gold3")
 	EventBus.quest_completed.emit("✅ %s 完成（+%d 金币 +%d 经验%s）" % [
-		quest["title"], quest["gold"], quest["xp"], bonus_text])
+		quest["title"], gold, xp, bonus_text])
 
 
 ## HUD 任务行：首个进行中的任务（多任务时显示计数）

@@ -28,6 +28,8 @@ jobs:
             tests: ui_visual,menu_layout,animation
           - suite: flows
             tests: smoke,save,save_lifecycle,combat,ui_flow,projectile,world,pacing
+          - suite: gameplay
+            tests: gameplay_combat,gameplay_ecology,gameplay_world,gameplay_equipment,gameplay_navigation
     steps:
       - uses: actions/checkout@v4
       - name: Install official Godot 4.7

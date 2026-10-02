@@ -862,14 +862,19 @@ func _attack_tick(_delta: float, player: Node2D) -> void:
 		_squash(Vector2(1.08, 0.92), 0.2)  # 出刀前蹲伏预备
 
 
-## 普攻执行（子类重写可加协同加成等）；source 名传给玩家做死亡信息
+## 子类只改伤害倍率，避免覆写普攻时漏掉共用出招/命中表现。
+func _melee_damage_mult() -> float:
+	return 1.0
+
+
+## 普攻执行；source 名传给玩家做死亡信息
 func _perform_attack(player: Node2D) -> void:
 	_squash(Vector2(0.92, 1.08), 0.14)  # 出刀瞬间过冲
 	# 出招帧与伤害结算同相位（Interact/Attack 条带 0.3~0.4s 非循环完整走完，
 	# 压制窗略宽防冷却期 walk 盖掉收招）
 	_play_action_anim("attack", 0.45)
 	if player.has_method("take_damage"):
-		player.take_damage(CombatMath.physical_damage(inst.attack_power()), global_position, inst.display_name())
+		player.take_damage(CombatMath.physical_damage(inst.attack_power() * _melee_damage_mult()), global_position, inst.display_name())
 		# 命中紫色邪光（美术 v5 fx 全量；Boss ×1.5）
 		EventBus.fx_requested.emit("orb", (player as Node2D).global_position,
 			1.5 if inst.species.is_boss else 0.8)
@@ -978,7 +983,7 @@ func _die_by_player() -> void:
 	elif inst.is_elite and randf() < 0.15:
 		# P1 银钥匙：精英怪 15%（hill 城塞宝箱的钥匙来源；与装备掉落同款表现层 RNG）
 		GameState.add_item(EconomyMath.KEY_SILVER, 1)
-	# 装备掉落：Boss 必掉史诗，精英 40% 稀有，普通 8% 精良；评分更高自动替换，否则折金
+	# 装备掉落：Boss 必掉史诗，精英 40% 稀有，普通 8% 精良；空槽装备并锁定，已占槽遵守玩家的锁定选择
 	var drop_rarity := -1
 	if inst.species.is_boss:
 		drop_rarity = 3
@@ -987,7 +992,7 @@ func _die_by_player() -> void:
 	elif randf() < 0.08:
 		drop_rarity = 1
 	if drop_rarity >= 0:
-		# 槽位随机（武器/头盔/衣服/鞋子），各槽独立比较评分
+		# 槽位随机（武器/头盔/衣服/鞋子），各槽独立保留/自动换装
 		var slots: Array = GameState.EQUIP_SLOTS
 		var slot: String = slots[randi() % slots.size()]
 		var item := GameState.roll_equipment(drop_rarity, slot)
@@ -998,10 +1003,12 @@ func _die_by_player() -> void:
 				EventBus.hint_requested.emit("✨ 换装 %s（%s）→ 旧装备已折算金币" % [
 					GameState.equip_description(item), GameState.SLOT_NAMES[slot]])
 			else:
-				EventBus.hint_requested.emit("✨ 装备 %s（%s）" % [
+				EventBus.hint_requested.emit("✨ 装备 %s（%s，已锁定；背包可解锁）" % [
 					GameState.equip_description(item), GameState.SLOT_NAMES[slot]])
 		else:
-			EventBus.hint_requested.emit("获得 %s（不如当前，折算金币）" % GameState.equip_description(item))
+			EventBus.hint_requested.emit("获得 %s（%s，折算金币）" % [
+				GameState.equip_description(item),
+				"当前%s已锁定" % GameState.SLOT_NAMES[slot] if GameState.is_equipment_locked(slot) else "词条总和未提高"])
 	# 打击感：击杀轻震，精英击杀重震 + 短顿帧（大怪倒下的"重量"）；Boss 战绩播报
 	if inst.species.is_boss:
 		EventBus.camera_shake_requested.emit(9.0)

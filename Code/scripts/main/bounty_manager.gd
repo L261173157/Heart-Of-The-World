@@ -47,6 +47,7 @@ func _process(delta: float) -> void:
 
 func _roll_later(delay: float) -> void:
 	_species_name = ""
+	EventBus.bounty_target_changed.emit("")
 	# 换单空窗期（2s 换单 + 8s 新单延迟）常驻栏如实显示，
 	# 不再挂着已失效的旧赏金进度误导玩家
 	EventBus.bounty_updated.emit("赏金交接中…")
@@ -86,6 +87,7 @@ func _roll_bounty() -> void:
 
 
 func _push() -> void:
+	EventBus.bounty_target_changed.emit(_species_name)
 	EventBus.bounty_updated.emit("赏金：猎杀 %s  %d/%d" % [_species_name, _progress, _target])
 
 

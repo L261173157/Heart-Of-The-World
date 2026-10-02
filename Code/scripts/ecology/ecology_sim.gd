@@ -81,6 +81,9 @@ var tick_count: int = 0
 var _biome_world := false
 ## Boss 重生倒计时 { species_name: ticks_left }
 var boss_respawn_timers: Dictionary = {}
+## Boss 固定据点（物种 → {region_id, position}）；由世界装配传入，与城塞同源。
+## 不随承载或种群顺序漂移；序列化仅作无配置恢复的兼容后备。
+var _boss_anchors: Dictionary = {}
 ## 捕食者饱食剩余 tick（实例 id → 计数；不随存档持久化——恢复后重新开始进食无碍）
 var _satiety: Dictionary = {}
 
@@ -119,9 +122,11 @@ const NEST_REBUILD_TICKS := 120
 ## initial: { region_id: { species_name: 初始数量 } }，用随机年龄初始化种群。
 ## 全量清空旧状态：restore 半途失败回退"新世界"时复用的是同一实例，
 ## 残留的实例/巢/Boss 计时/灭绝名单会让新世界带着旧世界线开局
-func setup(p_regions: Array, p_species_list: Array[SpeciesData], initial: Dictionary) -> void:
+func setup(p_regions: Array, p_species_list: Array[SpeciesData], initial: Dictionary,
+		p_boss_anchors: Dictionary = {}) -> void:
 	_register_regions(p_regions)
 	species_list = p_species_list
+	_configure_boss_anchors(p_boss_anchors, initial)
 	instances.clear()
 	nests.clear()
 	boss_respawn_timers.clear()
@@ -144,12 +149,82 @@ func setup(p_regions: Array, p_species_list: Array[SpeciesData], initial: Dictio
 			var count: int = initial[region_id][species_name]
 			for i in count:
 				if species.is_boss:
-					# Boss 以成年巨体入场（与重生逻辑一致），盘踞斑块中心
-					spawn_instance(species, region_id, species.maturity_age, 0,
-							species.boss_size_scale, false, region.center)
+					# 出生与重生共用固定锚点；错误的初始表也不能把城主撒到别处。
+					var anchor := boss_anchor(species.species_name)
+					var home: SimRegion = regions.get(anchor.get("region_id", ""))
+					if home != null and alive_count_in(home.id) < home.capacity:
+						spawn_instance(species, home.id, species.maturity_age, 0,
+								species.boss_size_scale, false, anchor["position"])
 				else:
 					spawn_instance(species, region_id, randi_range(5, 60),
 							0, 1.0, false, _camp_member_pos(region, species))
+
+
+## 返回副本，表现层可以查据点而不改写模拟配置。
+func boss_anchor(species_name: String) -> Dictionary:
+	return (_boss_anchors.get(species_name, {}) as Dictionary).duplicate()
+
+
+func _configure_boss_anchors(config: Dictionary, initial: Dictionary = {}) -> void:
+	_boss_anchors.clear()
+	for species: SpeciesData in species_list:
+		if not species.is_boss:
+			continue
+		var home: SimRegion = null
+		var position := Vector2.INF
+		var raw: Variant = config.get(species.species_name, {})
+		if typeof(raw) == TYPE_DICTIONARY:
+			home = regions.get(str(raw.get("region_id", "")))
+			var value: Variant = raw.get("position", Vector2.INF)
+			if value is Vector2:
+				position = value
+			elif typeof(value) == TYPE_ARRAY and value.size() == 2 \
+					and typeof(value[0]) in [TYPE_INT, TYPE_FLOAT] \
+					and typeof(value[1]) in [TYPE_INT, TYPE_FLOAT]:
+				position = Vector2(float(value[0]), float(value[1]))
+		if home != null and not habitat_match(species, home):
+			home = null
+		# 未显式装配的合成世界沿用初始 Boss 所在区；没有初始个体才选首个栖息地。
+		if home == null:
+			position = Vector2.INF
+			for region_id: String in initial:
+				var candidate: SimRegion = regions.get(region_id)
+				if candidate != null and habitat_match(species, candidate) \
+						and int(initial[region_id].get(species.species_name, 0)) > 0:
+					home = candidate
+					break
+		if home == null:
+			for candidate: SimRegion in regions.values():
+				if habitat_match(species, candidate):
+					home = candidate
+					break
+		if home != null:
+			_boss_anchors[species.species_name] = {"region_id": home.id,
+				"position": position if position.is_finite() else home.center}
+
+
+## 旧档的异地城主在容量允许时归位，保持 ID/血量/年龄/威胁与击杀轮次。
+## 满载不挤掉居民、不超承载；每个 tick 在繁衍之前重试，腾出空位即可归位。
+func _repair_boss_anchors(emit_migration: bool) -> void:
+	for inst: MonsterInstance in instances.values():
+		if not inst.is_alive or not inst.species.is_boss:
+			continue
+		var anchor := boss_anchor(inst.species.species_name)
+		var home: SimRegion = regions.get(anchor.get("region_id", ""))
+		if home == null:
+			continue
+		if inst.region_id == home.id:
+			if not inst.spawn_pos.is_finite():
+				inst.spawn_pos = anchor["position"]
+			continue
+		if alive_count_in(home.id) >= home.capacity:
+			continue
+		inst.region_id = home.id
+		inst.spawn_pos = anchor["position"]
+		_index_dirty = true
+		_invalidate_summary_cache()
+		if emit_migration:
+			instance_migrated.emit(inst, home.id)
 
 
 func find_species(species_name: String) -> SpeciesData:
@@ -384,6 +459,7 @@ func tick() -> void:
 	# 此前是 7 次（老化/尸体/繁衍统计/扩张统计/捕食总数/重引入总数/Boss 逐物种扫描），
 	# 后续各 pass 的出生/猎杀就地增减共享计数，读到的新鲜度与"每步重扫"一致
 	_process_aging_and_corpses()
+	_repair_boss_anchors(true)
 	var stats := _count_population()
 	_process_breeding(stats)
 	_process_expansion(stats)
@@ -648,7 +724,7 @@ func _process_predation(global_totals: Dictionary) -> void:
 				int(global_totals.get(victim.species.species_name, 1)) - 1
 
 
-## Boss 重生：is_boss 物种全球全灭后，倒计时归零时在其栖息地（承载未满）重生一只。
+## Boss 重生：is_boss 物种全球全灭后，倒计时归零时在固定据点（承载未满）重生一只。
 ## 世界永远有值得挑战的顶点
 func _process_boss_respawn(global_totals: Dictionary) -> void:
 	for species in species_list:
@@ -661,17 +737,16 @@ func _process_boss_respawn(global_totals: Dictionary) -> void:
 		if left > 0:
 			boss_respawn_timers[species.species_name] = left
 			continue
-		# 倒计时归零：在栖息地承载未满处重生一只；找不到落点保持 0 下 tick 重试——
-		# 此前先重置回满倒计时再扫描，满载期实际重生间隔会远超策划值
+		# 据点满载时保持 0，下 tick 重试；绝不改去其它空闲区域。
 		boss_respawn_timers[species.species_name] = 0
-		for region: SimRegion in regions.values():
-			if not habitat_match(species, region) or alive_count_in(region.id) >= region.capacity:
-				continue
-			spawn_instance(species, region.id, species.maturity_age, 0,
-					species.boss_size_scale, false, region.center)
-			boss_respawn_timers[species.species_name] = species.boss_respawn_ticks
-			boss_respawned.emit(species.species_name)
-			break
+		var anchor := boss_anchor(species.species_name)
+		var region: SimRegion = regions.get(anchor.get("region_id", ""))
+		if region == null or alive_count_in(region.id) >= region.capacity:
+			continue
+		spawn_instance(species, region.id, species.maturity_age, 0,
+				species.boss_size_scale, false, anchor["position"])
+		boss_respawn_timers[species.species_name] = species.boss_respawn_ticks
+		boss_respawned.emit(species.species_name)
 
 
 ## 全量序列化（生态存档）：个体逐条枚举 + 巢穴状态 + Boss 重生倒计时 + 计数器。
@@ -699,7 +774,14 @@ func to_dict() -> Dictionary:
 		if inst.is_alive and inst.hp_mirror > 0.0:
 			entry["hp"] = inst.hp_mirror
 		inst_list.append(entry)
+	var anchors := {}
+	for species_name: String in _boss_anchors:
+		var anchor := boss_anchor(species_name)
+		var position: Vector2 = anchor["position"]
+		anchors[species_name] = {"region_id": anchor["region_id"],
+			"position": [position.x, position.y]}
 	return {
+		"boss_anchors": anchors,
 		"next_id": next_id,
 		"tick": tick_count,
 		"instances": inst_list,
@@ -712,7 +794,8 @@ func to_dict() -> Dictionary:
 ## 从存档恢复（替代 setup 撒初始种群）：重建区域/物种注册与完整实例集，
 ## 并向表现层重放 instance_spawned / nest_changed 信号驱动节点生成。
 ## 数据结构非法或一个实例都恢复不了时返回 false，调用方回退 INITIAL_POPULATION
-func restore_from_dict(p_regions: Array, p_species_list: Array[SpeciesData], data: Dictionary) -> bool:
+func restore_from_dict(p_regions: Array, p_species_list: Array[SpeciesData], data: Dictionary,
+		p_boss_anchors: Dictionary = {}) -> bool:
 	var inst_entries: Variant = data.get("instances", null)
 	if typeof(inst_entries) != TYPE_ARRAY:
 		return false
@@ -725,6 +808,22 @@ func restore_from_dict(p_regions: Array, p_species_list: Array[SpeciesData], dat
 	player_extinct.clear()
 	_satiety.clear()
 	_index_dirty = true
+	var anchors := {}
+	var saved_anchors: Variant = data.get("boss_anchors", {})
+	if typeof(saved_anchors) == TYPE_DICTIONARY:
+		for key: Variant in saved_anchors:
+			if typeof(key) == TYPE_STRING:
+				anchors[SpeciesCatalog.migrate_name(key)] = saved_anchors[key]
+	anchors.merge(p_boss_anchors, true)  # 当代世界真源优先于旧档位置
+	var legacy_initial := {}
+	for entry: Variant in inst_entries:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var region_id := str(entry.get("region", ""))
+		if not legacy_initial.has(region_id):
+			legacy_initial[region_id] = {}
+		legacy_initial[region_id][SpeciesCatalog.migrate_name(str(entry.get("species", "")))] = 1
+	_configure_boss_anchors(anchors, legacy_initial)
 	next_id = maxi(1, _safe_int_field(data.get("next_id", 1), 1))
 	tick_count = maxi(0, _safe_int_field(data.get("tick", 0), 0))
 	for entry: Variant in inst_entries:
@@ -767,7 +866,7 @@ func restore_from_dict(p_regions: Array, p_species_list: Array[SpeciesData], dat
 			inst.id = next_id
 		instances[inst.id] = inst
 		next_id = maxi(next_id, inst.id + 1)
-		instance_spawned.emit(inst)
+	_repair_boss_anchors(false)
 	# 老档兼容：玩家锚点流式时代的存活实例可能从未落位（spawn_pos=INF）——
 	# 按所在斑块营地补据点，维持「存活实例必有位置」不变量（表现层流式
 	# 进出与存档往返都依赖它；信号重放时按 INF 判定进了待生成池，此处
@@ -777,6 +876,8 @@ func restore_from_dict(p_regions: Array, p_species_list: Array[SpeciesData], dat
 			var region: SimRegion = regions.get(inst.region_id)
 			if region != null:
 				inst.spawn_pos = _camp_member_pos(region, inst.species)
+	for inst: MonsterInstance in instances.values():
+		instance_spawned.emit(inst)
 	# 巢穴状态（保留捣毁中的 rebuild 倒计时）；active 巢重放信号让表现层建节点。
 	# 键级消毒：巢字典缺 active/rebuild 时直接下标访问会在 _process_nests /
 	# _process_breeding 处每 tick 报 Invalid access（手改档防御，与实例侧同口径）

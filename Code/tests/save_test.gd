@@ -247,7 +247,8 @@ func _test_progress_meta() -> void:
 	_check(GameState.try_equip(weak), "空位装备任何掉落")
 	_check(GameState.stats.equips["weapon"]["name"] == "旧刀", "装备写入武器槽")
 	var gold_before_replace := GameState.gold
-	_check(GameState.try_equip(strong), "同槽更高评分替换")
+	GameState.set_equipment_locked("weapon", false)
+	_check(GameState.try_equip(strong), "明确解锁后同槽更高评分替换")
 	_check(GameState.gold - gold_before_replace == EconomyMath.sell_price(0),
 		"换下的旧装备按稀有度折金（+%d，旧实现直接蒸发）" % (GameState.gold - gold_before_replace))
 	_check(GameState.stats.equip_element() == "fire", "武器元素读取")

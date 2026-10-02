@@ -18,6 +18,7 @@ const ENRAGE_SPEED_MULT := 1.4
 var _enraged := false
 var _state_timer := 0.0
 var _charge_dir := Vector2.RIGHT
+var _charge_start := Vector2.ZERO
 
 
 func _speed_mult() -> float:
@@ -70,34 +71,36 @@ func _chase_tick(delta: float, player: Node2D) -> void:
 	super(delta, player)
 
 
-func _extra_state_tick(delta: float, player: Node2D) -> void:
+func _extra_state_tick(delta: float, _player: Node2D) -> void:
 	match state:
 		S_TELL:
 			velocity = Vector2.ZERO
 			_state_timer -= delta
 			if _state_timer <= 0.0:
 				state = S_CHARGE
+				_charge_start = global_position
 				_state_timer = inst.species.charge_max_time
 				_squash(Vector2(0.88, 1.12), 0.15)  # 起冲拉伸
 				_apply_mood_color()
 		S_CHARGE:
-			# 只负责推进与命中判定；撞墙/超时的终止判定在 _post_move_hook
-			# （状态 match 在 move_and_slide 之前执行，这里读碰撞数据是上一帧的残留）
+			# 记录本帧扫过的起点；命中与撞墙统一在移动后判定，不能用上一帧
+			# 距离先判伤害、再让放大的精英/Boss 身体撞到玩家并误当墙取消。
+			_charge_start = global_position
 			velocity = _charge_dir * inst.move_speed() * _speed_mult() * inst.species.charge_speed_mult
 			_state_timer -= delta
-			if player != null and player.visible \
-					and global_position.distance_to(player.global_position) < inst.species.charge_hit_dist:
-				if player.has_method("take_damage"):
-					player.take_damage(
-						CombatMath.physical_damage(inst.attack_power() * inst.species.charge_damage_mult),
-						global_position, inst.display_name())
-				_end_charge(true)  # 命中即停顿：给玩家反击窗口
 		S_TIRED:
 			velocity = Vector2.ZERO
 			_state_timer -= delta
 			if _state_timer <= 0.0:
 				state = S_CHASE
 				_apply_mood_color()
+
+
+## 冲锋前摇已锁定直线，不走 RVO 转向/限速：NavigationAgent 默认 max_speed
+## 为 100，会把物种实际冲锋速度截断到走路速度并提前超时。仍通过基类
+## 同一物理移动/接触钩子；撞同伴由真实碰撞中止，追击/巡逻继续正常避让。
+func _on_nav_velocity(safe_velocity: Vector2) -> void:
+	super(velocity if state == S_CHARGE else safe_velocity)
 
 
 ## 冲锋终止判定（move_and_slide 之后，当帧碰撞数据）：
@@ -107,25 +110,56 @@ func _extra_state_tick(delta: float, player: Node2D) -> void:
 func _post_move_hook(_delta: float) -> void:
 	if state != S_CHARGE:
 		return
+	var player := _get_player()
+	var hit_player := false
 	var hit_wall := false
 	var hit_ally := false
 	for i in get_slide_collision_count():
 		var collider: Object = get_slide_collision(i).get_collider()
-		# 碰撞对象同帧被释放（如冲锋线上被击杀的怪刚清理）时 collider 为 null：
-		# 既非撞墙也非撞同伴，跳过——计撞墙会白送一段硬直
 		if collider == null:
 			continue
-		if collider is MonsterBase:
+		if collider == player:
+			# 使用真正缩放后的身体接触，不把玩家和 layer 1 的地形混为一谈。
+			hit_player = true
+		elif collider is MonsterBase:
 			hit_ally = true
 		else:
 			hit_wall = true
+	# 墙/同伴先截断冲锋：不把沿墙滑行的剩余位移当成可穿墙的攻击轨迹。
 	if hit_wall:
 		_end_charge(true)
-	elif hit_ally or _state_timer <= 0.0:
+	elif hit_ally:
+		_end_charge(false)
+	elif player != null and player.visible and (hit_player or _swept_charge_hits(player)):
+		if player.has_method("take_damage"):
+			player.take_damage(
+				CombatMath.physical_damage(inst.attack_power() * inst.species.charge_damage_mult),
+				global_position, inst.display_name())
+		_end_charge(true)
+	elif _state_timer <= 0.0:
 		_end_charge(false)
 
 
+## 保留物种原有的近身命中范围，但沿实际已走过的线段检查（高速/低帧率
+## 不能越过命中窗）。实体接触由上方原生 swept body collision 覆盖巨体。
+## 范围不是穿墙许可：仅在候选命中时射线复核，排除玩家自身的 layer 1。
+func _swept_charge_hits(player: Node2D) -> bool:
+	var closest := Geometry2D.get_closest_point_to_segment(
+		player.global_position, _charge_start, global_position)
+	if closest.distance_squared_to(player.global_position) \
+			> inst.species.charge_hit_dist * inst.species.charge_hit_dist:
+		return false
+	if closest.is_equal_approx(player.global_position):
+		return true
+	var query := PhysicsRayQueryParameters2D.create(closest, player.global_position, 1)
+	query.exclude = [get_rid()]
+	if player is CollisionObject2D:
+		query.exclude = [get_rid(), (player as CollisionObject2D).get_rid()]
+	return get_world_2d().direct_space_state.intersect_ray(query).is_empty()
+
+
 func _end_charge(stunned: bool) -> void:
+	velocity = Vector2.ZERO
 	_attack_cd = inst.species.attack_cooldown
 	if stunned:
 		state = S_TIRED  # 撞墙硬直：暴露给玩家的反击窗口

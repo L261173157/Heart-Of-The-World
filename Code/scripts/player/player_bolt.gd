@@ -1,5 +1,5 @@
 ## 玩家法弹（智力系远程）：直线飞行，命中怪物结算魔法伤害，超时自毁。
-## 与沼泽蛛弹幕（Projectile）对称的玩家侧投射物——碰撞只检测怪物（layer 2），
+## 与沼泽蛛弹幕（Projectile）对称的玩家侧投射物——命中怪物/巢穴，撞墙消散，
 ## 让"堆智力"成为与"堆力量近战"并行的构筑路线。
 class_name PlayerBolt
 extends Area2D
@@ -16,7 +16,7 @@ var player_element := ""
 
 var _life := LIFE_TIME
 ## 单次命中守卫：queue_free 到帧末才释放，同一物理帧与多个重叠碰撞体的
-## body_entered 会全部派发——没有守卫时一发弹对怪堆结算多次伤害
+## body_shape_entered 会全部派发——没有守卫时一发弹对怪堆结算多次伤害
 var _hit := false
 
 
@@ -33,7 +33,7 @@ func _ready() -> void:
 	# mask 含 1 会同时检测到玩家身体——handler 只认 monsters/nests 组，自然忽略
 	collision_layer = 0
 	collision_mask = 7
-	body_entered.connect(_on_body_entered)
+	body_shape_entered.connect(_on_body_shape_entered)
 	# 紫色魔法球（v6 TS：generate_fx 合成 orb_core 48px ×0.4 ≈ 19px）
 	var visual := Sprite2D.new()
 	visual.texture = load("res://assets/ts/fx_generated/orb_core.png")
@@ -53,29 +53,27 @@ func _physics_process(delta: float) -> void:
 		queue_free()
 
 
-func _on_body_entered(body: Node2D) -> void:
+func _on_body_shape_entered(_body_rid: RID, body: Node2D, body_shape: int, _local_shape: int) -> void:
 	if _hit:
 		return
-	# 撞墙消散（法弹不再穿地形——隔墙输出曾是申报的 M0 设计债，2026-09-04 清偿）；
-	# 巢穴也是 StaticBody2D 但属攻击目标，交给下方怪物/巢穴分支结算
-	if body is StaticBody2D and not body.is_in_group("nests"):
+	# 当前障碍每块共享一个 StaticBody2D、每格一个形状。必须先认障碍，再
+	# 丢弃普通墙；按命中的形状中心定位格子，不能用仍在相邻格的法弹中心。
+	if body is StaticBody2D and body.has_meta("obstacle"):
 		_hit = true
+		var owner_id := (body as StaticBody2D).shape_find_owner(body_shape)
+		var shape_node := (body as StaticBody2D).shape_owner_get_owner(owner_id) as Node2D
+		if shape_node != null:
+			_damage_obstacle(shape_node.global_position)
 		queue_free()
 		return
-	# 障碍瓦片（世界 v5）：可破坏类型吃弹破块（TileMapLayer 碰撞体非 StaticBody2D，
-	# 曾被上方分支漏掉直穿）；命中格按弹体前缘换算
 	if body is TileMapLayer:
 		_hit = true
-		var cell := Vector2i(floori(global_position.x / 32.0), floori(global_position.y / 32.0))
-		var kind := ObstacleField.damage_cell(cell)
-		if kind != "":
-			EventBus.obstacle_destroyed.emit(cell,
-					(Vector2(cell) + Vector2(0.5, 0.5)) * 32.0, kind)
-			if randf() < ObstacleField.DESTROY_GOLD_CHANCE:
-				var amount := randi_range(int(ObstacleField.DESTROY_GOLD_RANGE[0]),
-						int(ObstacleField.DESTROY_GOLD_RANGE[1]))
-				GameState.add_gold(amount)
-				EventBus.world_event.emit("💎 碎石中拾得 %d 金币" % amount)
+		_damage_obstacle(global_position + direction * 6.0)
+		queue_free()
+		return
+	# 普通墙挡弹；巢穴同样是 StaticBody2D，但仍是下方的攻击目标。
+	if body is StaticBody2D and not body.is_in_group("nests"):
+		_hit = true
 		queue_free()
 		return
 	if (body.is_in_group("monsters") or body.is_in_group("nests")) and body.has_method("take_damage"):
@@ -100,3 +98,19 @@ func _on_body_entered(body: Node2D) -> void:
 			else "magic",
 			global_position, 0.9)
 		queue_free()
+
+
+func _damage_obstacle(hit_position: Vector2) -> void:
+	var cell := Vector2i(floori(hit_position.x / ObstacleField.CELL),
+		floori(hit_position.y / ObstacleField.CELL))
+	var kind := ObstacleField.damage_cell(cell)
+	if kind == "":
+		return
+	EventBus.obstacle_destroyed.emit(cell,
+		(Vector2(cell) + Vector2(0.5, 0.5)) * ObstacleField.CELL, kind)
+	EventBus.camera_shake_requested.emit(3.0)
+	if randf() < ObstacleField.DESTROY_GOLD_CHANCE:
+		var amount := randi_range(int(ObstacleField.DESTROY_GOLD_RANGE[0]),
+			int(ObstacleField.DESTROY_GOLD_RANGE[1]))
+		GameState.add_gold(amount)
+		EventBus.world_event.emit("💎 碎石中拾得 %d 金币" % amount)

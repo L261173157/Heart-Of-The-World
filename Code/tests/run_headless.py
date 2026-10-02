@@ -27,6 +27,11 @@ CASES = {
     "ui_visual": (["res://tests/ui_visual_test.tscn", "--quit-after", "8000"], "=== UI VISUAL REGRESSION PASSED"),
     "menu_layout": (["res://tests/menu_layout_test.tscn", "--quit-after", "8000"], "=== MENU LAYOUT REGRESSION PASSED"),
     "animation": (["res://tests/animation_polish_test.tscn", "--quit-after", "8000"], "=== ANIMATION POLISH PASS"),
+    "gameplay_combat": (["res://tests/gameplay_combat_test.tscn", "--quit-after", "100000"], "=== GAMEPLAY COMBAT PASS"),
+    "gameplay_ecology": (["res://tests/gameplay_ecology_test.tscn", "--quit-after", "10000"], "=== 玩法生态回归全部通过"),
+    "gameplay_world": (["res://tests/gameplay_world_test.tscn", "--quit-after", "10000"], "=== 玩法世界回归全部通过"),
+    "gameplay_equipment": (["res://tests/gameplay_equipment_test.tscn", "--quit-after", "10000"], "=== GAMEPLAY EQUIPMENT PASSED"),
+    "gameplay_navigation": (["res://tests/gameplay_navigation_test.tscn", "--quit-after", "10000"], "=== GAMEPLAY NAVIGATION PASSED"),
     "pacing": (["res://tests/pacing_test.tscn", "--quit-after", "100000"], "=== 节奏验证全部通过 ==="),
 }
 

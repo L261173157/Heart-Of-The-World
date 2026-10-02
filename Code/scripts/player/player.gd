@@ -206,7 +206,7 @@ func _restore_saved_state() -> bool:
 ## 按游戏既有重生规则写成最近安全点满血蓝，避免读档免费回到此前登录位置。
 func save_snapshot() -> Dictionary:
 	if _is_dead:
-		var respawn_pos := WorldConfig.nearest_safe_respawn(global_position)
+		var respawn_pos := WorldConfig.nearest_checkpoint_respawn(global_position, GameState.discovered_checkpoints)
 		return {"position": [respawn_pos.x, respawn_pos.y],
 			"hp": stats.max_hp(), "mp": stats.max_mp()}
 	return {"position": [global_position.x, global_position.y],
@@ -935,9 +935,9 @@ func _respawn() -> void:
 	if _death_tween != null and _death_tween.is_valid():
 		_death_tween.kill()
 	_is_dead = false
-	# v4 大世界（端到端 1 小时+）：复活在最近的低威胁群系（平原/林地）斑块中心，
-	# 而非固定出生角——死亡惩罚保留（走回战斗地点要时间），但不再摧毁整局体验
-	global_position = WorldConfig.nearest_safe_respawn(global_position)
+	# 只回到实际发现过的营地/城塞入口；未探索地点不因死亡而免费解锁。
+	# 死亡窗口存档与真实复活使用同一个选择器。
+	global_position = WorldConfig.nearest_checkpoint_respawn(global_position, GameState.discovered_checkpoints)
 	current_hp = stats.max_hp()
 	current_mp = stats.max_mp()
 	visual.modulate = Color.WHITE
