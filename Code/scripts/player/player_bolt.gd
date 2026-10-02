@@ -91,6 +91,7 @@ func _on_body_shape_entered(_body_rid: RID, body: Node2D, body_shape: int, _loca
 			dealt *= em
 			effective = em > 1.0
 		body.take_damage(dealt, global_position, false, 1.0, effective)
+		EventBus.hit_stop_requested.emit(0.025)
 		# 命中魔光（美术 v5 fx 全量）：克制时换元素色系
 		EventBus.fx_requested.emit(
 			"flame" if effective and player_element == "fire"

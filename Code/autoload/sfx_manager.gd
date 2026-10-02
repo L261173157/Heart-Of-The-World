@@ -74,6 +74,8 @@ var _last_hit_sfx := -9999.0
 ## 玩家受击音独立节流时间戳：与怪物命中共用一条时，围攻中密集的 hit 音
 ## 会把 hurt 音整个吞掉——"挨打了没声音"恰好在最需要听见的时刻发生
 var _last_hurt_sfx := -9999.0
+## 群体击杀不挤掉同帧命中/玩家受击音，仍保留第一次击杀确认。
+var _last_kill_sfx := -9999.0
 
 
 func _ready() -> void:
@@ -106,7 +108,11 @@ func _ready() -> void:
 				play("hit")
 	)
 	EventBus.monster_killed_by_player.connect(
-		func(_xp: int, _gold: int, _name: String, _species: String) -> void: play("kill")
+		func(_xp: int, _gold: int, _name: String, _species: String) -> void:
+			var now := Time.get_ticks_msec() / 1000.0
+			if now - _last_kill_sfx >= HIT_SFX_THROTTLE:
+				_last_kill_sfx = now
+				play("kill")
 	)
 	EventBus.player_died.connect(func() -> void: play("died"))
 	EventBus.player_dashed.connect(func() -> void: play("dash"))

@@ -67,7 +67,8 @@ const STREAM_INTERVAL := 0.5
 const SCAN_INTERVAL := 0.25
 var _scan_accum := 0.0
 ## 顿帧期间的全局时间尺度（真实时间不受影响，恢复定时器忽略 time_scale）
-const HIT_STOP_SCALE := 0.05
+const HIT_STOP_CONTROLLER := preload("res://scripts/combat/hit_stop_controller.gd")
+const TOWN_DOOR := preload("res://scripts/main/town_door.gd")
 # --- 世界 v5 探索层 ---
 ## 迷雾揭示节奏与半径（3×3 格 = 12000px 带，与流式视距同量级）
 const FOG_REVEAL_INTERVAL := 0.5
@@ -111,9 +112,8 @@ var _skip_first_region_announce := false
 var _last_elite_broadcast := -9999.0
 ## 顿帧开关（测试可关：节奏测试的 4× 加速会被顿帧恢复重置回 1.0）
 var hit_stop_enabled := true
-## 当前顿帧的恢复定时器：用对象身份判定哪个定时器有权恢复，
-## 避免拿毫秒时钟与浮点到期时刻比较（粒度/舍入会让守卫永不成立，time_scale 卡死在低压值）
-var _hit_stop_timer: SceneTreeTimer
+## 有界顿帧组件：以真实时钟归还自己持有的时间尺度，不延长重叠命中。
+var _hit_stop: Node
 ## 飘字样式（三色）：LabelSettings 复用，避免 AoE 瞬时大量分配
 var _dmg_style_normal: LabelSettings
 var _dmg_style_player: LabelSettings
@@ -143,6 +143,10 @@ func _enter_tree() -> void:
 func _ready() -> void:
 	# 复位触屏输入残留（按住摇杆退出/死亡瞬间的场景切换会丢失 release 事件）
 	TouchInput.reset()
+	_hit_stop = HIT_STOP_CONTROLLER.new()
+	add_child(_hit_stop)
+	EventBus.return_to_town_requested.connect(_on_return_to_town_requested)
+	EventBus.player_died.connect(_cancel_town_return)
 	stream_all = OS.get_environment("HOTW_TEST_STREAM_ALL") == "1"
 	_sim = EcologySim.new()
 	_sim.instance_spawned.connect(_on_instance_spawned)
@@ -324,6 +328,7 @@ func _setup_world_shell() -> void:
 
 
 func _process(delta: float) -> void:
+	_process_town_return(delta)
 	_boss_accum += delta
 	if _boss_accum >= BOSS_TRACK_INTERVAL:
 		_boss_accum = 0.0
@@ -368,6 +373,18 @@ var _in_camp := false
 var _transition_layer: CanvasLayer
 var _veil: ColorRect
 var _teleporting := false
+const RETURN_CHANNEL_SECONDS := 3.0
+var _return_remaining := 0.0
+var _return_activity := 0
+var _return_origin := Vector2.ZERO
+var _return_hp := 0.0
+var _town_doors: Array[Node2D] = []
+var _room_context := -1
+
+
+func _inside_town_room() -> bool:
+	var player := get_tree().get_first_node_in_group("player") as Node2D
+	return player != null and ObstacleField.interior_index_at(player.global_position) >= 0
 
 
 func _setup_camp() -> void:
@@ -391,9 +408,9 @@ func _setup_camp() -> void:
 	merchant.interact_fn = func(_id: String, _kind: String, _giver: String) -> Dictionary:
 		return {"kind": "shop", "text": "风尘仆仆的猎人——看看营地补给吗？"}
 	_landmark_root.add_child(merchant)
-	# 借鉴③：房屋可进——门前 Area2D 传送门 + 淡入淡出过场 → 世界内嵌室内口袋
-	_add_house_door(spawn + Vector2(-310, -8), 0)
-	_add_house_door(spawn + Vector2(215, -137), 1)
+	# 房屋可进：门前入口区明确交互 + 淡入淡出过场 → 世界内嵌室内口袋
+	_add_house_door(spawn + Vector2(-310, -46), 0)
+	_add_house_door(spawn + Vector2(215, -171), 1)
 	_build_interior(0)
 	_build_interior(1)
 	# 过场遮罩（Transition 借鉴：ColorRect 淡入淡出；CanvasLayer 顶层盖 HUD 之下）
@@ -408,39 +425,104 @@ func _setup_camp() -> void:
 	_veil = veil
 
 
-## 门前传送门（Zelda 式踩上即进；淡入期间防重触发）
+## 房门有明确前方入口区，按交互才进入；站在门槛不会反复触发。
 func _add_house_door(pos: Vector2, pocket_idx: int) -> void:
-	var area := Area2D.new()
-	area.position = pos
-	area.collision_layer = 0
-	area.collision_mask = 1
-	area.monitorable = false
-	var shape := CollisionShape2D.new()
-	var circle := CircleShape2D.new()
-	circle.radius = 42.0
-	shape.shape = circle
-	area.add_child(shape)
-	area.body_entered.connect(func(body: Node2D) -> void:
-		if body.is_in_group("player"):
-			_fade_teleport(body, ObstacleField.interior_pocket(pocket_idx) + Vector2(0, -50)))
-	add_child(area)
+	var door := TOWN_DOOR.new()
+	door.name = "TownDoor%d" % pocket_idx
+	door.position = pos
+	door.title = "旅舍" if pocket_idx == 0 else "补给屋"
+	door.destination = ObstacleField.interior_pocket(pocket_idx) + Vector2(0, 30)
+	door.travel = _fade_teleport
+	add_child(door)
+	_town_doors.append(door)
 
 
-## 淡入淡出传送（官方示例包 Transition 的同构实现：遮罩→移人→吸附相机→揭幕）
+## 淡入后原子迁移身体、阴影、相机、流式窗和位置快照。过场锁住输入，
+## 落点与出口区分离，不靠任意远方检查点，也不恢复资源或返还技能冷却。
 func _fade_teleport(player: Node2D, target: Vector2) -> void:
-	if _teleporting:
+	if _teleporting or not is_instance_valid(player) or player.get("_is_dead"):
 		return
+	_cancel_town_return()
 	_teleporting = true
+	var previous_mode := player.process_mode
+	player.process_mode = Node.PROCESS_MODE_DISABLED
+	TouchInput.reset()
 	var tween := create_tween()
-	tween.tween_property(_veil, "color:a", 1.0, 0.22)
+	tween.tween_property(_veil, "color:a", 1.0, 0.18)
 	tween.tween_callback(func() -> void:
-		player.global_position = target
-		var cam := player.get_node_or_null("Camera2D")
-		if cam != null and cam.has_method("snap_to_player"):
-			cam.call("snap_to_player"))
+		if not is_instance_valid(player) or player.get("_is_dead"):
+			return
+		player.teleport_to(target)
+		var streamer := get_node_or_null("ChunkStreamer") as ChunkStreamer
+		if streamer != null:
+			streamer._refresh_window()
+			streamer.warmup()
+		for child in get_children():
+			if child is NavTileLayer or child is ObstacleTileLayer:
+				child._process(0.0)
+		_stream_pass()
+		_fog_last_cell = Vector2i(-1, -1)
+		_reveal_fog()
+		_region_candidate_id = ""
+		var region: SimRegion = _sim.region_of_point(target)
+		if region != null:
+			_commit_region(region.id)
+		GameState.player_snapshot = player.save_snapshot()
+		GameState._queue_save()
+		if target == WorldConfig.spawn_pos():
+			EventBus.hint_requested.emit("已返回营地"))
 	tween.tween_interval(0.08)
-	tween.tween_property(_veil, "color:a", 0.0, 0.3)
-	tween.tween_callback(func() -> void: _teleporting = false)
+	tween.tween_property(_veil, "color:a", 0.0, 0.25)
+	tween.tween_callback(func() -> void:
+		if is_instance_valid(player):
+			TouchInput.reset()
+			player.process_mode = previous_mode
+		_teleporting = false)
+
+
+func _on_return_to_town_requested() -> void:
+	if _return_remaining > 0.0:
+		_cancel_town_return()
+		EventBus.hint_requested.emit("已取消回城")
+		return
+	var player := get_tree().get_first_node_in_group("player") as Player
+	if player == null or _teleporting or get_tree().paused:
+		return
+	if player.global_position.distance_to(WorldConfig.spawn_pos()) < 140.0:
+		EventBus.hint_requested.emit("已在营地")
+		return
+	if not player.can_begin_town_return():
+		EventBus.hint_requested.emit("停下并结束战斗动作后再回城")
+		return
+	_return_remaining = RETURN_CHANNEL_SECONDS
+	_return_activity = player.activity_serial
+	_return_origin = player.global_position
+	_return_hp = player.current_hp
+	EventBus.return_to_town_progress.emit(true, _return_remaining, RETURN_CHANNEL_SECONDS)
+	EventBus.hint_requested.emit("回城中：移动、攻击或受伤会打断")
+
+
+func _process_town_return(delta: float) -> void:
+	if _return_remaining <= 0.0:
+		return
+	var player := get_tree().get_first_node_in_group("player") as Player
+	if player == null or player.activity_serial != _return_activity \
+			or player.global_position.distance_to(_return_origin) > 3.0 \
+			or player.current_hp < _return_hp or not player.can_begin_town_return():
+		_cancel_town_return()
+		EventBus.hint_requested.emit("回城已打断")
+		return
+	_return_remaining = maxf(0.0, _return_remaining - delta)
+	EventBus.return_to_town_progress.emit(_return_remaining > 0.0, _return_remaining, RETURN_CHANNEL_SECONDS)
+	if _return_remaining <= 0.0:
+		_fade_teleport(player, WorldConfig.spawn_pos())
+
+
+func _cancel_town_return() -> void:
+	if _return_remaining <= 0.0:
+		return
+	_return_remaining = 0.0
+	EventBus.return_to_town_progress.emit(false, 0.0, RETURN_CHANNEL_SECONDS)
 
 
 ## 室内口袋房间（借鉴③）：地板块平铺 + 墙环（StaticBody+视觉）+ 床 + 出口门
@@ -449,7 +531,9 @@ const INTERIOR_ROOM := Vector2(320, 256)
 func _build_interior(idx: int) -> void:
 	var center: Vector2 = ObstacleField.interior_pocket(idx)
 	var room := Node2D.new()
+	room.name = "TownInterior%d" % idx
 	room.position = center
+	room.y_sort_enabled = true
 	# 地板：32px 地板块 region 平铺（texture_repeat）
 	var floor_sp := Sprite2D.new()
 	floor_sp.texture = load("res://assets/ts/structures_baked/interior_floor.png")
@@ -493,24 +577,26 @@ func _build_interior(idx: int) -> void:
 	bed.texture = load("res://assets/ts/structures_baked/bed.png")
 	bed.position = Vector2(-t.x + 76, -t.y + 64)
 	room.add_child(bed)
-	# 出口门（南墙缺口）：传送回营地该房屋门前
-	var door := Area2D.new()
-	door.position = Vector2(0, t.y - 40)
-	door.collision_layer = 0
-	door.collision_mask = 1
-	door.monitorable = false
-	var dshape := CollisionShape2D.new()
-	var dcircle := CircleShape2D.new()
-	dcircle.radius = 34.0
-	dshape.shape = dcircle
-	door.add_child(dshape)
-	var camp := WorldConfig.spawn_pos()
-	var back: Vector2 = camp + (Vector2(-310, -8) if idx == 0 else Vector2(215, -137)) + Vector2(0, 90)
-	door.body_entered.connect(func(b: Node2D) -> void:
-		if b.is_in_group("player"):
-			_fade_teleport(b, back))
+	# 出口与南墙视觉共位，站在门前按交互回到屋外，不让身体穿出房间。
+	var door := TOWN_DOOR.new()
+	door.name = "ExitDoor"
+	door.is_exit = true
+	door.position = Vector2(0, t.y - 15)
+	door.destination = _town_doors[idx].global_position + Vector2(0, 90)
+	door.travel = _fade_teleport
 	room.add_child(door)
 	add_child(room)
+	# 补给屋室内保留真实行商服务；旅舍的床边同样可开补给，避免进屋成死景。
+	var host := LandmarkNPC.new()
+	host.position = center + Vector2(60, -26)
+	host.kind = "merchant"
+	host.giver = "旅舍主人" if idx == 0 else "补给商人"
+	host.landmark_id = "town_host_%d" % idx
+	host.quest_kind = "shop"
+	host.interact_fn = func(_id: String, _kind: String, _giver: String) -> Dictionary:
+		return {"kind": "shop", "text": "补齐行装再出发吧。"}
+	_landmark_root.add_child(host)
+
 
 
 ## 营地/建筑烘焙件消费（v6 TS）：底边中心锚点 + 矩形碰撞体
@@ -539,7 +625,7 @@ func _process_camp(delta: float) -> void:
 	var player := get_tree().get_first_node_in_group("player")
 	if player == null or not ("current_hp" in player):
 		return
-	_in_camp = (player.global_position as Vector2).distance_to(
+	_in_camp = _inside_town_room() or (player.global_position as Vector2).distance_to(
 		WorldConfig.spawn_pos()) <= CAMP_HEAL_RADIUS
 	if _in_camp:
 		_camp_heal_accum += delta
@@ -582,7 +668,7 @@ func _update_dungeons() -> void:
 	for dg: Dictionary in _dungeon_list():
 		var patch_id: String = dg["patch_id"]
 		var center: Vector2 = dg["center"]
-		var near: bool = player.global_position.distance_to(center) <= CHEST_STREAM_RADIUS
+		var near: bool = not _inside_town_room() and player.global_position.distance_to(center) <= CHEST_STREAM_RADIUS
 		var boss_name: String = WorldConfig.TERRAIN_BOSSES.get(dg["terrain"], "")
 		if near and not _chests.has(patch_id):
 			var chest := DungeonChest.new()
@@ -621,6 +707,9 @@ func _mark_chest_taken(patch_id: String) -> void:
 
 ## 进出城塞（内腔矩形）：地牢 BGM 与首发现播报
 func _process_dungeon_zone(player: Node) -> void:
+	if _inside_town_room():
+		_in_dungeon = false
+		return
 	var pos: Vector2 = player.global_position
 	var inside := false
 	for dg: Dictionary in _dungeon_list():
@@ -848,6 +937,8 @@ func _setup_landmarks() -> void:
 
 
 func _on_landmark_area_entered(_body: Node2D, id: String) -> void:
+	if _inside_town_room():
+		return
 	var lm: Dictionary = LandmarkRegistry.landmark(id)
 	if lm.is_empty():
 		return
@@ -879,7 +970,7 @@ func _unlock_checkpoint(id: String) -> void:
 
 func _discover_nearby_checkpoints() -> void:
 	var player := get_tree().get_first_node_in_group("player") as Player
-	if player == null or not player.visible or player._is_dead:
+	if player == null or not player.visible or player._is_dead or _inside_town_room():
 		return
 	# 城塞入口没有地标 Area，沿现有 4Hz 探索扫描解锁；只检查两座城塞。
 	for dg: Dictionary in _dungeon_list():
@@ -894,7 +985,7 @@ func _update_landmark_markers() -> void:
 		return
 	for lm: Dictionary in LandmarkRegistry.landmarks():
 		var id: String = lm["id"]
-		var near: bool = player.global_position.distance_to(lm["pos"]) <= LANDMARK_VIS_RADIUS
+		var near: bool = not _inside_town_room() and player.global_position.distance_to(lm["pos"]) <= LANDMARK_VIS_RADIUS
 		if near and not _landmark_markers.has(id):
 			var marker := LandmarkMarker.new()
 			marker.position = lm["pos"]
@@ -964,6 +1055,8 @@ func _make_animated_prop(frames_path: String, pos: Vector2, scale := 2.0) -> Nod
 
 ## 战争迷雾揭示：玩家所在 3×3 格入档（跨格才动笔，版本号通知小地图重建）
 func _reveal_fog() -> void:
+	if _inside_town_room():
+		return
 	var player := get_tree().get_first_node_in_group("player") as Node2D
 	if player == null or not player.visible:
 		return
@@ -1036,6 +1129,7 @@ class LandmarkNPC extends Node2D:
 	var color := Color.WHITE
 	var interact_fn: Callable
 	var _visual: AnimatedSprite2D
+	var _quest_marker: Label
 	var _t := 0.0
 	var _home := Vector2.ZERO
 	var _walk_dir := 0.0
@@ -1064,6 +1158,24 @@ class LandmarkNPC extends Node2D:
 		label.size = Vector2(104, 28)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		add_child(label)
+		if quest_kind != "shop":
+			_quest_marker = Label.new()
+			_quest_marker.position = Vector2(-112, -134)
+			_quest_marker.size = Vector2(224, 28)
+			_quest_marker.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			_quest_marker.add_theme_font_size_override("font_size", 22)
+			_quest_marker.add_theme_constant_override("outline_size", 5)
+			_quest_marker.add_theme_color_override("font_outline_color", Color("251c22"))
+			add_child(_quest_marker)
+			EventBus.quest_list_changed.connect(_refresh_quest_marker)
+			_refresh_quest_marker()
+
+	func _refresh_quest_marker(_quests: Array = [], _tracked := "") -> void:
+		if _quest_marker == null:
+			return
+		var status: Dictionary = preload("res://scripts/ui/quest_presentation.gd").npc_status(landmark_id)
+		_quest_marker.text = status["marker"]
+		_quest_marker.add_theme_color_override("font_color", status["color"])
 
 	func _process(delta: float) -> void:
 		_t += delta
@@ -1139,6 +1251,8 @@ func _setup_region_areas(polys: Dictionary) -> void:
 
 
 func _on_region_area_entered(_body: Node2D, region_id: String) -> void:
+	if _inside_town_room():
+		return
 	if _current_region_id == "":
 		# 首次进图立即提交（Area 建立时玩家所在区域即刻确认）
 		_commit_region(region_id)
@@ -1158,6 +1272,22 @@ func _on_region_area_exited(_body: Node2D, region_id: String) -> void:
 
 
 func _commit_region(region_id: String) -> void:
+	var room_player := get_tree().get_first_node_in_group("player") as Node2D
+	var room_index := ObstacleField.interior_index_at(room_player.global_position) if room_player != null else -1
+	if room_index >= 0:
+		# 口袋坐标只是实现细节，进家园房间不进入远方群系，也不触发探索任务。
+		_current_region_id = BiomeMap.region_id_at(WorldConfig.spawn_pos())
+		_region_candidate_id = ""
+		_skip_first_region_announce = false
+		_in_camp = true
+		_in_dungeon = false
+		_music_mode = "camp"
+		SfxManager.play_music("camp")
+		if _room_context != room_index:
+			_room_context = room_index
+			EventBus.player_entered_region.emit(_current_region_id, "旅舍" if room_index == 0 else "补给屋")
+		return
+	_room_context = -1
 	var region: SimRegion = _sim.get_region(region_id)
 	if region == null:
 		return
@@ -1204,7 +1334,7 @@ func _update_boss_track() -> void:
 	var player := get_tree().get_first_node_in_group("player") as Node2D
 	var best: MonsterBase = null
 	var best_dist := BOSS_TRACK_RANGE
-	if player != null and player.visible:
+	if player != null and player.visible and not _inside_town_room():
 		for i in range(_boss_ids.size() - 1, -1, -1):
 			var inst: MonsterInstance = _sim.instances.get(_boss_ids[i])
 			if inst == null:
@@ -1320,11 +1450,27 @@ func _stream_pass() -> void:
 	if player == null or not player.visible or stream_all:
 		return
 	var ppos := player.global_position
+	if ObstacleField.interior_index_at(ppos) >= 0:
+		_commit_region(_current_region_id)
+		# 室内不加载口袋下方的远方生态；退场只动表现，模拟据点与存量原样保留。
+		for id: int in _nodes.keys():
+			var node: Node = _nodes[id]
+			if is_instance_valid(node):
+				node.queue_free()
+			var inst: MonsterInstance = _sim.instances.get(id)
+			if inst != null and inst.is_alive:
+				_pending_stream[id] = inst
+		_nodes.clear()
+		for nest: Node in _nest_nodes.values():
+			if is_instance_valid(nest):
+				nest.queue_free()
+		_nest_nodes.clear()
+		return
 	# 传送兜底：Area 事件只在连续移动跨斑时触发，直接改坐标的传送（测试/
 	# 复活点等）不产生 enter 事件——每轮点查玩家实际所在斑块，静默漂移就
 	# 补全提交（区域播报/视图集/BGM 全链），视图集不再依赖事件是否送达
 	var actual: SimRegion = _sim.region_of_point(ppos)
-	if actual != null and actual.id != _current_region_id \
+	if actual != null and (actual.id != _current_region_id or _room_context >= 0) \
 			and _region_candidate_id != actual.id:
 		_commit_region(actual.id)
 	# ① 玩家所在斑块（+邻接）内的待生成实例 → 节点
@@ -1370,6 +1516,8 @@ func _stream_pass() -> void:
 ## 按斑块生成 + 怪物巡猎逼近（monster_base）让跑图必与斑块种群相遇。
 ## ppos 传 Vector2.INF 表示调用方无现成玩家位置（自行点查）
 func _instance_in_view(inst: MonsterInstance, ppos: Vector2) -> bool:
+	if _inside_town_room():
+		return false
 	if _region_in_view(inst.region_id):
 		return true
 	# 跨斑巡猎的既有节点：距玩家仍近则保留（换斑瞬间凭空消失是穿帮）
@@ -1385,6 +1533,8 @@ func _instance_in_view(inst: MonsterInstance, ppos: Vector2) -> bool:
 ## 斑块视图集判定：玩家当前提交斑块 + 其邻接。当前斑块未提交（刚进世界）
 ## 时按玩家位置点查兜底
 func _region_in_view(region_id: String) -> bool:
+	if _inside_town_room():
+		return false
 	if stream_all:
 		return true
 	var current := _current_region_id
@@ -1413,6 +1563,9 @@ func _nest_pos_of(key: String) -> Vector2:
 
 
 func _spawn_monster_node(inst: MonsterInstance) -> void:
+	if _inside_town_room():
+		_pending_stream[inst.id] = inst
+		return
 	var scene: PackedScene = MONSTER_SCENES.get(inst.species.species_name)
 	if scene == null:
 		push_warning("种族 %s 没有配置表现场景" % inst.species.species_name)
@@ -1517,6 +1670,8 @@ func _on_nest_changed(region_id: String, species_name: String, active: bool, p_r
 
 
 func _create_nest_node(key: String, region_id: String, species_name: String) -> void:
+	if _inside_town_room():
+		return
 	if _nest_nodes.has(key) or not is_inside_tree():
 		return
 	var species := _sim.find_species(species_name)
@@ -1529,29 +1684,18 @@ func _create_nest_node(key: String, region_id: String, species_name: String) -> 
 	_nest_nodes[key] = nest
 
 
-## 顿帧执行器：压低全局时间尺度，用忽略 time_scale 的定时器恢复。
-## 重叠请求取更长者；被取代的旧定时器回调直接让位
+## 有界顿帧组件：密集命中不能续杯，暂停/死亡归还已有时间尺度。
 func _on_hit_stop(duration: float) -> void:
-	if not hit_stop_enabled:
-		return
-	if _hit_stop_timer != null and _hit_stop_timer.time_left >= duration:
-		return  # 已有等长/更长的顿帧在计时
-	Engine.time_scale = HIT_STOP_SCALE
-	_hit_stop_timer = get_tree().create_timer(duration, true, false, true)
-	_hit_stop_timer.timeout.connect(_restore_time_scale.bind(_hit_stop_timer))
-
-
-func _restore_time_scale(which: SceneTreeTimer) -> void:
-	if which != _hit_stop_timer:
-		return  # 已被更长的顿帧取代，让位
-	Engine.time_scale = 1.0
+	if hit_stop_enabled and is_instance_valid(_hit_stop):
+		_hit_stop.request(duration)
 
 
 ## 场景退出兜底：顿帧定时器若还在挂起状态，time_scale 不能残留压低值；
 ## 同时停掉模拟驱动（回主菜单后旧世界不再后台空转 tick）
 func _exit_tree() -> void:
-	Engine.time_scale = 1.0
-	_hit_stop_timer = null
+	if is_instance_valid(_hit_stop):
+		_hit_stop.cancel()
+	_cancel_town_return()
 	# 总览线程兜底收尾（正常路径 _apply_overview 已 join；极端时序下阻塞等待，
 	# 避免 SceneManager 换场景后线程还在写已释放的缓存）
 	if _overview_thread != null:

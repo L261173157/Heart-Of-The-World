@@ -2,7 +2,7 @@
 ## 某物种）、捣巢（捣毁 N 个巢穴）、探索（发现 N 个地标）、收集（向 NPC 交付
 ## N 个材料，悬赏按市价双倍溢价）。任务由地标 NPC 发放（石环=营地猎人/
 ## 荒废遗迹=遗迹学者/精灵泉=泉水守望者/了望石塔=瞭望者/古树=草药师），
-## 靠近按攻击键接取；达成自动结算（金币+经验+物品奖励，公式与赏金同源）。
+## 靠近按攻击键接取；猎杀/捣巢/探索自动结算，新的收集单需返回 NPC 明确交付。
 ## 数据真源在 GameState.quests（存档 v5 持久化），本节点只做逻辑与信号——
 ## 进度全部订阅 EventBus，只读世界状态不改写。接取内容按（地标 id × 该 NPC
 ## 已完成数）确定性生成：读档后同一 NPC 的下一单不漂移。
@@ -10,6 +10,8 @@ class_name QuestManager
 extends Node
 
 const MAX_ACTIVE := 3
+const Presentation := preload("res://scripts/ui/quest_presentation.gd")
+const CLAIM_DISTANCE := 220.0
 
 ## 库存信号同步发出，交付会再次触发本管理器；守卫避免重复扣料/重复奖励。
 var _reconciling_collect := false
@@ -34,6 +36,7 @@ func _ready() -> void:
 	EventBus.dialogue_confirmed.connect(_on_dialogue_confirmed)
 	EventBus.quest_track_requested.connect(_on_track_requested)
 	EventBus.quest_abandon_requested.connect(_on_abandon_requested)
+	EventBus.quest_claim_requested.connect(_on_claim_requested)
 	_reconcile_hunts()
 	_reconcile_collect()
 	_push_hud()
@@ -50,25 +53,44 @@ func _on_dialogue_confirmed(quest: Dictionary) -> void:
 func offer(landmark_id: String, quest_kind: String, giver: String) -> Dictionary:
 	var data: Dictionary = GameState.quests
 	for q: Dictionary in data["active"]:
-		if q.get("landmark_id", "") == landmark_id:
-			return {"kind": "info",
-				"text": "任务进行中——%s（%d/%d）" % [q["title"], q["progress"], q["need"]]}
+		if q.get("landmark_id", "") != landmark_id:
+			continue
+		var view := Presentation.snapshot(q)
+		if view["ui_state"] == "claimable":
+			return {"kind": "claim", "state": "claimable", "quest": view,
+				"confirm_text": "交付领奖", "text": "材料已齐：%s（%d/%d）。交付后获得%s，确认交付吗？" % [
+					q["title"], q["progress"], q["need"], view["ui_reward"]]}
+		return {"kind": "info", "state": "in_progress",
+			"text": "进行中：%s（%d/%d）\n%s" % [q["title"], q["progress"], q["need"], view["ui_objective"]]}
 	if data["active"].size() >= MAX_ACTIVE:
-		return {"kind": "info", "text": "任务栏已满（最多 %d 个），先完成几单吧" % MAX_ACTIVE}
+		return {"kind": "info", "state": "unavailable", "text": "任务栏已满（最多 %d 个），先完成几单吧" % MAX_ACTIVE}
 	var quest := _gen_quest(landmark_id, quest_kind, giver)
 	if quest.is_empty():
-		return {"kind": "info", "text": "眼下没有合适的委托…"}
-	return {"kind": "quest", "quest": quest,
-		"text": "有一单委托——%s（+%d 金币 +%d 经验），接下吗？" % [
-			quest["title"], quest["gold"], quest["xp"]]}
+		return {"kind": "info", "state": "unavailable", "text": "眼下没有合适的委托…"}
+	var receipt: Dictionary = data.get("receipts", {}).get(landmark_id, {})
+	var previous := "上次委托已领奖。\n" if not receipt.is_empty() else ""
+	return {"kind": "quest", "state": "completed" if not receipt.is_empty() else "available",
+		"quest": quest, "confirm_text": "接取委托",
+		"text": previous + "可接：%s\n奖励：%s。%s，接下吗？" % [
+			quest["title"], Presentation.reward(quest),
+			"收齐后回来交付" if Presentation.requires_claim(quest) else "达成自动领奖"]}
 
 
 ## 确认接取（对话按"是"后调用）：offer 与 accept 分离保证生成确定性不漂移
 func accept(quest: Dictionary) -> String:
 	var data: Dictionary = GameState.quests
+	if str(quest.get("id", "")).is_empty() or int(quest.get("need", 0)) <= 0:
+		return "委托已失效，请重新交谈"
+	var landmark_id := str(quest.get("landmark_id", ""))
+	var receipt: Dictionary = data.get("receipts", {}).get(landmark_id, {})
+	if receipt.get("id", "") == quest["id"] or (quest.has("offer_index")
+			and int(quest["offer_index"]) != int(data["completed"].get(landmark_id, 0))):
+		return "此委托已领奖，请重新交谈查看下一单"
 	for q: Dictionary in data["active"]:
-		if q["id"] == quest.get("id", ""):
-			return "%s：任务进行中——%s" % [quest.get("giver", ""), q["title"]]
+		if q["id"] == quest["id"] or (landmark_id != "" and q.get("landmark_id", "") == landmark_id):
+			return "委托已接取：%s（%d/%d）" % [q["title"], q["progress"], q["need"]]
+	if data["active"].size() >= MAX_ACTIVE:
+		return "任务栏已满（最多 %d 个）" % MAX_ACTIVE
 	# 气泡展示期间种群也会死亡/迁徙；确认时复核而不是把陈旧的 7 只写进任务栏。
 	if quest.get("kind", "") == "hunt":
 		_refresh_hunt(quest)
@@ -78,19 +100,19 @@ func accept(quest: Dictionary) -> String:
 	if quest.get("kind", "") == "collect":
 		quest["progress"] = mini(GameState.count_item(str(quest.get("item", ""))),
 				int(quest.get("need", 1)))
-	# 存量达标 → 立即结算（悬赏是收购要约，货够即成）
-	if int(quest.get("progress", 0)) >= int(quest.get("need", 1)):
+	# 旧收集单保持自动交付；新单材料先保留，返回 NPC 明确确认后扣除。
+	if int(quest.get("progress", 0)) >= int(quest.get("need", 1)) and not Presentation.requires_claim(quest):
 		_complete(quest)
 	else:
 		GameState._queue_save()
 	_push_hud()
-	return "接取委托——%s" % quest["title"]
+	return "已接取：%s · %s" % [quest["title"], Presentation.objective(quest)]
 
 
 ## NPC 交互入口：接取/查询该 NPC 的任务。返回给玩家的反馈文本
 func try_accept(landmark_id: String, quest_kind: String, giver: String) -> String:
 	var offered: Dictionary = offer(landmark_id, quest_kind, giver)
-	if offered["kind"] == "info":
+	if offered["kind"] in ["info", "claim"]:
 		return "%s：%s" % [giver, offered["text"]]
 	return accept(offered["quest"])
 
@@ -108,6 +130,7 @@ func _gen_quest(landmark_id: String, quest_kind: String, giver: String) -> Dicti
 		"giver": giver,
 		"kind": quest_kind,
 		"progress": 0,
+		"offer_index": count,
 	}
 	if quest_kind == "hunt":
 		quest["hunt_origin_region"] = _hunt_origin_region(quest)
@@ -122,6 +145,7 @@ func _gen_quest(landmark_id: String, quest_kind: String, giver: String) -> Dicti
 		quest["need"] = 1 + rng.randi() % 2
 		quest["title"] = "捣毁巢穴 ×%d" % quest["need"]
 	elif quest_kind == "collect":
+		quest["claim_at_npc"] = true
 		# 材料池避开被动动物来源（EconomyMath.COLLECT_POOL 注释）；
 		# 高价池在 NPC 已完成 ≥3 单后加入（与推进深度对齐）
 		var pool: Array = EconomyMath.COLLECT_POOL.duplicate()
@@ -315,7 +339,7 @@ func _reconcile_collect() -> void:
 			if have != int(q["progress"]):
 				q["progress"] = have
 				changed = true
-			if int(q["progress"]) >= int(q["need"]):
+			if int(q["progress"]) >= int(q["need"]) and not Presentation.requires_claim(q):
 				_complete(q)
 				changed = true
 		# 后一单交付可能消耗前一单刚计入的材料，必须重访前面的单。
@@ -336,6 +360,38 @@ func _on_track_requested(quest_id: String) -> void:
 			GameState._queue_save()
 			_push_hud()
 			return
+
+
+func _on_claim_requested(quest_id: String) -> void:
+	var message := claim(quest_id)
+	if not message.is_empty():
+		EventBus.hint_requested.emit(message)
+
+
+## 只从真实活动单结算，忽略气泡里的旧奖励/库存快照；重复点击不会认领下一单。
+func claim(quest_id: String) -> String:
+	for quest: Dictionary in GameState.quests["active"]:
+		if str(quest["id"]) != quest_id or not Presentation.requires_claim(quest):
+			continue
+		var player := get_tree().get_first_node_in_group("player") as Node2D
+		var nearby := false
+		if player != null:
+			for node: Node in get_tree().get_nodes_in_group("npcs"):
+				if node is Node2D and node.get("landmark_id") == quest.get("landmark_id", "") \
+						and (node as Node2D).is_visible_in_tree() \
+						and player.global_position.distance_to((node as Node2D).global_position) <= CLAIM_DISTANCE:
+					nearby = true
+					break
+		if not nearby:
+			return "请返回%s身边交付领奖" % quest.get("giver", "委托人")
+		_reconcile_collect()
+		if Presentation.state(quest) != "claimable":
+			return "材料不足：%d/%d，尚未交付" % [quest["progress"], quest["need"]]
+		_complete(quest)
+		_push_hud()
+		GameState._queue_save()
+		return "交付成功 · 奖励已到账"
+	return "此委托已结算或失效"
 
 
 func _on_abandon_requested(quest_id: String) -> void:
@@ -397,6 +453,8 @@ func _complete(quest: Dictionary) -> void:
 	# 老档消毒允许缺失奖励字段；恢复时自动结算同样必须安全回落。
 	var gold := maxi(0, int(quest.get("gold", 0)))
 	var xp := maxi(0, int(quest.get("xp", 0)))
+	var paid_gold := roundi(gold * GameState.stats.gold_mult())
+	var paid_xp := int(xp * GameState.stats.passive_mult("xp", 1.1) * (1.0 + GameState.stats.equip_affix("xp")))
 	GameState.add_gold(gold)
 	GameState.add_xp(xp)
 	# 物品奖励（P1）：collect 固定附金钥匙（lava 城塞的钥匙闭环）；其余任务
@@ -417,8 +475,17 @@ func _complete(quest: Dictionary) -> void:
 		EventBus.fx_requested.emit("flash_yellow", player.global_position, 1.3)
 	SfxManager.play("quest")
 	SfxManager.play("gold3")
-	EventBus.quest_completed.emit("✅ %s 完成（+%d 金币 +%d 经验%s）" % [
-		quest["title"], gold, xp, bonus_text])
+	var receipt := {"id": str(quest["id"]), "title": str(quest["title"]),
+		"gold": paid_gold, "xp": paid_xp,
+		"bonus": bonus, "giver": str(quest.get("giver", "")), "kind": str(quest["kind"])}
+	if not data.has("receipts"):
+		data["receipts"] = {}
+	data["receipts"][landmark_id] = receipt
+	data["last_receipt"] = landmark_id
+	GameState._queue_save()
+	EventBus.quest_completed.emit("✓ %s · %s（+%d 金币 +%d 经验%s）" % [
+		quest["title"], "交付领奖成功" if Presentation.requires_claim(quest) else "已自动领奖",
+		receipt["gold"], receipt["xp"], bonus_text])
 
 
 ## 追踪对象失效时仅回退到第一张剩余委托，不改变其进度或奖励。
@@ -435,9 +502,15 @@ func _push_hud() -> void:
 	if selected_id != GameState.tracked_quest_id:
 		GameState.tracked_quest_id = selected_id
 		GameState._queue_save()
-	EventBus.quest_list_changed.emit(active.duplicate(true), selected_id)
+	var views: Array = []
+	for quest: Dictionary in active:
+		views.append(Presentation.snapshot(quest))
+	EventBus.quest_list_changed.emit(views, selected_id)
 	if selected.is_empty():
-		EventBus.quest_updated.emit("")
+		var receipt: Dictionary = GameState.quests.get("receipts", {}).get(GameState.quests.get("last_receipt", ""), {})
+		EventBus.quest_updated.emit(Presentation.receipt_text(receipt) if not receipt.is_empty() else "! 委托：找带 ! 的居民接取")
 		return
+	var view := Presentation.snapshot(selected)
 	var others := " +另 %d 项" % (active.size() - 1) if active.size() > 1 else ""
-	EventBus.quest_updated.emit("📜 %s（%d/%d）%s" % [selected["title"], selected["progress"], selected["need"], others])
+	EventBus.quest_updated.emit("%s %s（%d/%d）%s · %s" % [view["ui_status"], selected["title"],
+		selected["progress"], selected["need"], others, view["ui_objective"]])

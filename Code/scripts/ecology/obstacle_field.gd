@@ -32,6 +32,17 @@ static func interior_pocket(idx: int) -> Vector2:
 	return BiomeMap.spawn_pos() + INTERIOR_POCKETS[clampi(idx, 0, INTERIOR_POCKETS.size() - 1)]
 
 
+## 房间语义只覆盖四壁以内（含墙厚），不是周围700px净空区。
+## 用于室内探索/雷达隔离；远方正常步行不会误被当成已进屋。
+static func interior_index_at(pos: Vector2) -> int:
+	var spawn := BiomeMap.spawn_pos()
+	for i in INTERIOR_POCKETS.size():
+		var center: Vector2 = spawn + INTERIOR_POCKETS[i]
+		if Rect2(center - Vector2(176, 144), Vector2(352, 288)).has_point(pos):
+			return i
+	return -1
+
+
 ## 点位是否落在任一室内口袋净空内（sample_cell/liquid 共用的抑制判定）
 static func _in_interior_pocket(pos: Vector2) -> bool:
 	var spawn := BiomeMap.spawn_pos()
@@ -41,19 +52,28 @@ static func _in_interior_pocket(pos: Vector2) -> bool:
 	return false
 
 ## 障碍类型表：碰撞半径（px）/ 是否高大（y-sort 树冠遮挡 + 阴影投射）
-## 半径 < CELL：格间留缝，自由格 2 格宽（64px）必然可过 20px 直径的怪/玩家
+## 大树按真实树干挡路，大岩石按扩大后的落地底面挡路；宽物体另留导航余量。
+## 营地树石沿边缘布置；使用障碍真源，同一格负责视觉、碰撞、排序与导航。
+## 南侧主路与两间房屋门前保持至少 100px 净空。
+const CAMP_PROPS := [
+	[Vector2(-520, -120), "big_tree"], [Vector2(-480, 130), "tree"],
+	[Vector2(-260, 245), "tree"], [Vector2(260, 230), "pine"],
+	[Vector2(560, 80), "big_tree"], [Vector2(530, -270), "tree"],
+	[Vector2(-440, -290), "pine"], [Vector2(390, -355), "pine"],
+	[Vector2(-375, 210), "boulder"], [Vector2(450, 220), "rock"],
+]
+
 const KIND_INFO := {
-	## 半径约束：导航洞 = 1 格（32px），怪 NavigationAgent 半径 ~12 ——
-	## r ≤ 10 时两侧余隙 12+10 < 32 不卡边（曾实测 r14 的岩石让追击怪
-	## 贴着导航路径边缘物理卡死在 202px 处；水例外走 2 格洞见 nav_tile_layer）
+	## 树干维持窄半径；r>11 的树石/深水在 _has_wide_neighbor 留一圈
+	## 导航余量，外观变大不会生成 AI 能寻路却挤不进去的缝隙。
 	"tree": {"r": 9.0, "tall": true},
 	"big_tree": {"r": 10.0, "tall": true},
 	"pine": {"r": 9.0, "tall": true},
 	"deadtree": {"r": 8.0, "tall": true},
-	"rock": {"r": 10.0, "tall": false},
-	"boulder": {"r": 11.0, "tall": false},
-	"ice": {"r": 10.0, "tall": false},
-	"crystal": {"r": 9.0, "tall": false},
+	"rock": {"r": 14.0, "tall": false},
+	"boulder": {"r": 18.0, "tall": false},
+	"ice": {"r": 14.0, "tall": false},
+	"crystal": {"r": 14.0, "tall": false},
 	"bones": {"r": 8.0, "tall": false},
 	## 深水阻挡（世界 v5 液体场）：贴图透明——地面本来就画着水，只补碰撞
 	"water": {"r": 14.0, "tall": false},
@@ -213,6 +233,14 @@ static func sample_cell(cell: Vector2i) -> Dictionary:
 	_ensure()
 	if _destroyed.has(cell):
 		return {}  # 玩家已摧毁（真相覆盖层优先于一切配方）
+	var spawn := BiomeMap.spawn_pos()
+	var center_delta := (Vector2(cell) + Vector2(0.5, 0.5)) * CELL - spawn
+	if absf(center_delta.x) < 620.0 and absf(center_delta.y) < 420.0:
+		for prop: Array in CAMP_PROPS:
+			var point: Vector2 = spawn + prop[0]
+			if cell == Vector2i(floori(point.x / CELL), floori(point.y / CELL)):
+				var info: Dictionary = KIND_INFO[prop[1]]
+				return {"kind": prop[1], "r": info["r"], "tall": info["tall"]}
 	# Boss 城塞（先于抑制区——墙落在斑块 600px 净空内但必须存在；内腔恒空）
 	match dungeon_sample(cell):
 		"wall":
@@ -343,12 +371,17 @@ static func nav_blocked_cell(cell: Vector2i) -> bool:
 	if _nav_chunk_cache.has(chunk):
 		var local := cell - chunk * CHUNK_CELLS
 		return _nav_chunk_cache[chunk][local.y * CHUNK_CELLS + local.x] == 1
-	return is_nav_blocked(cell) or _has_water_neighbor(cell)
+	return is_nav_blocked(cell) or _has_wide_neighbor(cell)
 
 
-static func _has_water_neighbor(cell: Vector2i) -> bool:
-	return _water_at_cell(cell + Vector2i.RIGHT) or _water_at_cell(cell + Vector2i.LEFT) \
-			or _water_at_cell(cell + Vector2i.DOWN) or _water_at_cell(cell + Vector2i.UP)
+## 大岩石/冰晶与深水共享一圈导航余量，避免美术放大后 AI 贴边卡住。
+## 城塞门洞保持现有结构宽度，不把整圈城墙也扩成不可走区。
+static func _has_wide_neighbor(cell: Vector2i) -> bool:
+	for offset: Vector2i in [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.DOWN, Vector2i.UP]:
+		var sample := sample_cell(cell + offset)
+		if not sample.is_empty() and sample["kind"] != "castle" and float(sample["r"]) > 11.0:
+			return true
+	return false
 
 
 ## 地形块的导航阻挡表：PackedByteArray 256 字节（16×16，行主序，1=不可走）。
@@ -378,10 +411,8 @@ static func nav_blocked_chunk(chunk_origin_px: Vector2i) -> PackedByteArray:
 				walls += obstacle[dy * (CHUNK_CELLS + 2) + dx + 1]
 				blocked = walls >= 3  # 单格死点填充
 			if not blocked:
-				# 深水导航缓冲：4 邻有水则本格也留洞——水碰撞 r14 + 怪 12 超过
-				# 单格洞余隙，贴边路径会物理卡死；湖边一圈不可走代价可接受
-				# （_water_at_cell 是独立纯函数，跨块边距无需展开）
-				var near_water := _has_water_neighbor(base + Vector2i(dx, dy))
+				# 宽障碍导航缓冲：四邻大岩/冰晶/水留一圈余量；跨块同源。
+				var near_water := _has_wide_neighbor(base + Vector2i(dx, dy))
 				if near_water:
 					blocked = true
 			out[dy * CHUNK_CELLS + dx] = int(blocked)
@@ -462,7 +493,11 @@ static func damage_cell(cell: Vector2i) -> String:
 	_destroyed[cell] = true
 	_obstacle_hp.erase(cell)
 	_cells_chunk_cache.erase(Vector2i(cell.x >> 4, cell.y >> 4))
-	_nav_chunk_cache.erase(Vector2i(cell.x >> 4, cell.y >> 4))
+	# 邻格导航缓冲可能跨块，失效包含边界两侧的缓存。
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var neighbor := cell + Vector2i(dx, dy)
+			_nav_chunk_cache.erase(Vector2i(neighbor.x >> 4, neighbor.y >> 4))
 	return str(s["kind"])
 
 

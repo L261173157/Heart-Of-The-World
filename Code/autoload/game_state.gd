@@ -14,7 +14,8 @@ const SAVE_DEBOUNCE := 2.0
 ## v7 增加未领取赐福/当前选卡与城塞宝箱领取状态；
 ## v8 增加装备槽锁定与已发现检查点；
 ## v9 增加单件待比较装备、自动赏金与所追踪委托（旧字段原样兼容）
-const SAVE_VERSION := 9
+## v10 增加委托领奖收据；新收集委托显式交付，旧单仍自动交付。
+const SAVE_VERSION := 10
 
 ## 世界种子（世界 v5）：「新的冒险」重掷，游戏内 BiomeMap.configure 消费；
 ## v3 旧档无此键 → DEFAULT_SEED（旧世界与旧 ecology 存档严丝合缝）
@@ -37,7 +38,7 @@ var destroyed_cells: Array[String] = []
 ## 城塞宝箱已领取：patch_id -> true，Boss 实际重生后才清除对应条目。
 var chest_claims: Dictionary = {}
 ## 任务系统数据真源（存档 v5）：active=进行中任务数组，completed=各 NPC 已完成数
-var quests := {"active": [], "completed": {}}
+var quests := {"active": [], "completed": {}, "receipts": {}, "last_receipt": ""}
 ## 物品栏（玩法 v7，存档 v6）：id -> 数量（钳 ITEM_MAX）。合法 id 真源是
 ## EconomyMath 的价格表（纯逻辑层，随迁服务端）；表现元数据在 ItemCatalog
 var inventory: Dictionary = {}
@@ -526,7 +527,7 @@ func reset_all() -> void:
 	discovered_checkpoints = []
 	destroyed_cells = []
 	chest_claims = {}
-	quests = {"active": [], "completed": {}}
+	quests = {"active": [], "completed": {}, "receipts": {}, "last_receipt": ""}
 	inventory = {}
 	equipment_locks = {}
 	pending_equipment = {}
@@ -688,7 +689,9 @@ func save_now(include_ecology := true) -> bool:
 		data["chest_claims"] = chest_claims.duplicate()
 	if not quests["active"].is_empty() or not quests["completed"].is_empty():
 		data["quests"] = {"active": (quests["active"] as Array).duplicate(true),
-			"completed": (quests["completed"] as Dictionary).duplicate(true)}
+			"completed": (quests["completed"] as Dictionary).duplicate(true),
+			"receipts": (quests.get("receipts", {}) as Dictionary).duplicate(true),
+			"last_receipt": str(quests.get("last_receipt", ""))}
 	# 物品栏（v6+）：非空才写（照 quests 口径）
 	if not inventory.is_empty():
 		data["inventory"] = inventory.duplicate(true)
@@ -1031,7 +1034,7 @@ func _load() -> void:
 			if typeof(entry) == TYPE_STRING and entry.contains(","):
 				destroyed_cells.append(entry)
 	# 任务进度（v5+）：字段级消毒——缺键/坏类型的条目丢弃而非中断整个任务栏
-	quests = {"active": [], "completed": {}}
+	quests = {"active": [], "completed": {}, "receipts": {}, "last_receipt": ""}
 	var saved_quests: Variant = data.get("quests", {})
 	if typeof(saved_quests) == TYPE_DICTIONARY:
 		var saved_active: Variant = saved_quests.get("active", [])
@@ -1055,13 +1058,34 @@ func _load() -> void:
 				# 崩溃，中断 _load——其后的物品栏/地标/保存时间全部丢失）
 				if typeof(qd.get("species", null)) == TYPE_STRING:
 					qd["species"] = SpeciesCatalog.migrate_name(qd["species"])
-				qd["progress"] = clampi(int(qd.get("progress", 0)), 0, int(qd["need"]))
+				qd["need"] = maxi(1, int(qd["need"]))
+				qd["progress"] = clampi(_safe_int(qd.get("progress", 0), 0), 0, int(qd["need"]))
+				# 缺失此标志的 v9/早期存档保留自动交付，不能读档后强迫返程。
+				if qd.has("claim_at_npc"):
+					qd["claim_at_npc"] = qd["kind"] == "collect" and typeof(qd["claim_at_npc"]) == TYPE_BOOL and qd["claim_at_npc"]
 				quests["active"].append(qd)
 		var saved_completed: Variant = saved_quests.get("completed", {})
 		if typeof(saved_completed) == TYPE_DICTIONARY:
 			for key in saved_completed:
 				if typeof(key) == TYPE_STRING and typeof(saved_completed[key]) in [TYPE_INT, TYPE_FLOAT]:
 					quests["completed"][key] = maxi(0, int(saved_completed[key]))
+		var saved_receipts: Variant = saved_quests.get("receipts", {})
+		if typeof(saved_receipts) == TYPE_DICTIONARY:
+			for key: Variant in saved_receipts:
+				if typeof(key) != TYPE_STRING or typeof(saved_receipts[key]) != TYPE_DICTIONARY:
+					continue
+				var receipt: Dictionary = saved_receipts[key]
+				if typeof(receipt.get("id")) != TYPE_STRING or str(receipt.get("id", "")).is_empty() \
+						or typeof(receipt.get("title")) != TYPE_STRING:
+					continue
+				quests["receipts"][key] = {"id": receipt["id"], "title": receipt["title"],
+					"gold": maxi(0, _safe_int(receipt.get("gold"), 0)),
+					"xp": maxi(0, _safe_int(receipt.get("xp"), 0)),
+					"bonus": str(receipt.get("bonus", "")) if EconomyMath.knows_item(str(receipt.get("bonus", ""))) else "",
+					"giver": str(receipt.get("giver", "")), "kind": str(receipt.get("kind", ""))}
+		var last: Variant = saved_quests.get("last_receipt", "")
+		if typeof(last) == TYPE_STRING and quests["receipts"].has(last):
+			quests["last_receipt"] = last
 	var saved_marks: Variant = data.get("landmarks", [])
 	if typeof(saved_marks) == TYPE_ARRAY:
 		for id in saved_marks:

@@ -10,12 +10,14 @@ const ARRIVAL_RADIUS := 96.0
 const TARGET_COLOR := Color("ffd166")
 const MONSTER_COLOR := Color("ff8477")
 const OBJECTIVE_COLOR := Color("75dcb8")
+const QuestView := preload("res://scripts/ui/quest_presentation.gd")
 
 var _accum := 0.0
 var _sim_seen: EcologySim
 var _bounty_species := ""
 var _player_pos := Vector2.ZERO
 var _has_player := false
+var _interior_index := -1
 var _target: Dictionary = {}
 var _markers: Array[Dictionary] = []
 var _camp_positions: Dictionary = {}
@@ -87,11 +89,20 @@ func _refresh_navigation() -> void:
 		_bounty_species = ""
 		_camp_positions.clear()
 	_target = {}
+	_interior_index = -1
 	_markers.clear()
 	var player := get_tree().get_first_node_in_group("player") as Node2D
 	_has_player = player != null and player.visible and WorldSim.sim != null
 	if _has_player:
 		_player_pos = player.global_position
+		_interior_index = ObstacleField.interior_index_at(_player_pos)
+		if _interior_index >= 0:
+			var exit_pos := ObstacleField.interior_pocket(_interior_index) + Vector2(0, 113)
+			_target = {"id": "room_exit:%d" % _interior_index, "kind": "exit", "category": "室内出口",
+				"name": "返回营地", "pos": exit_pos, "distance_px": _player_pos.distance_to(exit_pos)}
+			_update_labels()
+			queue_redraw()
+			return
 		var candidates := _known_candidates()
 		_target = _select_target(candidates)
 		for candidate: Dictionary in candidates:
@@ -156,11 +167,21 @@ func _select_target(candidates: Array[Dictionary]) -> Dictionary:
 		var distance := _player_pos.distance_to(candidate["pos"])
 		var priority := 99
 		var category := ""
+		var target_name := str(candidate["name"])
 		for quest: Dictionary in _tracked_quests():
 			if distance > NEARBY_RADIUS and (GameState.tracked_quest_id.is_empty() \
 					or str(quest.get("id", "")) != GameState.tracked_quest_id):
 				continue
 			if int(quest.get("progress", 0)) >= int(quest.get("need", 1)):
+				# 新收集单材料齐备但尚未交付：追踪已发现的委托人，不能当成
+				# 自动结算单跳过，也不为返程指引揭露未发现地标。
+				var giver_id := str(quest.get("landmark_id", ""))
+				if QuestView.requires_claim(quest) and candidate["kind"] == "landmark" \
+						and candidate["id"] == "landmark:" + giver_id \
+						and giver_id in GameState.discovered_landmarks:
+					priority = 0
+					category = "委托 · 交付"
+					target_name = str(quest.get("giver", candidate["name"]))
 				continue
 			if quest.get("kind", "") == "hunt" and candidate["kind"] == "monster" \
 					and candidate["species"] == quest.get("species", "") \
@@ -186,7 +207,7 @@ func _select_target(candidates: Array[Dictionary]) -> Dictionary:
 				and distance <= NEARBY_RADIUS:
 			priority = 2
 			category = "附近敌人" if candidate["streamed"] else "附近怪群"
-		if candidate["kind"] in ["landmark", "checkpoint"] and distance > ARRIVAL_RADIUS:
+		if priority > 3 and candidate["kind"] in ["landmark", "checkpoint"] and distance > ARRIVAL_RADIUS:
 			priority = 3
 			category = "已发现地标" if candidate["kind"] == "landmark" else "已发现营地"
 		if priority < best_priority or (priority == best_priority and distance < best_distance):
@@ -194,6 +215,7 @@ func _select_target(candidates: Array[Dictionary]) -> Dictionary:
 				continue
 			best = candidate.duplicate()
 			best["category"] = category
+			best["name"] = target_name
 			best["distance_px"] = distance
 			best_priority = priority
 			best_distance = distance
@@ -245,6 +267,8 @@ func _radar_rect() -> Rect2:
 
 
 func _radar_scale() -> float:
+	if _interior_index >= 0:
+		return _radar_rect().size.y / 480.0
 	return _radar_rect().size.y / (RADAR_RADIUS * 2.0)
 
 
@@ -280,15 +304,21 @@ func _draw() -> void:
 	draw_rect(rect, Color("090f17"))
 	if not _has_player:
 		return
-	# 只画局部窗相交的迷雾格，通常 4~9 格；不泄露未知地形、营地或地标。
-	var step := WorldConfig.WORLD_SIZE.x / float(GameState.FOG_GRID)
-	var world_start := _player_pos - rect.size * 0.5 / _radar_scale()
-	var world_end := _player_pos + rect.size * 0.5 / _radar_scale()
-	for gy in range(maxi(0, floori(world_start.y / step)), mini(GameState.FOG_GRID, ceili(world_end.y / step))):
-		for gx in range(maxi(0, floori(world_start.x / step)), mini(GameState.FOG_GRID, ceili(world_end.x / step))):
-			if GameState.fog_is_explored(gx, gy):
-				var cell_rect := Rect2(_radar_point(Vector2(gx, gy) * step), Vector2.ONE * step * _radar_scale())
-				draw_rect(cell_rect.intersection(rect), Color("294149"))
+	if _interior_index >= 0:
+		var room_center := ObstacleField.interior_pocket(_interior_index)
+		var room_rect := Rect2(_radar_point(room_center - Vector2(160, 128)), Vector2(320, 256) * _radar_scale())
+		draw_rect(room_rect.intersection(rect), Color("4e4436"))
+		draw_rect(room_rect.intersection(rect), Color("b9a27d"), false, 1.0)
+	else:
+		# 只画局部窗相交的迷雾格，通常 4~9 格；不泄露未知地形、营地或地标。
+		var step := WorldConfig.WORLD_SIZE.x / float(GameState.FOG_GRID)
+		var world_start := _player_pos - rect.size * 0.5 / _radar_scale()
+		var world_end := _player_pos + rect.size * 0.5 / _radar_scale()
+		for gy in range(maxi(0, floori(world_start.y / step)), mini(GameState.FOG_GRID, ceili(world_end.y / step))):
+			for gx in range(maxi(0, floori(world_start.x / step)), mini(GameState.FOG_GRID, ceili(world_end.x / step))):
+				if GameState.fog_is_explored(gx, gy):
+					var cell_rect := Rect2(_radar_point(Vector2(gx, gy) * step), Vector2.ONE * step * _radar_scale())
+					draw_rect(cell_rect.intersection(rect), Color("294149"))
 	var center := rect.get_center()
 	draw_line(Vector2(center.x, rect.position.y), Vector2(center.x, rect.end.y), Color(0.6, 0.75, 0.8, 0.15))
 	draw_line(Vector2(rect.position.x, center.y), Vector2(rect.end.x, center.y), Color(0.6, 0.75, 0.8, 0.15))

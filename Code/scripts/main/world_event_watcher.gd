@@ -21,7 +21,8 @@ func _ready() -> void:
 		# 首次区域事件早于本节点挂载，须从玩家实际位置补齐本地上下文。
 		var player := get_tree().get_first_node_in_group("player") as Node2D
 		if player != null:
-			var region := WorldSim.sim.region_of_point(player.global_position)
+			var context_pos := WorldConfig.spawn_pos() if ObstacleField.interior_index_at(player.global_position) >= 0 else player.global_position
+			var region := WorldSim.sim.region_of_point(context_pos)
 			if region != null:
 				_local_region_id = region.id
 		# 挂载时即建立基线，首个 tick 前的真实击杀/出生不会被吞掉；读档重放已结束。
@@ -32,7 +33,9 @@ func _ready() -> void:
 
 
 func _context() -> Dictionary:
-	return {"local_region_id": _local_region_id,
+	var player := get_tree().get_first_node_in_group("player") as Node2D if is_inside_tree() else null
+	var indoor := player != null and ObstacleField.interior_index_at(player.global_position) >= 0
+	return {"local_region_id": "" if indoor else _local_region_id,
 		"player_extinct": WorldSim.sim.player_extinct if WorldSim.sim != null else {},
 		"reintroduction_enabled": WorldSim.sim.reintroduction_enabled if WorldSim.sim != null else true}
 

@@ -29,9 +29,18 @@ var _knob_offset := Vector2.ZERO
 var _float_center := Vector2.INF
 
 
+func _ready() -> void:
+	EventBus.touch_input_reset.connect(_release)
+
+
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var touch := event as InputEventScreenTouch
+		# iOS 取消手势不保证另发 pressed=false；取消帧不能重新起摇。
+		if touch.canceled:
+			if touch.index == _touch_index:
+				_release()
+			return
 		if touch.pressed and _touch_index == -1 and _in_activation_zone(touch.position):
 			_touch_index = touch.index
 			_float_center = touch.position
@@ -44,7 +53,9 @@ func _input(event: InputEvent) -> void:
 			_update_stick(drag.position)
 	elif event is InputEventMouseButton:
 		var mouse := event as InputEventMouseButton
-		if mouse.button_index != MOUSE_BUTTON_LEFT:
+		# 真触点由上面的索引持有。若先接管合成鼠标，会把任意多指变成 -2，
+		# 之后 canceled(index) 无法找到持有者，还可能被另一根手指松开。
+		if mouse.device == InputEvent.DEVICE_ID_EMULATION or mouse.button_index != MOUSE_BUTTON_LEFT:
 			return
 		if mouse.pressed and _touch_index == -1 and _in_activation_zone(mouse.position):
 			_touch_index = -2
@@ -54,7 +65,7 @@ func _input(event: InputEvent) -> void:
 			_release()
 	elif event is InputEventMouseMotion:
 		var motion := event as InputEventMouseMotion
-		if _touch_index == -2 and (motion.button_mask & MOUSE_BUTTON_MASK_LEFT):
+		if motion.device != InputEvent.DEVICE_ID_EMULATION and _touch_index == -2 and (motion.button_mask & MOUSE_BUTTON_MASK_LEFT):
 			_update_stick(motion.position)
 
 

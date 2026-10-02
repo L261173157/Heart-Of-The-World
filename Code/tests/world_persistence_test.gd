@@ -94,13 +94,24 @@ func _test_seed_order() -> void:
 
 
 func _find_destructible() -> Vector2i:
+	# 营地种植表提供真实且孤立的岩石，破坏后不应仍被邻岩的导航余量覆盖。
+	for prop: Array in ObstacleField.CAMP_PROPS:
+		var pos: Vector2 = WorldConfig.spawn_pos() + prop[0]
+		var cell := Vector2i(floori(pos.x / ObstacleField.CELL), floori(pos.y / ObstacleField.CELL))
+		var info := ObstacleField.sample_cell(cell)
+		if not info.is_empty() and ObstacleField.DESTRUCTIBLE.has(info["kind"]) \
+				and not ObstacleField._has_wide_neighbor(cell):
+			return cell
 	for i in 150:
 		var base := Vector2i(2000 + i * 73, 2000 + i * 67)
 		for dy in 24:
 			for dx in 24:
 				var cell := base + Vector2i(dx, dy)
 				var info := ObstacleField.sample_cell(cell)
-				if not info.is_empty() and ObstacleField.DESTRUCTIBLE.has(info["kind"]):
+				# 该场景验证“破坏后整格重新通行”；大岩石现在有真实导航余量，
+				# 选择无邻居余量覆盖的孤立块，不把仍需保留的邻墙误判成旧缓存。
+				if not info.is_empty() and ObstacleField.DESTRUCTIBLE.has(info["kind"]) \
+						and not ObstacleField._has_wide_neighbor(cell):
 					return cell
 	return Vector2i(-1, -1)
 

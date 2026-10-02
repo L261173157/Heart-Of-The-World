@@ -209,6 +209,11 @@ func _test_task_choices() -> void:
 	var abandon: Button = _hud._task_rows.find_child("Abandon_ui_one", true, false)
 	await _reveal(abandon)
 	await _touch(abandon)
+	_check(GameState.quests["active"].size() == 3,
+			"首次放弃点击只要求确认，不意外删除任务")
+	var confirm_abandon: Button = _hud._task_rows.find_child("ConfirmAbandon_ui_one", true, false)
+	await _reveal(confirm_abandon)
+	await _touch(confirm_abandon)
 	_check(GameState.quests["active"].size() == 2 and GameState.tracked_quest_id == "ui_two",
 			"明确放弃按钮仅删除指定单，保留正在跟踪的另一单")
 	for i in 3:

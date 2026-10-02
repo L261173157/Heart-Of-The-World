@@ -23,7 +23,7 @@ func _ready() -> void:
 	EventBus.camera_shake_requested.connect(
 		func(strength: float) -> void:
 			if bool(GameState.settings.get("screen_shake", true)):
-				_strength = maxf(_strength, strength)
+				_strength = maxf(_strength, clampf(strength, 0.0, 9.0))
 	)
 
 
@@ -33,6 +33,10 @@ func snap_to_player() -> void:
 	var player := get_parent() as Node2D
 	if player != null:
 		_follow = player.global_position
+		_strength = 0.0
+		offset = Vector2.ZERO
+		_process(0.0)
+		force_update_scroll()
 
 
 func _process(delta: float) -> void:
@@ -47,6 +51,8 @@ func _process(delta: float) -> void:
 	var vp_size := get_viewport().get_visible_rect().size
 	var desired_origin := vp_size * 0.5 - _follow * zoom
 	global_position = (vp_size * 0.5 - desired_origin.round()) / zoom
+	if not bool(GameState.settings.get("screen_shake", true)):
+		_strength = 0.0
 	if _strength > 0.0:
 		offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _strength
 		_strength = maxf(0.0, _strength - SHAKE_DECAY * _strength * delta - 2.0 * delta)

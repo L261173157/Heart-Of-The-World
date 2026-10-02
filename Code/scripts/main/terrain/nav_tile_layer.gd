@@ -45,8 +45,16 @@ func _ready() -> void:
 
 
 func _on_obstacle_destroyed(cell: Vector2i, _pos: Vector2, _kind: String) -> void:
-	if _filled.has(Vector2i(cell.x >> 4, cell.y >> 4)):
-		set_cell(cell, 0, Vector2i.ZERO, 0)
+	# 大岩石移除同时释放邻格余量；剩余相邻障碍仍按真源保留导航洞。
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var nearby := cell + Vector2i(dx, dy)
+			if not _filled.has(Vector2i(nearby.x >> 4, nearby.y >> 4)):
+				continue
+			if ObstacleField.nav_blocked_cell(nearby):
+				erase_cell(nearby)
+			else:
+				set_cell(nearby, 0, Vector2i.ZERO, 0)
 
 
 func _process(_delta: float) -> void:

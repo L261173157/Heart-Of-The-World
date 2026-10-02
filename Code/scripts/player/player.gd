@@ -117,6 +117,8 @@ var _attack_buffer_timer := 0.0
 const ATTACK_BUFFER_TIME := 0.12
 ## 普攻命中顿帧节流标记（AOE 同帧命中多只只压一次 time_scale）
 var _last_hit_stop := -9999.0
+## 传送吟唱读取的单调活动序号：两套输入/真实伤害统一递增。
+var activity_serial := 0
 ## 受击白闪 tween（新的受击到来先杀旧的，避免旧 tween 把颜色拉错）
 var _hurt_tween: Tween
 var _death_tween: Tween
@@ -215,6 +217,58 @@ func save_snapshot() -> Dictionary:
 			"hp": stats.max_hp(), "mp": stats.max_mp()}
 	return {"position": [global_position.x, global_position.y],
 		"hp": current_hp, "mp": current_mp}
+
+
+## 安全回城起手条件；世界再结合危险/模态/地图状态作最终判断。
+func can_begin_town_return() -> bool:
+	return not _is_dead and not GameState.dialogue_open and _dash_timer <= 0.0 \
+		and _attack_timer <= 0.0 and _attack_anim_linger <= 0.0 \
+		and _hurt_iframes <= 0.0 and _knockback.length_squared() < 1.0 \
+		and _move_vel.length_squared() < 1.0
+
+
+## 安全传送：只清移动/动作残留，不返还资源、冷却或增益；世界负责目的地校验和保存。
+func teleport_to(destination: Vector2) -> void:
+	activity_serial += 1
+	TouchInput.reset()
+	velocity = Vector2.ZERO
+	_move_vel = Vector2.ZERO
+	_knockback = Vector2.ZERO
+	_dash_timer = 0.0
+	_afterimage_accum = 0.0
+	_attack_timer = 0.0
+	_attack_anim_linger = 0.0
+	_attack_buffer_timer = 0.0
+	_attack_buffered = false
+	_hurt_anim_timer = 0.0
+	_combo = 0
+	_combo_timer = 0.0
+	_dash_buff_timer = 0.0
+	_hit_this_swing.clear()
+	_was_walking = false
+	_visual_bob = 0.0
+	_lava_accum = 0.0
+	collision_mask = MASK_NORMAL
+	attack_shape.set_deferred("disabled", true)
+	if _squash_tween != null and _squash_tween.is_valid():
+		_squash_tween.kill()
+	if _hurt_tween != null and _hurt_tween.is_valid():
+		_hurt_tween.kill()
+	visual.scale = _visual_base_scale
+	visual.rotation = 0.0
+	visual.offset = Vector2.ZERO
+	visual.modulate = Color(1.0, 0.88, 0.55) if _empower_timer > 0.0 else Color.WHITE
+	global_position = destination
+	_snap_visual_to_body()
+	SpritePlayback.restart(visual, &"idle")
+	if _shadow != null:
+		_shadow.position.y = _feet_y
+		_shadow.visible = not _is_dead
+	reset_physics_interpolation()
+	var camera := get_node_or_null("Camera2D")
+	if camera != null:
+		camera.snap_to_player()
+		camera.reset_physics_interpolation()
 
 
 func _physics_process(delta: float) -> void:
@@ -322,6 +376,7 @@ func _physics_process(delta: float) -> void:
 	velocity = _move_vel + _knockback
 	_knockback = _knockback.move_toward(Vector2.ZERO, KNOCKBACK_DECAY * delta)
 	if dir != Vector2.ZERO:
+		activity_serial += 1
 		facing = dir.normalized()
 		# 素材朝右基准（AI 英雄与骑士包一致）：左右移动翻转即可，攻击方向由挥砍特效表达
 		if absf(dir.x) > 0.1 and _attack_anim_linger <= 0.0:
@@ -480,6 +535,7 @@ func _snap_visual_to_body() -> void:
 ## 冲刺：消耗 MP，朝当前朝向高速位移，期间无敌（躲冲锋/重击/弹幕）；
 ## 同时取消攻击后摇并给下一击增伤——走位输出循环的技巧上限
 func _try_dash() -> void:
+	activity_serial += 1
 	# 对话气泡开着时冲刺键 = 关闭对话（不消耗蓝不位移）
 	if GameState.dialogue_open:
 		EventBus.dialogue_action.emit("decline")
@@ -554,6 +610,7 @@ func _spawn_afterimage() -> void:
 
 ## 重击：消耗 MP，圆形 AOE 高倍率伤害 + 冲击环特效 + 震屏顿帧
 func _try_heavy_attack() -> void:
+	activity_serial += 1
 	if _heavy_cd > 0.0 or current_mp < Skill.HEAVY_COST or _is_dead:
 		return
 	_heavy_cd = Skill.HEAVY_COOLDOWN * stats.cooldown_mult()
@@ -562,12 +619,12 @@ func _try_heavy_attack() -> void:
 	_push_skills()
 	SfxManager.play("heavy")
 	EventBus.camera_shake_requested.emit(5.0)
-	EventBus.hit_stop_requested.emit(0.06)
 	_play_ring(Skill.HEAVY_RADIUS, Color(1.0, 0.85, 0.4, 0.9))
 	_play_burst()
 	var dmg := CombatMath.physical_damage(stats.physical_attack() * Skill.HEAVY_MULT)
 	var targets: Array = get_tree().get_nodes_in_group("monsters")
 	targets.append_array(get_tree().get_nodes_in_group("nests"))
+	var hit_any := false
 	for body in targets:
 		var monster := body as Node2D
 		if monster == null or not body.has_method("take_damage"):
@@ -584,10 +641,14 @@ func _try_heavy_attack() -> void:
 				final_dmg *= em
 				effective = em > 1.0
 			body.take_damage(final_dmg, global_position, true, stats.knockback_mult(), effective)
+			hit_any = true
+	if hit_any:
+		EventBus.hit_stop_requested.emit(0.055)
 
 
 ## 法弹：消耗 MP，朝当前朝向射出智力加成弹体
 func _try_cast_bolt() -> void:
+	activity_serial += 1
 	if _bolt_cd > 0.0 or current_mp < Skill.BOLT_COST or _is_dead:
 		return
 	_bolt_cd = Skill.BOLT_COOLDOWN * stats.cooldown_mult()
@@ -604,6 +665,7 @@ func _try_cast_bolt() -> void:
 ## 治疗：消耗 MP 回复智力加成生命，绿色涟漪特效（深区续航的资源取舍）；
 ## 满血时拦截——白扣 25 MP + 8s 冷却在触屏端是误触重罚
 func _try_heal() -> void:
+	activity_serial += 1
 	if _heal_cd > 0.0 or current_mp < Skill.HEAL_COST or _is_dead \
 			or current_hp >= stats.max_hp() - 0.5:
 		return
@@ -623,6 +685,7 @@ func _try_heal() -> void:
 ## 拦截顺序：死亡 → 恢复项满档（满血吃 HP 类 / 满蓝喝水壶白费，与治疗满血
 ## 拦截同口径）→ 库存扣减（GameState）。效果按最大值比例恢复，不吃 heal_power
 func use_item(id: String) -> void:
+	activity_serial += 1
 	if _is_dead or not ItemCatalog.is_consumable(id):
 		return
 	var hp_frac := float(Skill.ITEM_HP_FRAC.get(id, 0.0))
@@ -647,6 +710,7 @@ func use_item(id: String) -> void:
 ## 武装强化：消耗 MP 进入 6s 普攻增益（伤害 ×1.6 + 命中吸血）；
 ## 持续期间金色光泽标识，与冷却共同约束不可连开
 func _try_empower() -> void:
+	activity_serial += 1
 	if _empower_cd > 0.0 or _empower_timer > 0.0 \
 			or current_mp < Skill.EMPOWER_COST or _is_dead:
 		return
@@ -713,6 +777,7 @@ func _process(delta: float) -> void:
 
 
 func _try_attack() -> void:
+	activity_serial += 1
 	# 对话气泡开着时攻击键 = 确认（接单/继续），不挥刀不消耗冷却
 	if GameState.dialogue_open:
 		EventBus.dialogue_action.emit("confirm")
@@ -766,6 +831,8 @@ func _nearest_npc() -> Node:
 	for body in get_tree().get_nodes_in_group("npcs"):
 		var npc := body as Node2D
 		if npc == null or not npc.visible:
+			continue
+		if npc.has_method("can_interact") and not npc.can_interact():
 			continue
 		var d: float = global_position.distance_to(npc.global_position)
 		if d < best_d:
@@ -840,6 +907,7 @@ func _play_burst() -> void:
 func _take_environmental_damage(amount: float) -> void:
 	if _is_dead:
 		return
+	activity_serial += 1
 	current_hp = maxf(0.0, current_hp - amount)
 	if _hurt_tween != null and _hurt_tween.is_valid():
 		_hurt_tween.kill()
@@ -861,6 +929,7 @@ func take_damage(amount: float, from_position := Vector2.INF, source_name := "")
 	# 冲刺/重生保护/受击无敌帧：期间免疫一切伤害（群体同帧命中只结算第一下）
 	if _dash_timer > 0.0 or _protect_timer > 0.0 or _hurt_iframes > 0.0:
 		return
+	activity_serial += 1
 	current_hp = maxf(0.0, current_hp - amount)
 	_hurt_iframes = HURT_IFRAME
 	# 出招时以白闪表达受击；不排队一段即将过期的 hurt 截断残片。
@@ -992,6 +1061,9 @@ func _respawn() -> void:
 
 
 func _on_attack_body_entered(body: Node) -> void:
+	# 传送/死亡会先结束攻击窗，再延迟关形状；物理冲刷期迟到的进入信号不能补刀。
+	if _is_dead or _attack_timer <= 0.0:
+		return
 	if not (body.is_in_group("monsters") or body.is_in_group("nests")) \
 			or not body.has_method("take_damage"):
 		return
@@ -1038,7 +1110,7 @@ func _on_attack_body_entered(body: Node) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	if now - _last_hit_stop >= 0.2:
 		_last_hit_stop = now
-		EventBus.hit_stop_requested.emit(0.035)
+		EventBus.hit_stop_requested.emit(0.05 if _combo == 3 else 0.035)
 
 
 ## 挥砍对障碍的射线结算（世界 v5）：Area2D 的 body_entered 对"先于本次挥砍

@@ -38,10 +38,17 @@ func _ready() -> void:
 		_push()
 
 
+func _inside_town_room() -> bool:
+	var player := get_tree().get_first_node_in_group("player") as Node2D
+	return player != null and ObstacleField.interior_index_at(player.global_position) >= 0
+
+
 func _process(delta: float) -> void:
 	if _rolling:
 		return
 	if _roll_delay > 0.0:
+		if _inside_town_room():
+			return
 		_roll_delay -= delta
 		if _roll_delay <= 0.0:
 			_roll_bounty()
@@ -73,6 +80,9 @@ func _roll_bounty() -> void:
 		_reconcile()
 		_push()
 		return
+	if _inside_town_room():
+		_roll_delay = 1.0
+		return
 	_rolling = true
 	var sim_before := WorldSim.sim
 	var player_before := get_tree().get_first_node_in_group("player") as Node2D
@@ -83,7 +93,7 @@ func _roll_bounty() -> void:
 	if WorldSim.sim != sim_before or not GameState.bounty.is_empty():
 		return
 	var player_after := get_tree().get_first_node_in_group("player") as Node2D
-	if player_after == null or not player_after.visible or position_before.distance_to(player_after.global_position) > 1200.0:
+	if player_after == null or not player_after.visible or _inside_town_room() or position_before.distance_to(player_after.global_position) > 1200.0:
 		_roll_later(1.0)
 		return
 	# 分帧寻路期间生态仍前进；发单前再复核每个已验证可达的活体。
@@ -125,7 +135,7 @@ func _local_targets() -> Array[Dictionary]:
 	_route_slice_started = Time.get_ticks_usec()
 	_max_route_slice_msec = 0.0
 	var player := get_tree().get_first_node_in_group("player") as Node2D
-	if WorldSim.sim == null or player == null or not player.visible:
+	if WorldSim.sim == null or player == null or not player.visible or _inside_town_room():
 		return result
 	var origin := WorldSim.sim.region_of_point(player.global_position)
 	if origin == null:

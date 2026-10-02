@@ -1054,24 +1054,41 @@ func _verify_items() -> void:
 	var item_id: String = quest["item"]
 	var stock := GameState.count_item(item_id)
 	var keys := GameState.count_item("gold-key")
+	var collect_npc := _spawn_collect_test_npc(qm)
 	qm.accept(quest)
 	GameState.add_item(item_id, int(quest["need"]))
-	_check(GameState.count_item("gold-key") == keys + 1, "collect 结算奖励金钥匙")
+	_check(GameState.count_item("gold-key") == keys and GameState.count_item(item_id) == stock + int(quest["need"]),
+			"collect 材料达标等待返回NPC明确交付")
+	qm.claim(str(quest["id"]))
+	_check(GameState.count_item("gold-key") == keys + 1, "collect 交付后结算奖励金钥匙")
 	_check(GameState.count_item(item_id) == stock, "结算扣缴 %s ×%d（存量保留）" % [item_id, quest["need"]])
 	var gone := true
 	for aq: Dictionary in GameState.quests["active"]:
 		if aq["id"] == quest["id"]:
 			gone = false
 	_check(gone, "collect 任务完成后移出任务栏")
-	# 放弃（P1）：再造一单立即放弃
-	GameState.quests["completed"].erase("lm_collect_test")
+	collect_npc.free()
+	# 放弃（P1）：下一单使用真实递增单号，旧确认不能重新接受已结单。
 	var off2: Dictionary = qm.offer("lm_collect_test", "collect", "草药师")
 	if off2["kind"] == "quest":
 		qm.accept(off2["quest"])
 		var msg: String = qm.abandon_first()
-		_check(msg != "" and GameState.quests["active"].is_empty(), "任务行点击可放弃（%s）" % msg)
+		_check(msg != "" and GameState.quests["active"].is_empty(), "明确放弃指定委托（%s）" % msg)
 	else:
 		_check(false, "第二单 collect 委托未生成（放弃用例跳过）")
+
+
+## 与真实地标相同的NPC节点，提供有效的近身交付目标（不用绕过距离守卫）。
+func _spawn_collect_test_npc(qm: Node) -> Node2D:
+	var npc := preload("res://scripts/main/game_world.gd").LandmarkNPC.new()
+	npc.landmark_id = "lm_collect_test"
+	npc.quest_kind = "collect"
+	npc.kind = "古树"
+	npc.giver = "草药师"
+	npc.interact_fn = qm.offer
+	npc.position = _player.global_position + Vector2(40, 0)
+	add_child(npc)
+	return npc
 
 
 ## 审计回归（2026-09-20 修复①②③）：collect 结算守卫 / 宝箱流式重开守卫 /
@@ -1089,6 +1106,8 @@ func _verify_audit_regressions() -> void:
 			qm.accept(q)
 			var gold_before := GameState.gold
 			var keys_before := GameState.count_item("gold-key")
+			var completed_before := int(GameState.quests["completed"].get("lm_collect_test", 0))
+			var collect_npc := _spawn_collect_test_npc(qm)
 			qm._complete(q)
 			var still_active := false
 			for aq: Dictionary in GameState.quests["active"]:
@@ -1096,17 +1115,18 @@ func _verify_audit_regressions() -> void:
 					still_active = true
 			_check(still_active and GameState.gold == gold_before
 					and GameState.count_item("gold-key") == keys_before
-					and int(GameState.quests["completed"].get("lm_collect_test", 0)) == 0,
+					and int(GameState.quests["completed"].get("lm_collect_test", 0)) == completed_before,
 					"collect 库存不足：不销单不计数不发奖")
-			# 材料补足 → 经 item_gained 信号正常结算
+			# 材料补足 → 可交付，明确返程领奖后结算。
 			GameState.add_item(item_id, int(q["need"]) * 2)
+			qm.claim(str(q["id"]))
+			collect_npc.free()
 			var settled := true
 			for aq: Dictionary in GameState.quests["active"]:
 				if aq["id"] == q["id"]:
 					settled = false
 			_check(settled and GameState.count_item(item_id) == int(q["need"]),
-					"补货后 collect 经拾取信号正常结算（剩 need 件）")
-			GameState.quests["completed"].erase("lm_collect_test")
+					"补货后 collect 经明确交付正常结算（剩 need 件）")
 		else:
 			_check(false, "结算守卫用例：collect 委托未生成")
 	# ② 宝箱流式重开守卫：开箱 → 走远节点回收 → 重进重建仍是已开；Boss 复活重置
@@ -1554,6 +1574,9 @@ func _verify_v5_interactions() -> void:
 					GameState.add_item(String(q["item"]), 1)
 				_:
 					EventBus.landmark_discovered.emit("lm_t%d" % i, "p_t", "测试", Vector2.ZERO)
+		if q["kind"] == "collect":
+			npc.interact()
+			EventBus.dialogue_action.emit("confirm")
 		var completed_ok: bool = GameState.quests["active"].is_empty() \
 				and int(GameState.quests["completed"].get(q["landmark_id"], 0)) >= 1
 		var gold_ok: bool = GameState.gold >= gold_before + int(q["gold"])

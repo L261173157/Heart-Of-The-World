@@ -1,5 +1,5 @@
 ## 世界环境表现层（纯视觉，无碰撞无逻辑影响）v4 分块版：
-## ① 程序地物装饰——地表块流式生成时按块撒树/岩/晶石/花田（hash(块坐标)
+## ① 程序地被装饰——地表块流式生成时按块撒草/灌丛/蘑菇（hash(块坐标)
 ##    固定种子可复现：走过再回来，装饰还在原地），每件道具按落点自身地形取样
 ## ② 环境粒子——单例跟随玩家、按当前地形切换（雪原飘雪/熔岩升火星/沼泽浮雾）
 ## v4 起不再做区域氛围叠色：群系交界由地表贴图 alpha 混合自然过渡，
@@ -10,18 +10,20 @@ extends Node2D
 
 ## 每地形装饰配方：类型 → 数量（密度按"簇状撒布"成团出现，避免均匀稀疏的空旷感）
 ## 每地形 3-5 种道具拉开层次：骨架树/岩 + 中件灌丛 + 细节宝石/香蒲
+## 只有柔软地被留在无碰撞装饰层。硬树/岩一律由 ObstacleField 生成，
+## 避免外观相同却一棵可穿、一棵挡路；装饰尺寸不再制造迷你树。
 const RECIPES := {
-	"plains": {"tree": 14, "rock": 10, "grass": 20, "bush": 12},
-	"forest": {"big_tree": 30, "mushroom": 12, "log": 8, "bush": 10},
-	"snow": {"pine": 24, "ice": 12, "snowpile": 14},
-	"swamp": {"deadtree": 20, "cattail": 10, "mushroom": 10, "puddle": 10, "bush": 8},
-	"hill": {"boulder": 24, "rock": 14, "bush": 10, "gems": 6, "skullspike": 4},
-	"lava": {"crystal": 22, "bones": 10, "gems": 5, "skullspike": 6},
+	"plains": {"grass": 20, "bush": 12, "mushroom": 4},
+	"forest": {"mushroom": 12, "grass": 8, "bush": 16},
+	"snow": {"snowpile": 14, "bush": 6},
+	"swamp": {"cattail": 10, "mushroom": 10, "puddle": 10, "bush": 8},
+	"hill": {"bush": 10, "gems": 6, "grass": 8},
+	"lava": {"gems": 5, "skullspike": 6},
 }
 
 ## 每块（512²）道具件数：与旧"每区域配方"密度同口径
 ## （旧图 1100×700≈77 万 px²，块 26.2 万 px²，约 1/3 密度取整）
-const CHUNK_PROPS := 19
+const CHUNK_PROPS := 13
 ## 撒布簇心数（70% 道具围绕簇心成团）
 const CHUNK_CLUSTERS := 3
 ## 环境粒子跟随/切换的轮询间隔
@@ -105,6 +107,8 @@ func _process(delta: float) -> void:
 	if _ambient_accum >= AMBIENT_POLL:
 		_ambient_accum = 0.0
 		var terrain := BiomeMap.terrain_at(player.global_position) if player != null else ""
+		if player != null and ObstacleField.interior_index_at(player.global_position) >= 0:
+			terrain = ""  # 房间不继承口袋下方的雨雪/浮雾/火星
 		if terrain != _ambient_terrain:
 			_ambient_terrain = terrain
 			_configure_ambient(terrain)
@@ -134,6 +138,11 @@ func _on_chunk_ready(origin: Vector2i) -> void:
 				rng.randf_range(-110.0, 110.0), rng.randf_range(-90.0, 90.0))
 		else:
 			pos = rect.position + Vector2(rng.randf_range(20.0, 492.0), rng.randf_range(20.0, 492.0))
+		if ObstacleField.blocks(pos, 18.0) or ObstacleField._in_interior_pocket(pos):
+			continue
+		var camp_delta := pos - WorldConfig.spawn_pos()
+		if absf(camp_delta.x) < 130.0 and absf(camp_delta.y) < 340.0:
+			continue
 		# 落点按自身地形取样（交界块自然出现两群系道具混居）
 		var terrain := BiomeMap.terrain_at(pos)
 		var recipe: Dictionary = RECIPES.get(terrain, {})

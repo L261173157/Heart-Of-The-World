@@ -16,6 +16,12 @@ var _heal_queued: bool = false
 var _empower_queued: bool = false
 
 
+func _ready() -> void:
+	# 死亡/复活均结束上一次手势；局部触点与全局向量必须一同复位。
+	EventBus.player_died.connect(reset)
+	EventBus.player_respawned.connect(reset)
+
+
 ## 攻击按钮按下时调用
 func queue_attack() -> void:
 	_attack_queued = true
@@ -99,6 +105,7 @@ func reset() -> void:
 	move_vector = Vector2.ZERO
 	joystick_active = false
 	clear_queues()
+	EventBus.touch_input_reset.emit()
 
 
 ## iOS 按住摇杆切后台时不保证补发 ScreenTouch released；恢复后若保留状态，

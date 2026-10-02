@@ -8,6 +8,7 @@ class_name MonsterBase
 extends CharacterBody2D
 
 const SpritePlayback := preload("res://scripts/animation/sprite_playback.gd")
+const ImpactFeedback := preload("res://scripts/combat/impact_feedback.gd")
 
 const S_PATROL := 0
 const S_CHASE := 1
@@ -130,6 +131,8 @@ var _patrol_target_valid := false
 var _hunt_mode := false
 ## 受击闪红 tween（写入新的闪红/技能色前先杀旧的，避免旧 tween 把颜色拉回去）
 var _flash_tween: Tween
+## 按需创建的白闪/接触火花组件；不参与角色位置或动作状态。
+var _impact_feedback: Node2D
 ## 落地阴影（消除贴纸悬浮感）
 var _shadow: ShadowBlob
 ## 挤压/回弹 tween（攻击预备-过冲的打击感层，与帧动画叠加）
@@ -451,11 +454,18 @@ func _near_tick(delta: float, player: Node2D) -> void:
 		_:
 			_extra_state_tick(delta, player)
 
+	var has_impulse := _knockback.length_squared() > 0.01
 	velocity += _knockback
 	_knockback = _knockback.move_toward(Vector2.ZERO, KNOCKBACK_DECAY * delta)
-	# RVO 避让：期望速度交 NavigationServer，安全速度回调里执行移动（群体散开）。
+	# 击退是短暂外力，不交给 RVO 的普通行走限速/避让抵消（实测会吞成零位移）。
+	# 仍经真实身体 move_and_slide 抵墙，AI/前摇计时照常运行，不新增硬直状态。
+	if has_impulse:
+		_awaiting_rvo = false
+		move_and_slide()
+		_post_move_and_anim(delta)
+	# RVO 避让：正常行走交 NavigationServer，回调执行群体散开。
 	# 回调缺失的极端时序按原速直行兜底——宁可偶尔挤一下，不能一帧不动卡死
-	if _nav != null and _nav.avoidance_enabled:
+	elif _nav != null and _nav.avoidance_enabled:
 		if _awaiting_rvo:
 			_awaiting_rvo = false
 			move_and_slide()
@@ -520,6 +530,9 @@ func _post_move_and_anim(delta: float) -> void:
 
 
 func _on_nav_velocity(safe_velocity: Vector2) -> void:
+	# 受击当帧已直接完成物理移动，旧避让回调不能再走第二次。
+	if not _awaiting_rvo:
+		return
 	_awaiting_rvo = false
 	if state == S_CORPSE:
 		return
@@ -710,6 +723,7 @@ func take_damage(amount: float, from_position := Vector2.INF, p_heavy := false,
 	_sync_hp_mirror()
 	EventBus.damage_number.emit(global_position, int(round(dealt)), false, p_effective)
 	_pulse_red()
+	_show_impact(from_position, p_heavy, p_effective)
 	# 受击帧动画（Warrior Guard/Lancer Defence 演出）：只在无进行中动作时播——
 	# 不打断出招/吐息/蓄力（动作优先，闪红已给受击反馈）；0.45s 最小间隔防
 	# 高频多段伤害下重启抽搐成定格
@@ -729,12 +743,26 @@ func take_damage(amount: float, from_position := Vector2.INF, p_heavy := false,
 		var dir := (global_position - from_position).normalized()
 		if dir == Vector2.ZERO:
 			dir = Vector2.UP
-		_knockback += dir * CombatMath.KNOCKBACK_BASE * (1.0 - resist) * (2.0 if p_heavy else 1.0) * p_knock_mult
+		var impulse := dir * CombatMath.KNOCKBACK_BASE * (1.0 - resist) * (2.0 if p_heavy else 1.0) * p_knock_mult
+		# 同帧多来源只保留最强一次的速度包络，不累计把怪弹出近战范围。
+		_knockback = (_knockback + impulse).limit_length(maxf(_knockback.length(), impulse.length()))
 	_on_taken_damage(dealt, from_position)
 	# 仇恨连锁：同物种邻近个体会来支援（火把哥布林/骷髅兵实现支援半径）
 	notify_allies_hit(inst.species.species_name, global_position)
 	if current_hp <= 0.0:
 		_die_by_player()
+
+
+## 命中点从物理身体推导，绝不读取/累加已吸附的 Visual 位置。
+func _show_impact(from_position: Vector2, heavy: bool, effective: bool) -> void:
+	if _impact_feedback == null:
+		_impact_feedback = ImpactFeedback.new()
+		add_child(_impact_feedback)
+		_impact_feedback.configure(visual)
+	var dir := Vector2.UP if from_position == Vector2.INF else (global_position - from_position).normalized()
+	if dir == Vector2.ZERO:
+		dir = Vector2.UP
+	_impact_feedback.trigger(-dir * clampf(body_k() * 9.0, 6.0, 18.0), dir, heavy, effective)
 
 
 ## 生态迁移：模拟层归属与据点已瞬间切换（p_dest = 新营地位置，缺省回退
@@ -781,6 +809,9 @@ func on_sim_death() -> void:
 		return
 	state = S_CORPSE
 	velocity = Vector2.ZERO
+	_knockback = Vector2.ZERO
+	if _impact_feedback != null:
+		_impact_feedback.clear()
 	_action_anim_timer = 0.0  # 让出招/受击压制立即让位给尸体表现
 	set_deferred("collision_layer", 0)
 	set_deferred("collision_mask", 0)
