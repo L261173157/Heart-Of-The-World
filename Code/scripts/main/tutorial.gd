@@ -153,7 +153,7 @@ func _on_migrated(inst: MonsterInstance, to_region_id: String) -> void:
 ## 全局模拟持续运行，远处迁徙不能提前消耗玩家的首次亲历教学。
 func _is_local_event(region_id: String) -> bool:
 	var player := get_tree().get_first_node_in_group("player") as Node2D
-	if player == null or WorldSim.sim == null:
+	if player == null or WorldSim.sim == null or ObstacleField.interior_index_at(player.global_position) >= 0:
 		return false
 	var region := WorldSim.sim.region_of_point(player.global_position)
 	return region != null and region.id == region_id

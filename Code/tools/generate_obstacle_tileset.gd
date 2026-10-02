@@ -1,6 +1,6 @@
 ## 障碍瓦片集生成（世界 v5）：
 ## "$GODOT" --headless --path Code -s tools/generate_obstacle_tileset.gd
-## 产出两个 TileSet（确定性，可重跑；贴图为内存构建的 ImageTexture 内嵌 .tres，
+## 产出两个 TileSet（确定性，可重跑；贴图为内存构建的 PortableCompressedTexture2D 无损内嵌 .tres，
 ## 不产生需 import 的中间 PNG）：
 ##   data/obstacle_tileset.tres —— 可见障碍层用：图集（3×3 障碍格，源 TS deco 精灵
 ##     底边对齐/放大/调色派生）+ 物理层（墙 layer 1，按
@@ -14,32 +14,29 @@ const TILESET_TRES := "res://data/obstacle_tileset.tres"
 const NAV_TRES := "res://data/nav_tileset.tres"
 
 const CELL := 32
+## 图集画布与逻辑格解耦：大树不再被裁成一格，脚点仍是逻辑格中心。
+const ART_CELL := 160
 ## kind 顺序 = 图集格序（col=i%3, row=i/3）；water 为透明深水阻挡瓦（第 4 行，
 ## 地面已画水只补碰撞，不留遮挡不留贴图）；castle 为城塞墙（美术 v6 Boss 地牢）
 const KINDS := ["tree", "big_tree", "pine", "deadtree", "rock", "boulder",
 	"ice", "crystal", "bones", "water", "castle"]
 ## 派生规则（美术 v6 TS）：img = assets/deco 精灵（tools/bake_structures.gd 产出，
-## 32 高画布底边对齐）；zoom>1 放大后仍底边对齐水平居中（超格自动裁）；
-## deadtree = EP 真枯树（64 高烘焙件 zoom 0.5 入格）；castle = 黑城塞墙体矩形（baked 城堡下部石墙带）
+## 树使用正确的 192px 单帧原图，去透明边后按内容高度缩放；
+## 图集大画布保留完整树冠，逻辑格/碰撞/导航仍是32px。
 const DERIVE := {
-	"tree": {"img": "res://assets/deco/tree.png"},
-	"big_tree": {"img": "res://assets/deco/tree.png", "zoom": 1.5},
-	"pine": {"img": "res://assets/deco/pine.png"},
-	"deadtree": {"img": "res://assets/deco/deadtree.png", "zoom": 0.5},
-	"rock": {"img": "res://assets/deco/rock.png"},
-	"boulder": {"img": "res://assets/deco/rock.png", "zoom": 1.5},
-	"ice": {"img": "res://assets/deco/ice.png"},
-	"crystal": {"img": "res://assets/deco/crystal.png"},
-	"bones": {"img": "res://assets/deco/bones.png"},
+	"tree": {"img": "res://assets/ts/Terrain/Resources/Wood/Trees/Tree1.png", "frame": Vector2i(192, 256), "height": 96},
+	"big_tree": {"img": "res://assets/ts/Terrain/Resources/Wood/Trees/Tree2.png", "frame": Vector2i(192, 256), "height": 124},
+	"pine": {"img": "res://assets/ts/Terrain/Resources/Wood/Trees/Tree3.png", "frame": Vector2i(192, 192), "height": 104},
+	"deadtree": {"img": "res://assets/deco/deadtree.png", "height": 96},
+	"rock": {"img": "res://assets/deco/rock.png", "height": 32},
+	"boulder": {"img": "res://assets/deco/rock.png", "height": 44},
+	"ice": {"img": "res://assets/deco/ice.png", "height": 36},
+	"crystal": {"img": "res://assets/deco/crystal.png", "height": 44},
+	"bones": {"img": "res://assets/deco/bones.png", "height": 32},
 	"water": {"transparent": true},
 	"castle": {"src": Rect2(100, 168, 40, 40),
 		"src_img": "res://assets/ts/structures_baked/ts_castle_black.png"},
 }
-## 高大障碍的排序基线（y_sort_origin，格底部附近）——走到树后会被树冠遮挡
-const TALL_SORT_ORIGIN := 14
-const FLAT_SORT_ORIGIN := 10
-## 深水阻挡瓦的排序基线（不参与 y-sort 前后关系，纯地面层）
-const WATER_SORT_ORIGIN := 0
 
 
 func _init() -> void:
@@ -58,35 +55,30 @@ func _init() -> void:
 
 ## 障碍图集：逐 kind 取源（deco 精灵底边对齐 / castle 矩形）→ 调色/放大 → 拼入 3×3
 func _build_atlas_image() -> Image:
-	var atlas := Image.create(CELL * 3, CELL * 4, false, Image.FORMAT_RGBA8)
+	var atlas := Image.create(ART_CELL * 3, ART_CELL * 4, false, Image.FORMAT_RGBA8)
 	for i in KINDS.size():
 		var kind: String = KINDS[i]
 		var spec: Dictionary = DERIVE[kind]
 		if bool(spec.get("transparent", false)):
-			continue  # 透明瓦（深水）：只占图集位不画内容
-		var cell_img: Image
+			continue
+		var prop: Image
 		if spec.has("img"):
-			# deco 精灵路径：底边对齐 + 水平居中放入 CELL 格（超格自动裁）
-			var prop: Image = Image.load_from_file(ProjectSettings.globalize_path(String(spec["img"])))
+			prop = Image.load_from_file(ProjectSettings.globalize_path(String(spec["img"])))
+			if spec.has("frame"):
+				prop = prop.get_region(Rect2i(Vector2i.ZERO, spec["frame"]))
+			# 先去透明边，再缩放完整单帧；树干中心与碰撞中心同 x，不混入下一帧枝叶。
+			prop = prop.get_region(prop.get_used_rect())
 			prop = _recolor(prop, spec)
-			var zoom: float = float(spec.get("zoom", 1.0))
-			if zoom != 1.0:
-				var big := prop
-				big.resize(int(big.get_width() * zoom), int(big.get_height() * zoom),
+			var h: int = spec["height"]
+			prop.resize(maxi(1, roundi(float(prop.get_width()) * h / prop.get_height())), h,
 					Image.INTERPOLATE_NEAREST)
-				prop = big
-			cell_img = Image.create(CELL, CELL, false, Image.FORMAT_RGBA8)
-			cell_img.blit_rect(prop, Rect2i(Vector2i.ZERO, prop.get_size()),
-				Vector2i((CELL - prop.get_width()) / 2, CELL - prop.get_height()))
 		else:
-			# 矩形路径（castle 墙砖）
-			var src_tex: Image = Image.load_from_file(ProjectSettings.globalize_path(String(spec["src_img"])))
-			var rect: Rect2 = spec["src"]
-			cell_img = src_tex.get_region(Rect2i(Vector2i(rect.position), Vector2i(rect.size)))
-			cell_img = _recolor(cell_img, spec)
-			cell_img.resize(CELL, CELL, Image.INTERPOLATE_NEAREST)
-		atlas.blit_rect(cell_img, Rect2i(Vector2i.ZERO, Vector2i(CELL, CELL)),
-				Vector2i((i % 3) * CELL, (i / 3) * CELL))
+			var source := Image.load_from_file(ProjectSettings.globalize_path(String(spec["src_img"])))
+			prop = source.get_region(Rect2i(spec["src"]))
+			prop.resize(CELL, CELL, Image.INTERPOLATE_NEAREST)
+		var base := Vector2i((i % 3) * ART_CELL, (i / 3) * ART_CELL)
+		atlas.blit_rect(prop, Rect2i(Vector2i.ZERO, prop.get_size()),
+				base + Vector2i((ART_CELL - prop.get_width()) / 2, ART_CELL - prop.get_height()))
 	return atlas
 
 
@@ -121,8 +113,8 @@ func _build_obstacle_tileset(atlas: Image) -> TileSet:
 	ts.set_custom_data_layer_name(0, "kind")
 	ts.set_custom_data_layer_type(0, TYPE_STRING)
 	var src := TileSetAtlasSource.new()
-	src.texture = ImageTexture.create_from_image(atlas)
-	src.texture_region_size = Vector2i(CELL, CELL)
+	src.texture = _portable_texture(atlas)
+	src.texture_region_size = Vector2i(ART_CELL, ART_CELL)
 	# 先挂 source 再写 TileData：未挂载的 source 取到的 TileData 无 tile_set 引用，
 	# 物理层/遮挡层写入会因越界静默失败
 	ts.add_source(src, 0)
@@ -138,16 +130,64 @@ func _build_obstacle_tileset(atlas: Image) -> TileSet:
 		td.set_collision_polygon_points(0, 0, _octagon(r))
 		if kind == "water":
 			# 深水：透明地面层——不参与 y-sort、不投影（水面不挡光）
-			td.y_sort_origin = WATER_SORT_ORIGIN
+			td.y_sort_origin = 0
 			continue
-		td.y_sort_origin = TALL_SORT_ORIGIN if bool(info["tall"]) else FLAT_SORT_ORIGIN
+		# 纹理底边落在碰撞中心以下半径处，树冠向上长；排序始终在真实脚点。
+		td.texture_origin = Vector2i(0, ART_CELL / 2 - roundi(r * 0.6))
+		td.y_sort_origin = 0
 		# 遮挡多边形：碰撞体的方化近似（阴影投射用，比碰撞略小留缝隙透气）
 		var occ := OccluderPolygon2D.new()
 		var os := r * 0.85
 		occ.polygon = PackedVector2Array([
 			Vector2(-os, -os), Vector2(os, -os), Vector2(os, os), Vector2(-os, os)])
 		td.set_occluder(0, occ)
+		if kind in ["tree", "big_tree", "pine"]:
+			src.create_alternative_tile(coord, 1)
+			var alternate := src.get_tile_data(coord, 1)
+			alternate.texture_origin = td.texture_origin
+			alternate.y_sort_origin = 0
+			alternate.flip_h = true
+			alternate.modulate = Color(0.86, 0.94, 0.91)
+			alternate.set_custom_data("kind", kind)
+			alternate.set_occluder(0, occ)
+	_add_rootbeds(ts)
 	return ts
+
+
+## 密林低层仍画可碰撞的树桩/盘根灌木，不以透明瓦掩藏硬格。
+func _add_rootbeds(ts: TileSet) -> void:
+	const ROOT_CELL := 64
+	var atlas := Image.create(ROOT_CELL * 3, ROOT_CELL, false, Image.FORMAT_RGBA8)
+	for i in 3:
+		var source_path := "res://assets/ts/Terrain/Resources/Wood/Trees/Stump 1.png" if i != 1 else "res://assets/deco/deadtree.png"
+		var prop := Image.load_from_file(ProjectSettings.globalize_path(source_path))
+		prop = prop.get_region(prop.get_used_rect())
+		var h := 28 if i == 0 else 40
+		prop.resize(roundi(float(prop.get_width()) * h / prop.get_height()), h, Image.INTERPOLATE_NEAREST)
+		var root := Vector2i(i * ROOT_CELL, 0)
+		if i == 2:
+			var leaves := Image.load_from_file(ProjectSettings.globalize_path("res://assets/ts/Terrain/Decorations/Bushes/Bushe3.png"))
+			leaves = leaves.get_region(Rect2i(0, 0, 128, 128))
+			leaves = leaves.get_region(leaves.get_used_rect())
+			leaves.resize(44, 32, Image.INTERPOLATE_NEAREST)
+			atlas.blit_rect(leaves, Rect2i(Vector2i.ZERO, leaves.get_size()), root + Vector2i(10, 16))
+			prop.resize(32, 26, Image.INTERPOLATE_NEAREST)
+		atlas.blend_rect(prop, Rect2i(Vector2i.ZERO, prop.get_size()),
+				root + Vector2i((ROOT_CELL - prop.get_width()) / 2, ROOT_CELL - prop.get_height()))
+	var src := TileSetAtlasSource.new()
+	src.texture = _portable_texture(atlas)
+	src.texture_region_size = Vector2i(ROOT_CELL, ROOT_CELL)
+	ts.add_source(src, 1)
+	for i in 3:
+		var coord := Vector2i(i, 0)
+		src.create_tile(coord)
+		var td := src.get_tile_data(coord, 0)
+		td.texture_origin = Vector2i(0, ROOT_CELL / 2 - 6)
+		td.y_sort_origin = 0
+		td.set_custom_data("kind", "wood_roots")
+		var occ := OccluderPolygon2D.new()
+		occ.polygon = PackedVector2Array([Vector2(-8,-8),Vector2(8,-8),Vector2(8,8),Vector2(-8,8)])
+		td.set_occluder(0, occ)
 
 
 ## 导航专用 TileSet：一张透明可走瓦片带整格导航多边形。
@@ -170,6 +210,16 @@ func _build_nav_tileset() -> TileSet:
 	nav.add_polygon(PackedInt32Array([0, 1, 2, 3]))
 	td.set_navigation_polygon(0, nav)
 	return ts
+
+
+## 内嵌无损压缩，保留原.tres路径且免生成PNG/import依赖；4.7 ClassDB API实测。
+## 原RGBA数字数组约4MB，无损压缩buffer仅几十KB，运行仍是同一像素图。
+func _portable_texture(img: Image) -> PortableCompressedTexture2D:
+	var tex := PortableCompressedTexture2D.new()
+	tex.keep_compressed_buffer = true
+	tex.create_from_image(img, PortableCompressedTexture2D.COMPRESSION_MODE_LOSSLESS)
+	assert(tex.get_image().get_data() == img.get_data(), "内嵌压缩必须逐像素无损")
+	return tex
 
 
 func _octagon(r: float) -> PackedVector2Array:

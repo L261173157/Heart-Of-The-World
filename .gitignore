@@ -168,3 +168,6 @@ build-output/
 
 # Mimosa 安全扫描工具状态目录
 .mimosa/
+# Python 回归入口/冷启动验证产生的本地字节码缓存。
+__pycache__/
+*.pyc

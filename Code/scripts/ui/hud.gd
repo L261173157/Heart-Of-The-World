@@ -114,6 +114,12 @@ var _task_layer: Control
 var _task_rows: VBoxContainer
 var _task_snapshot: Array = []
 var _tracked_quest_id := ""
+var _pending_abandon_id := ""
+var _return_active := false
+var _return_panel: VBoxContainer
+var _return_label: Label
+var _return_bar: ProgressBar
+var _return_caption: Label
 var _stat_layer: Control
 var _stat_preview: Label
 var _stat_owned: Label
@@ -203,7 +209,8 @@ func _ready() -> void:
 		if _inv_layer != null and _inv_layer.visible:
 			_refresh_inventory())
 	EventBus.world_event.connect(func(text: String) -> void: _toast(text))
-	EventBus.bounty_updated.connect(func(text: String) -> void: bounty_label.text = text)
+	EventBus.bounty_updated.connect(func(text: String) -> void:
+		bounty_label.text = text.replace(" · 本地线索 ", "\n本地线索："))
 	# 任务行（世界 v5 地标 NPC 委托）：空串隐藏（无任务时不占行高）
 	EventBus.quest_updated.connect(_on_quest_updated)
 	# 任务行只打开小列表，跟踪与放弃为两个明确动作。
@@ -264,6 +271,7 @@ func _ready() -> void:
 	_setup_icon_buttons()
 	_setup_stats_row()
 	_setup_hud_hierarchy()
+	_setup_mobile_controls()
 	_equipment_badge = HotwTheme.add_badge(%BtnBag, "")
 	_on_equipment_offer_changed()
 	_apply_vignette()
@@ -326,8 +334,10 @@ var _dialogue_tag: Control
 var _dialogue_text: Label
 var _dialogue_name: Label
 var _dialogue_faceset: TextureRect
-var _dialogue_yes: TextureButton
-var _dialogue_no: TextureButton
+var _dialogue_yes: Button
+var _dialogue_no: Button
+var _dialogue_yes_label: Label
+var _dialogue_no_label: Label
 var _dialogue_quest: Dictionary = {}
 var _dialogue_kind := ""
 var _dialogue_timer := 0.0
@@ -361,20 +371,23 @@ func _setup_dialogue_bubble() -> void:
 	_dialogue_panel = Control.new()
 	_dialogue_panel.name = "DialogueBubble"
 	_dialogue_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_dialogue_panel.position = Vector2(-330, -216)
-	_dialogue_panel.size = Vector2(660, 176)
+	_dialogue_panel.anchor_top = 0.5
+	_dialogue_panel.anchor_bottom = 0.5
+	_dialogue_panel.position = Vector2(-300, -75)
+	_dialogue_panel.size = Vector2(600, 252)
 	_dialogue_panel.visible = false
 	_dialogue_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_dialogue_panel)
 	_place_below_modal_layers(_dialogue_panel)
 
 	var bubble := NinePatchRect.new()
-	# 美术 v6：TS RegularPaper 纸面九宫（320 原生，边饰带宽约 56）
-	bubble.texture = load("res://assets/ts/UI Elements/UI Elements/Papers/RegularPaper.png")
-	bubble.patch_margin_left = 56
-	bubble.patch_margin_top = 56
-	bubble.patch_margin_right = 56
-	bubble.patch_margin_bottom = 56
+	# TS RegularPaper 拼合后的连续纸面，24px边饰保持清晰。
+	bubble.name = "DialoguePaper"
+	bubble.texture = _dialogue_paper_texture()
+	bubble.patch_margin_left = 24
+	bubble.patch_margin_top = 24
+	bubble.patch_margin_right = 24
+	bubble.patch_margin_bottom = 24
 	bubble.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dialogue_panel.add_child(bubble)
@@ -408,7 +421,7 @@ func _setup_dialogue_bubble() -> void:
 
 	_dialogue_text = Label.new()
 	_dialogue_text.position = Vector2(130, 52)
-	_dialogue_text.size = Vector2(396, 84)
+	_dialogue_text.size = Vector2(432, 112)
 	_dialogue_text.add_theme_font_size_override("font_size", 18)
 	_dialogue_text.add_theme_color_override("font_color", Color(0.16, 0.11, 0.06))
 	# 浅羊皮纸面上深墨字（v6 收口：白字对比不足改墨色，禁改回浅色）
@@ -419,39 +432,50 @@ func _setup_dialogue_bubble() -> void:
 	_dialogue_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dialogue_panel.add_child(_dialogue_text)
 
-	_dialogue_yes = TextureButton.new()
-	# v6：TS 方钮两态（蓝=确认；128px 源 ×0.55 ≈ 70px 命中区，满足 ≥44pt 触控）
-	_dialogue_yes.texture_normal = preload("res://assets/ts/UI Elements/UI Elements/Buttons/SmallBlueSquareButton_Regular.png")
-	_dialogue_yes.texture_pressed = preload("res://assets/ts/UI Elements/UI Elements/Buttons/SmallBlueSquareButton_Pressed.png")
-	_dialogue_yes.scale = Vector2(0.55, 0.55)
-	_dialogue_yes.position = Vector2(452, 104)
+	# 明确的文字按钮取代无字方块；正文和操作各占一行，不把标签挤在纸面外。
+	_dialogue_yes = Button.new()
+	_dialogue_yes.position = Vector2(260, 178)
+	_dialogue_yes.size = Vector2(144, 56)
+	HotwTheme.style_ts_square_button(_dialogue_yes)
 	_dialogue_yes.pressed.connect(_on_dialogue_action.bind("confirm"))
 	_dialogue_panel.add_child(_dialogue_yes)
-	_dialogue_no = TextureButton.new()
-	_dialogue_no.texture_normal = preload("res://assets/ts/UI Elements/UI Elements/Buttons/SmallRedSquareButton_Regular.png")
-	_dialogue_no.texture_pressed = preload("res://assets/ts/UI Elements/UI Elements/Buttons/SmallRedSquareButton_Pressed.png")
-	_dialogue_no.scale = Vector2(0.55, 0.55)
-	_dialogue_no.position = Vector2(542, 104)
+	_dialogue_no = Button.new()
+	_dialogue_no.position = Vector2(420, 178)
+	_dialogue_no.size = Vector2(144, 56)
+	HotwTheme.style_ts_square_button(_dialogue_no)
 	_dialogue_no.pressed.connect(_on_dialogue_action.bind("decline"))
 	_dialogue_panel.add_child(_dialogue_no)
-	var yes_label := Label.new()
-	yes_label.text = "是[攻击]"
-	yes_label.position = Vector2(452, 160)
-	yes_label.size = Vector2(84, 18)
-	yes_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	yes_label.add_theme_font_size_override("font_size", 14)
-	yes_label.add_theme_color_override("font_color", Color(0.16, 0.11, 0.06))
-	yes_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_dialogue_panel.add_child(yes_label)
-	var no_label := Label.new()
-	no_label.text = "否[冲刺]"
-	no_label.position = Vector2(542, 160)
-	no_label.size = Vector2(84, 18)
-	no_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	no_label.add_theme_font_size_override("font_size", 14)
-	no_label.add_theme_color_override("font_color", Color(0.16, 0.11, 0.06))
-	no_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_dialogue_panel.add_child(no_label)
+	_dialogue_yes_label = _dialogue_action_label(_dialogue_yes, "接取委托")
+	_dialogue_no_label = _dialogue_action_label(_dialogue_no, "暂时离开")
+
+
+## RegularPaper 是三行三列的独立64px切片，片间留64px透明槽；
+## 先拼成连续纸面再九宫拉伸，不能把透明槽当正文背景。
+func _dialogue_paper_texture() -> Texture2D:
+	var source := preload("res://assets/ts/UI Elements/UI Elements/Papers/RegularPaper.png").get_image()
+	if source.is_compressed():
+		source.decompress()
+	var paper := Image.create(192, 192, false, Image.FORMAT_RGBA8)
+	for row in 3:
+		for column in 3:
+			paper.blit_rect(source, Rect2i(column * 128, row * 128, 64, 64),
+					Vector2i(column * 64, row * 64))
+	return ImageTexture.create_from_image(paper.get_region(paper.get_used_rect()))
+
+
+func _dialogue_action_label(button: Button, text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_color_override("font_color", HotwTheme.TEXT)
+	label.add_theme_color_override("font_outline_color", Color("17232c"))
+	label.add_theme_constant_override("outline_size", 3)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button.add_child(label)
+	return label
 
 
 func _open_dialogue(payload: Dictionary) -> void:
@@ -461,7 +485,7 @@ func _open_dialogue(payload: Dictionary) -> void:
 	_dialogue_kind = str(payload.get("kind", ""))
 	var origin: Variant = payload.get("origin", Vector2.INF)
 	_dialogue_origin = origin if origin is Vector2 else Vector2.INF
-	_dialogue_quest = payload.get("quest", {}) if _dialogue_kind == "quest" else {}
+	_dialogue_quest = payload.get("quest", {}) if _dialogue_kind in ["quest", "claim"] else {}
 	var giver := str(payload.get("giver", ""))
 	if _dialogue_tag != null:
 		_dialogue_tag.size = Vector2(maxf(340.0, 244.0 + giver.length() * 24.0), 44.0)
@@ -472,7 +496,11 @@ func _open_dialogue(payload: Dictionary) -> void:
 			if not face_path.is_empty() and ResourceLoader.exists(face_path) else null
 	var has_offer: bool = not _dialogue_quest.is_empty() or _dialogue_kind == "shop"
 	_dialogue_yes.visible = has_offer
-	_dialogue_no.visible = has_offer
+	_dialogue_no.visible = true
+	_dialogue_yes_label.visible = has_offer
+	_dialogue_no_label.visible = true
+	_dialogue_yes_label.text = str(payload.get("confirm_text", "交付领奖" if _dialogue_kind == "claim" else ("进入商店" if _dialogue_kind == "shop" else "接取委托")))
+	_dialogue_no_label.text = "暂时离开" if has_offer else "关闭"
 	_dialogue_timer = DIALOGUE_OFFER_SECONDS if has_offer else DIALOGUE_INFO_SECONDS
 	_dialogue_panel.visible = true
 
@@ -482,7 +510,9 @@ func _on_dialogue_action(action: String) -> void:
 		return
 	if action == "confirm":
 		SfxManager.play("menu")
-		if not _dialogue_quest.is_empty():
+		if _dialogue_kind == "claim" and not _dialogue_quest.is_empty():
+			EventBus.quest_claim_requested.emit(str(_dialogue_quest.get("id", "")))
+		elif not _dialogue_quest.is_empty():
 			EventBus.dialogue_confirmed.emit(_dialogue_quest)
 		elif _dialogue_kind == "shop":
 			shop_panel.visible = true
@@ -673,7 +703,9 @@ func _setup_icon_buttons() -> void:
 		var icon := HotwTheme.add_icon(btn, skill_icons[i], 22.0)
 		_add_button_caption(btn, str(skill_cds[i]["name"]))
 		var cd_parts := HotwTheme.add_cd_overlay(btn)
-		HotwTheme.add_badge(btn, str(int(skill_cds[i]["mp"])))
+		var cost := HotwTheme.add_badge(btn, str(int(skill_cds[i]["mp"])))
+		cost.offset_top = -39
+		cost.offset_bottom = -21
 		skill_cds[i]["icon"] = icon
 		skill_cds[i]["overlay"] = cd_parts["overlay"]
 		skill_cds[i]["cd_label"] = cd_parts["cd"]
@@ -818,6 +850,69 @@ func _setup_hud_hierarchy() -> void:
 		button.focus_mode = Control.FOCUS_NONE
 	death_label.add_theme_color_override("font_outline_color", Color("16242d"))
 	death_label.add_theme_constant_override("outline_size", 6)
+
+
+## 主攻击 + 左上三技能扇区；回城/补给/治疗/强化独立低频工具带。
+## 全部保留 Root 安全区锚点与原输入动作，不缩放触摸区来迁就平板。
+func _setup_mobile_controls() -> void:
+	for node_name: String in ["AttackBtn", "DashBtn", "HeavyBtn", "BoltBtn", "HealBtn", "EmpowerBtn", "QuickSlotBtn", "ReturnTownBtn"]:
+		var button: Button = get_node("Root/" + node_name)
+		button.focus_mode = Control.FOCUS_NONE
+		button.set("input_allowed", _can_use_mobile_controls)
+		button.tooltip_text = {"AttackBtn": "攻击 / 与附近居民交流", "DashBtn": "冲刺 · Shift / K", "HeavyBtn": "重击 · L", "BoltBtn": "法弹 · I", "HealBtn": "治疗 · H", "EmpowerBtn": "强化 · U", "QuickSlotBtn": "使用当前有效补给", "ReturnTownBtn": "返回出生城镇；移动、出招或受击将取消"}[node_name]
+	HotwTheme.style_ts_round_button(%ReturnTownBtn)
+	HotwTheme.add_icon(%ReturnTownBtn, preload("res://assets/ts/structures_baked/ts_house1.png"), 18)
+	_add_button_caption(%ReturnTownBtn, "回城")
+	_return_caption = %ReturnTownBtn.get_node("Caption")
+	%ReturnTownBtn.pressed.connect(func() -> void:
+		if _can_use_mobile_controls():
+			EventBus.return_to_town_requested.emit())
+	EventBus.return_to_town_progress.connect(_on_return_to_town_progress)
+	_return_panel = VBoxContainer.new()
+	_return_panel.name = "ReturnTownProgress"
+	_return_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_return_panel.offset_left = -714
+	_return_panel.offset_right = -332
+	_return_panel.offset_top = -184
+	_return_panel.offset_bottom = -126
+	_return_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_return_panel.visible = false
+	get_node("Root").add_child(_return_panel)
+	_place_below_modal_layers(_return_panel)
+	_return_label = _readable_label("", 16)
+	_return_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_return_label.add_theme_constant_override("outline_size", 4)
+	_return_label.add_theme_color_override("font_outline_color", Color("17232c"))
+	_return_panel.add_child(_return_label)
+	_return_bar = ProgressBar.new()
+	_return_bar.custom_minimum_size = Vector2(0, 10)
+	_return_bar.show_percentage = false
+	_return_bar.add_theme_stylebox_override("background", _ts_bar_base())
+	_return_bar.add_theme_stylebox_override("fill", _bar_fill(HotwTheme.GOLD))
+	_return_panel.add_child(_return_bar)
+	quest_label.custom_minimum_size.y = 44
+	quest_label.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_on_quest_updated(quest_label.text)
+
+
+func _can_use_mobile_controls() -> bool:
+	return not get_tree().paused and not shop_panel.visible
+
+
+func _release_gameplay_touches() -> void:
+	TouchInput.reset()
+
+
+func _on_return_to_town_progress(active: bool, remaining: float, total: float) -> void:
+	_return_active = active
+	_return_panel.visible = active
+	_return_caption.text = "取消回城" if active else "回城"
+	if active:
+		var text := "回城中 %.1f秒 · 再点取消\n移动、出招或受击也会取消" % remaining
+		if _return_label.text != text:
+			_return_label.text = text
+		_return_bar.max_value = maxf(total, 0.01)
+		_return_bar.value = clampf(total - remaining, 0, total)
 
 
 func _resize_status_plate() -> void:
@@ -1151,6 +1246,7 @@ func _sync_modal_focus(preferred: Control = null) -> void:
 		control.focus_mode = int(control.get_meta("hud_focus_mode")) if eligible else Control.FOCUS_NONE
 	if active == null:
 		return
+	_release_gameplay_touches()
 	if preferred != null and preferred.is_visible_in_tree() \
 			and active.is_ancestor_of(preferred) and preferred.focus_mode != Control.FOCUS_NONE:
 		preferred.grab_focus()
@@ -1361,7 +1457,9 @@ func _on_threat_warning(_threat: float) -> void:
 
 func _on_quest_updated(text: String) -> void:
 	quest_label.text = text
-	quest_label.visible = text != ""
+	quest_label.visible = true
+	if text.is_empty():
+		quest_label.text = "委托：暂无 · 点击查看"
 
 
 ## 行点击只打开列表，不改任务。真实触摸和鼠标经同一 GUI 输入通道。
@@ -2069,6 +2167,7 @@ func _close_choice_layer() -> void:
 	_task_layer.visible = false
 	_stat_layer.visible = false
 	_stat_attribute = ""
+	_pending_abandon_id = ""
 	get_tree().paused = false
 	TouchInput.clear_queues()
 	_sync_modal_focus()
@@ -2115,7 +2214,9 @@ func _on_quest_list_changed(active_quests: Array, tracked_quest_id: String) -> v
 func _open_task_list() -> void:
 	if not _can_open_choice():
 		return
-	_task_snapshot = GameState.quests.get("active", []).duplicate(true)
+	_task_snapshot = []
+	for quest: Dictionary in GameState.quests.get("active", []):
+		_task_snapshot.append(preload("res://scripts/ui/quest_presentation.gd").snapshot(quest))
 	_tracked_quest_id = GameState.tracked_quest_id
 	_refresh_task_list()
 	_open_choice_layer(_task_layer)
@@ -2126,14 +2227,21 @@ func _refresh_task_list() -> void:
 		_task_rows.remove_child(child)
 		child.queue_free()
 	if _task_snapshot.is_empty():
-		_task_rows.add_child(_readable_label("暂无进行中的委托"))
+		_task_rows.add_child(_readable_label("暂无进行中的委托\n寻找头顶「!」标记的居民，靠近后点击攻击交流。"))
 		return
 	for quest: Dictionary in _task_snapshot.slice(0, 3):
 		var id := str(quest.get("id", ""))
 		var row := VBoxContainer.new()
 		_task_rows.add_child(row)
-		row.add_child(_readable_label("%s  %d/%d" % [quest.get("title", "委托"),
+		var status := str(quest.get("ui_status", "可交付" if int(quest.get("progress", 0)) >= int(quest.get("need", 1)) else "进行中"))
+		row.add_child(_readable_label("【%s】%s  %d/%d" % [status, quest.get("title", "委托"),
 				int(quest.get("progress", 0)), int(quest.get("need", 1))]))
+		var objective := str(quest.get("ui_objective", ""))
+		if not objective.is_empty():
+			row.add_child(_readable_label(objective, 16))
+		var reward := str(quest.get("ui_reward", ""))
+		if not reward.is_empty():
+			row.add_child(_readable_label(reward, 16))
 		var actions := HBoxContainer.new()
 		actions.add_theme_constant_override("separation", 12)
 		row.add_child(actions)
@@ -2150,15 +2258,46 @@ func _refresh_task_list() -> void:
 		abandon.custom_minimum_size = Vector2(148, 56)
 		abandon.pressed.connect(_request_quest_action.bind(id, true))
 		actions.add_child(abandon)
+		if id == _pending_abandon_id:
+			row.add_child(_readable_label("放弃后当前进度不会保留，确定放弃？", 16))
+			var confirm := Button.new()
+			confirm.name = "ConfirmAbandon_" + id
+			confirm.text = "确认放弃此委托"
+			confirm.custom_minimum_size = Vector2(0, 56)
+			HotwTheme.style_ts_square_button(confirm, true)
+			confirm.pressed.connect(_confirm_quest_abandon.bind(id))
+			row.add_child(confirm)
+			var cancel := Button.new()
+			cancel.name = "CancelAbandon_" + id
+			cancel.text = "保留委托"
+			cancel.custom_minimum_size = Vector2(0, 56)
+			cancel.pressed.connect(func() -> void:
+				_pending_abandon_id = ""
+				_refresh_task_list()
+				_sync_modal_focus())
+			row.add_child(cancel)
 
 
 func _request_quest_action(id: String, abandon: bool) -> void:
 	if _task_layer == null or not _task_layer.visible or passive_layer.visible:
 		return
 	if abandon:
-		EventBus.quest_abandon_requested.emit(id)
+		_pending_abandon_id = id
+		_refresh_task_list()
+		_sync_modal_focus()
 	else:
+		_pending_abandon_id = ""
 		EventBus.quest_track_requested.emit(id)
+
+
+func _confirm_quest_abandon(id: String) -> void:
+	if _task_layer == null or not _task_layer.visible or passive_layer.visible \
+			or id != _pending_abandon_id or id.is_empty():
+		return
+	_pending_abandon_id = ""
+	EventBus.quest_abandon_requested.emit(id)
+	_refresh_task_list()
+	_sync_modal_focus()
 
 
 func _on_equipment_offer_changed() -> void:

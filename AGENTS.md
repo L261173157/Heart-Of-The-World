@@ -21,10 +21,11 @@ iOS 优先的 2D 动作游戏：ACT 无锁定战斗 + 角色养成 + **怪物生
 GODOT="/path/to/Godot" python3 Code/tests/run_headless.py
 # 可用 --only save,save_lifecycle,ui_flow 或 --log-dir /tmp/hotw-tests 做定向检查
 ```
-此入口运行既有八测、三组生命周期回归（弹幕池、世界持久化、独立进程存档）四组表现层回归、五组基础玩法回归及四组玩法选择回归，共二十四测。
+此入口运行既有八测、三组生命周期回归（弹幕池、世界持久化、独立进程存档）四组表现层回归、五组基础玩法回归及四组玩法选择回归，及五组实机交互回归，共二十九测。
 玩法定向入口：`--only gameplay_combat,gameplay_ecology,gameplay_world,gameplay_equipment,gameplay_navigation`，覆盖真实冲锋/法弹/攻击子类、Boss 锚点与任务耗尽、检查点冷启动、装备锁定与实际触屏、局部导航与反复读档。新增玩法必须继续测真实场景/输入/碰撞，不得以辅助函数测试代替闭环。
 第二轮玩法定向入口：`--only boss_age_balance,gameplay_tasks,ecology_feedback,gameplay_choices_ui`，覆盖 Boss 有界战斗年龄/真实出招和技能耗蓝、赏金真实菜单继续与按量结算、因果生态反馈、装备/任务/加点/赐福/补给的真实 UI 输入。存档生命周期额外覆盖候选与赏金的独立进程往返。
 表现层定向入口：`--only ui_visual,menu_layout,animation,actor_alignment`，覆盖 HUD 安全区/模态与输入、主菜单反复开关/取消/焦点、实际动画帧时长/出招朝向/死亡复活，以及八方向冲刺、技能原点、碰撞、怪物 RVO/LOD 和真实帧脚点；修改共享主题、动画或角色绘制位置后必须跑。像素吸附必须从身体和固定美术锚点重新计算，禁止把上一帧 `Visual.global_position` 的取整结果累计回写。
+实机交互定向入口：`--only combat_feedback,mobile_controls,town_interaction,quest_clarity,quest_lifecycle`，覆盖真实命中/RVO击退与顿帧恢复、多指输入和中断、实体门/回城/碰撞导航、任务交付与独立进程领奖收据。环境尺度改动后必须重生成障碍图集并检查实际城镇和森林画面；大树树冠不可按每格完整重复铺满而遮住路径。
 不只检查退出码：还要求完成标记，并拒绝脚本/物理运行错误；仅豁免基线已有的退出资源诊断和存档测试故意构造的精确 JSON 错误。
 干净检出采用两轮导入：首轮仅允许默认中文字体尚未生成缓存的四条已知诊断，第二轮导入及全部运行检查仍须严格通过。
 `save_lifecycle` 在 Linux 子进程中使用文件大小上限验证真实短写/flush 失败，不触碰真实磁盘容量；其它平台仍跑冷启动奖励往返。

@@ -32,6 +32,8 @@ jobs:
             tests: gameplay_combat,gameplay_ecology,gameplay_world,gameplay_equipment,gameplay_navigation
           - suite: choices
             tests: boss_age_balance,gameplay_tasks,ecology_feedback,gameplay_choices_ui
+          - suite: interaction
+            tests: mobile_controls,combat_feedback,town_interaction,quest_clarity,quest_lifecycle
     steps:
       - uses: actions/checkout@v4
       - name: Install official Godot 4.7

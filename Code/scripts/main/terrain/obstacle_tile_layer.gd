@@ -9,6 +9,7 @@
 class_name ObstacleTileLayer
 extends TileMapLayer
 
+const VISUAL_RULES := preload("res://scripts/main/terrain/obstacle_visual_rules.gd")
 const OBSTACLE_TILESET := preload("res://data/obstacle_tileset.tres")
 
 
@@ -88,7 +89,7 @@ func _process(_delta: float) -> void:
 		var entry: Dictionary = _laying.get(origin, {})
 		if entry.is_empty():
 			continue  # 排队期间块已出窗被释放
-		set_cell(item["cell"], 0, item["atlas"], 0)
+		set_cell(item["cell"], item["source"], item["atlas"], item["alternative"])
 		var shape := CollisionShape2D.new()
 		shape.shape = _shared_circle(float(item["r"]))
 		shape.position = (Vector2(item["cell"]) + Vector2(0.5, 0.5)) * ObstacleField.CELL
@@ -205,5 +206,6 @@ func _on_chunk_ready(origin: Vector2i) -> void:
 	# 铺格入队分帧（LAY_BUDGET），本块形状全齐才把 body 挂树
 	_laying[origin] = {"body": body, "shapes": {}, "remaining": cells.size()}
 	for c: Dictionary in cells:
-		_lay_queue.append({"origin": origin, "cell": c["cell"],
-			"atlas": ObstacleField.KIND_ATLAS[c["kind"]], "r": c["r"]})
+		var art: Dictionary = VISUAL_RULES.appearance(c["cell"], c["kind"])
+		_lay_queue.append({"origin": origin, "cell": c["cell"], "source": art["source"],
+			"atlas": art["atlas"], "alternative": art["alternative"], "r": c["r"]})

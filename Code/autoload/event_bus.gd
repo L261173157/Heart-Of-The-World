@@ -12,6 +12,11 @@ signal gold_changed(amount: int)
 signal player_died
 signal player_respawned
 signal player_dashed
+## 回城按钮：再次请求可取消；世界层验证移动/战斗与安全落点。
+signal return_to_town_requested
+signal return_to_town_progress(active: bool, remaining: float, total: float)
+## 全局输入复位同时释放界面持有的手指，避免传送/复活后的拖动重新激活旧触点。
+signal touch_input_reset
 ## 技能冷却状态（冲刺/重击/法弹/治疗 的剩余冷却 + 当前蓝量），HUD 技能条订阅
 signal player_skills_changed(dash_cd: float, heavy_cd: float, bolt_cd: float, heal_cd: float, empower_cd: float, mp: float, max_mp: float)
 ## 玩家跨区域（game_world 区域 Area2D 信号 + 滞回确认后发出）
@@ -77,6 +82,8 @@ signal quest_updated(text: String)
 ## 委托列表：HUD 只发请求，任务管理器验证实际已接任务后变更。
 signal quest_track_requested(quest_id: String)
 signal quest_abandon_requested(quest_id: String)
+## 收集委托完成后明确领取；任务管理器验证材料、距离与当前凭证。
+signal quest_claim_requested(quest_id: String)
 signal quest_list_changed(active_quests: Array, tracked_quest_id: String)
 ## 任务完成结算播报
 signal quest_completed(text: String)

@@ -37,6 +37,11 @@ CASES = {
     "ecology_feedback": (["res://tests/ecology_feedback_test.tscn", "--quit-after", "10000"], "=== ECOLOGY FEEDBACK PASSED"),
     "gameplay_choices_ui": (["res://tests/gameplay_choices_ui_test.tscn", "--quit-after", "10000"], "=== GAMEPLAY CHOICES UI PASSED"),
     "gameplay_tasks": (["res://tests/gameplay_tasks_test.tscn", "--quit-after", "10000"], "=== GAMEPLAY TASKS PASSED"),
+    "mobile_controls": (["res://tests/mobile_controls_test.tscn", "--quit-after", "10000"], "=== MOBILE CONTROLS PASSED"),
+    "combat_feedback": (["res://tests/combat_feedback_test.tscn", "--quit-after", "10000"], "=== COMBAT FEEDBACK PASS"),
+    "town_interaction": (["res://tests/town_interaction_test.tscn", "--quit-after", "10000"], "=== TOWN INTERACTION PASS"),
+    "quest_clarity": (["res://tests/quest_clarity_test.tscn", "--quit-after", "10000"], "=== QUEST CLARITY PASSED"),
+    "quest_lifecycle": ([str(PROJECT / "tests/run_quest_lifecycle_test.py")], "=== QUEST LIFECYCLE PASSED ==="),
     "pacing": (["res://tests/pacing_test.tscn", "--quit-after", "100000"], "=== 节奏验证全部通过 ==="),
 }
 
@@ -81,7 +86,7 @@ def unexpected_errors(case: str, output: str) -> list[str]:
 
 def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str],
              godot: str, logs: Path, timeout: int) -> bool:
-    command = ([sys.executable, args[0], godot] if name == "save_lifecycle"
+    command = ([sys.executable, args[0], godot] if name in {"save_lifecycle", "quest_lifecycle"}
                else [godot, "--headless", "--path", str(PROJECT), *args])
     print(f"[{name}] 开始", flush=True)
     with subprocess.Popen(command, env=env, stdout=subprocess.PIPE,

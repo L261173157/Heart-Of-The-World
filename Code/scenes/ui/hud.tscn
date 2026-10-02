@@ -1,10 +1,12 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/hud.gd" id="1_hud"]
 [ext_resource type="Script" path="res://scripts/ui/virtual_joystick.gd" id="2_joystick"]
 [ext_resource type="Script" path="res://scripts/ui/minimap.gd" id="3_minimap"]
 [ext_resource type="PackedScene" path="res://scenes/ui/settings_panel.tscn" id="4_settings"]
 [ext_resource type="Script" path="res://scripts/ui/safe_area_root.gd" id="5_safe"]
+
+[ext_resource type="Script" path="res://scripts/ui/mobile_action_button.gd" id="6_touch"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_eco"]
 bg_color = Color(0.07, 0.09, 0.11, 0.82)
@@ -181,101 +183,122 @@ offset_right = 184.0
 offset_bottom = -64.0
 
 [node name="AttackBtn" type="Button" parent="Root"]
+script = ExtResource("6_touch")
 unique_name_in_owner = true
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -136.0
-offset_top = -160.0
-offset_right = -24.0
-offset_bottom = -48.0
-custom_minimum_size = Vector2(112, 112)
+offset_left = -160.0
+offset_top = -156.0
+offset_right = -32.0
+offset_bottom = -28.0
+custom_minimum_size = Vector2(128, 128)
 theme_override_font_sizes/font_size = 24
 text = ""
 
 [node name="DashBtn" type="Button" parent="Root"]
+script = ExtResource("6_touch")
 unique_name_in_owner = true
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -224.0
-offset_top = -136.0
-offset_right = -136.0
-offset_bottom = -48.0
+offset_left = -296.0
+offset_top = -118.0
+offset_right = -208.0
+offset_bottom = -30.0
 custom_minimum_size = Vector2(88, 88)
 theme_override_font_sizes/font_size = 20
 text = ""
 
 [node name="HeavyBtn" type="Button" parent="Root"]
+script = ExtResource("6_touch")
 unique_name_in_owner = true
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -320.0
-offset_top = -136.0
-offset_right = -232.0
-offset_bottom = -48.0
+offset_left = -269.0
+offset_top = -226.0
+offset_right = -181.0
+offset_bottom = -138.0
 custom_minimum_size = Vector2(88, 88)
 theme_override_font_sizes/font_size = 20
 text = ""
 
 [node name="BoltBtn" type="Button" parent="Root"]
+script = ExtResource("6_touch")
 unique_name_in_owner = true
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -320.0
-offset_top = -232.0
-offset_right = -232.0
-offset_bottom = -144.0
+offset_left = -157.0
+offset_top = -284.0
+offset_right = -69.0
+offset_bottom = -196.0
 custom_minimum_size = Vector2(88, 88)
 theme_override_font_sizes/font_size = 18
 text = ""
 
 [node name="HealBtn" type="Button" parent="Root"]
+script = ExtResource("6_touch")
 unique_name_in_owner = true
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -224.0
-offset_top = -232.0
-offset_right = -136.0
-offset_bottom = -144.0
-custom_minimum_size = Vector2(88, 88)
+offset_left = -516.0
+offset_top = -110.0
+offset_right = -436.0
+offset_bottom = -30.0
+custom_minimum_size = Vector2(80, 80)
 theme_override_font_sizes/font_size = 18
 text = ""
 
 [node name="EmpowerBtn" type="Button" parent="Root"]
+script = ExtResource("6_touch")
 unique_name_in_owner = true
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -416.0
-offset_top = -136.0
-offset_right = -328.0
-offset_bottom = -48.0
-custom_minimum_size = Vector2(88, 88)
+offset_left = -422.0
+offset_top = -110.0
+offset_right = -342.0
+offset_bottom = -30.0
+custom_minimum_size = Vector2(80, 80)
 theme_override_font_sizes/font_size = 18
 text = ""
 
 [node name="QuickSlotBtn" type="Button" parent="Root"]
+script = ExtResource("6_touch")
 unique_name_in_owner = true
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -512.0
-offset_top = -136.0
-offset_right = -424.0
-offset_bottom = -48.0
-custom_minimum_size = Vector2(88, 88)
+offset_left = -610.0
+offset_top = -110.0
+offset_right = -530.0
+offset_bottom = -30.0
+custom_minimum_size = Vector2(80, 80)
 theme_override_font_sizes/font_size = 18
+text = ""
+
+[node name="ReturnTownBtn" type="Button" parent="Root"]
+unique_name_in_owner = true
+script = ExtResource("6_touch")
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -704.0
+offset_top = -110.0
+offset_right = -624.0
+offset_bottom = -30.0
+custom_minimum_size = Vector2(80, 80)
 text = ""
 
 [node name="BtnShop" type="Button" parent="Root"]
