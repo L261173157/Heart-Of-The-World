@@ -4,6 +4,18 @@
 ## 键盘（开发期）与触屏（iOS）双通道在任何玩法代码里都不区分。
 extends Node
 
+## 取消不是松手：任何中断都清蓄力且禁止反击，键盘和触屏共用通知。
+signal guard_canceled
+
+var guard_held: bool = false
+var _guard_release_queued: bool = false
+## UI 权限同样约束键盘。按需读取可用性，禁用/隐藏后当帧就不能重新按 F 举盾。
+## 无 HUD 的独立玩家场景默认可用；Callable 失效后也自动回到默认，不留全局死锁。
+var _guard_availability_check: Callable
+var guard_available: bool:
+	get:
+		return not _guard_availability_check.is_valid() or bool(_guard_availability_check.call())
+
 ## 摇杆当前向量（长度 0~1），joystick_active 为 false 时玩家应使用键盘输入
 var move_vector: Vector2 = Vector2.ZERO
 var joystick_active: bool = false
@@ -89,8 +101,49 @@ func consume_empower() -> bool:
 	return pressed
 
 
+## 只由当前持盾控件登记自己的实时可用性；旧 HUD 退树不能清掉新 HUD 的入口。
+func set_guard_availability_check(check: Callable) -> void:
+	_guard_availability_check = check
+	if not guard_available:
+		cancel_guard()
+
+
+func clear_guard_availability_check(check: Callable) -> void:
+	if _guard_availability_check == check:
+		_guard_availability_check = Callable()
+
+
+## 防御是持续输入，只有由按住转为正常松手才排队一次反击。
+func begin_guard() -> void:
+	if not guard_available:
+		cancel_guard()
+		return
+	guard_held = true
+	_guard_release_queued = false
+
+
+func release_guard() -> void:
+	if guard_held:
+		guard_held = false
+		_guard_release_queued = true
+
+
+func consume_guard_release() -> bool:
+	var released := _guard_release_queued
+	_guard_release_queued = false
+	return released
+
+
+func cancel_guard() -> void:
+	guard_held = false
+	_guard_release_queued = false
+	# 即使只有键盘 F 按住，也必须通知玩家直到松开才允许重新举盾。
+	guard_canceled.emit()
+
+
 ## 玩家死亡/游戏暂停时清空排队：消费方不可用期间的点击不应在恢复后一次性兑现
 func clear_queues() -> void:
+	cancel_guard()
 	_attack_queued = false
 	_dash_queued = false
 	_heavy_queued = false

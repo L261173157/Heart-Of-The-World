@@ -72,6 +72,49 @@ const EMPOWER_MULT := 1.6
 ## 每次普攻命中回复最大生命的比例（连击节奏越快收益越高）
 const EMPOWER_HEAL_FRAC := 0.03
 
+## --- 架盾反击：数值真源，玩家/HUD/敌方预警共用 ---
+const GUARD_RAISE_TIME := 0.1
+const GUARD_HALF_ARC := PI / 3.0
+const GUARD_MOVE_MULT := 0.5
+const GUARD_DRAIN_PER_SEC := 4.0
+const GUARD_STRENGTH_BASE := 20.0
+const GUARD_STRENGTH_PER_POINT := 3.0
+const GUARD_HIT_BASE_COST := 8.0
+const GUARD_HIT_STRENGTH_COST := 0.2
+const GUARD_BREAK_TIME := 0.6
+const GUARD_MAX_CHARGE := 3
+const GUARD_CHARGE_GRACE := 3.0
+const GUARD_CHARGE_DECAY_INTERVAL := 1.0
+const GUARD_WARNING_RATIO := 0.8
+## 人群同帧接盾不叠加多层金属音；费用与蓄力仍逐次独立结算。
+const GUARD_SOUND_INTERVAL := 0.08
+const GUARD_COUNTER_MULT := [1.4, 1.8, 2.2]
+
+
+func guard_strength() -> float:
+	return GUARD_STRENGTH_BASE + GUARD_STRENGTH_PER_POINT * strength
+
+
+static func guard_hit_cost(attack_strength: float) -> float:
+	return GUARD_HIT_BASE_COST + GUARD_HIT_STRENGTH_COST * maxf(0.0, attack_strength)
+
+
+static func guard_counter_mult(charge: int) -> float:
+	return GUARD_COUNTER_MULT[clampi(charge, 1, GUARD_MAX_CHARGE) - 1]
+
+
+static func guard_overflow_damage(amount: float, attack_strength: float, capacity: float) -> float:
+	return maxf(1.0, amount * (1.0 - capacity / maxf(attack_strength, capacity)))
+
+
+func guard_warning(attack_strength: float, blockable := true) -> String:
+	if not blockable:
+		return "unblockable"
+	if attack_strength > guard_strength():
+		return "break"
+	return "near" if attack_strength >= guard_strength() * GUARD_WARNING_RATIO else "normal"
+
+
 ## --- 消耗品（玩法 v7 物品系统）：恢复比例真源，数值只动这里 ---
 ## 按最大生命/精力的比例恢复（不吃 heal_power——食物药品与技能治疗是两条线，
 ## 词条/被动不放大补给收益，性价比带稳定可守闸）；ItemCatalog.desc_of 动态拼接

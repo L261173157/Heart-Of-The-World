@@ -105,8 +105,8 @@ func _run() -> void:
 		Input.action_release("attack")
 		_check(_player._weapon_visual.active and _player._weapon_visual.aim.dot(direction) > 0.999,
 			"方向%d 真输入锁定可见武器与判定同向" % index)
-		_check(_player.visual.animation == &"hurt" and _player.visual.material == _player._weapon_body_material,
-			"方向%d 去掉烘焙剑的Guard身体配单把独立方向剑" % index)
+		_check(_player.visual.animation == _player._attack_animation() and _player.visual.material == null,
+			"方向%d 原画挥砍身体配单把独立方向剑" % index)
 		_check(near.current_hp == 10000.0 and _player.attack_shape.disabled,
 			"方向%d 蓄势时没有提前伤害" % index)
 		var first_hit := -1.0
@@ -231,7 +231,7 @@ func _cancel_contract() -> void:
 	TouchInput.queue_dash()
 	await _frames(2)
 	_check(_player._dash_timer > 0.0 and _player._attack_anim_linger > 0.0 \
-		and _player.visual.material == _player._weapon_body_material,
+		and _player.visual.material == null,
 		"冲刺取消冷却仍保留既有短窗 dash-strike")
 	await _frames(25)
 	_check(not _player._weapon_visual.active and _player.attack_shape.disabled and _player.visual.material == null,
@@ -241,9 +241,9 @@ func _cancel_contract() -> void:
 	await _frames(3)
 	_player._die()
 	_check(not _player._weapon_visual.active and _player.visual.material == null,
-		"死亡立即收起方向武器和身体去剑材质")
+		"死亡立即收起方向武器和攻击身体")
 	_player._respawn()
 	await _frames(2)
 	_check(_player.visual.material == null and _player.visual.animation == &"idle",
-		"复活恢复未遮罩完整站姿")
+		"复活恢复完整站姿")
 	await _frames(35) # 让真实死亡/复活音效与短暂特效完成后再释放测试世界。

@@ -6,6 +6,8 @@ extends Node
 # --- 玩家状态 ---
 signal player_hp_changed(current: float, maximum: float)
 signal player_mp_changed(current: float, maximum: float)
+## 架盾状态：idle/raising/guarding/counter/broken；强度与精力消耗同源。
+signal player_guard_changed(state: String, charge: int, strength: float, break_remaining: float)
 ## 等级、当前经验、升级所需经验、可分配属性点
 signal player_progress_changed(level: int, xp: int, xp_needed: int, pending_points: int)
 signal gold_changed(amount: int)

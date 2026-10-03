@@ -65,6 +65,8 @@ func _attack_tick(_delta: float, player: Node2D) -> void:
 	velocity = Vector2.ZERO
 	state = S_WINDUP
 	_state_timer = inst.species.guard_windup_time
+	# 地面砸击按招式标记不可挡；是否 Boss 不参与判定。
+	_begin_attack_warning(player, inst.attack_power(), false)
 	# 蓄力=抡起：攻击条带 0.4s 播完停在蓄力帧，蓄满砸下与收招 squash/boom 同拍
 	_play_action_anim("attack", inst.species.guard_windup_time)
 	set_tint(Color(1.0, 0.7, 0.3))  # 蓄力预警
@@ -94,6 +96,7 @@ func _extra_state_tick(delta: float, player: Node2D) -> void:
 			_ring.queue_redraw()
 	if _state_timer > 0.0:
 		return
+	_clear_attack_warning()
 	set_tint(_base_modulate)
 	_squash(Vector2(0.88, 1.12), 0.2)  # 砸下过冲
 	if _ring != null:
@@ -105,5 +108,8 @@ func _extra_state_tick(delta: float, player: Node2D) -> void:
 	if player != null and player.visible \
 			and global_position.distance_to(player.global_position) <= inst.species.attack_range * inst.species.guard_smash_range_mult:
 		if player.has_method("take_damage"):
-			player.take_damage(CombatMath.physical_damage(inst.attack_power()), global_position, inst.display_name())
+			var context := _damage_context(player, inst.attack_power(), false)
+			player.take_damage(CombatMath.physical_damage(float(context["strength"])),
+				global_position, inst.display_name(), context)
+	_clear_attack_context()
 	state = S_CHASE

@@ -8,7 +8,8 @@ class TestWorld extends Node2D:
 
 class DamageTarget extends CharacterBody2D:
 	var hits := 0
-	func take_damage(_amount: float, _position: Vector2, _source: String) -> void:
+	func take_damage(_amount: float, _position: Vector2, _source: String,
+			_attack_context: Dictionary = {}) -> void:
 		hits += 1
 
 var _fails := 0

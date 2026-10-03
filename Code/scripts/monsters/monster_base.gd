@@ -9,6 +9,8 @@ extends CharacterBody2D
 
 const SpritePlayback := preload("res://scripts/animation/sprite_playback.gd")
 const ImpactFeedback := preload("res://scripts/combat/impact_feedback.gd")
+const EnemyAttackContext := preload("res://scripts/combat/enemy_attack_context.gd")
+const MonsterGuardHint := preload("res://scripts/monsters/monster_guard_hint.gd")
 
 const S_PATROL := 0
 const S_CHASE := 1
@@ -119,6 +121,10 @@ var _base_modulate := Color.WHITE
 var _attack_cd := 0.0
 ## 近战前摇剩余时间（> 0 = 预警站定中，结束时出刀）
 var _melee_windup := 0.0
+## 前摇锁定的招式强度/ID；出手时只更新来向，不重新读取成长或协同倍率。
+var _attack_context: Dictionary = {}
+var _attack_context_state := -1
+var _guard_hint: Node2D
 ## 仇恨锁：群体响应期间不因脱离侦测圈而放弃追击
 var _aggro_lock := 0.0
 ## 巢穴被捣毁的全族激怒：侦测提升 + 不再逃跑
@@ -250,6 +256,7 @@ func setup(p_inst: MonsterInstance) -> void:
 
 
 func _exit_tree() -> void:
+	_clear_attack_context()
 	# 节点销毁/场景卸载时从注册表摘除，防悬挂引用与跨场景泄漏
 	if inst == null:
 		return
@@ -475,6 +482,7 @@ func _near_tick(delta: float, player: Node2D) -> void:
 	# 尸体态例外：灰化色已由 on_sim_death 写定，覆写会把尸体拉回活体色
 	if state != S_ATTACK and _melee_windup > 0.0:
 		_melee_windup = 0.0
+		_clear_attack_context()
 		if state != S_CORPSE:
 			set_tint(_restore_tint())
 
@@ -495,6 +503,9 @@ func _near_tick(delta: float, player: Node2D) -> void:
 			_migrate_tick()
 		_:
 			_extra_state_tick(delta, player)
+	# 同帧逃跑、迁徙或子类取消即撤下预警；不能留一个幽灵盾等下一次出招。
+	if not _attack_context.is_empty() and state != _attack_context_state:
+		_clear_attack_context()
 
 	var has_impulse := _knockback.length_squared() > 0.01
 	velocity = _velocity_with_impact(velocity)
@@ -830,6 +841,7 @@ func _velocity_with_impact(ai_velocity: Vector2) -> Vector2:
 func on_migrate(to_region_id: String, p_dest := Vector2.INF) -> void:
 	if state == S_CORPSE:
 		return
+	_clear_attack_context()
 	var target := p_dest if p_dest != Vector2.INF else WorldSim.sim.get_region_center(to_region_id)
 	var dir := target - global_position
 	anchor = global_position + (dir.normalized() * 900.0 if dir.length() > 1.0 else dir)
@@ -866,6 +878,8 @@ func _on_ally_hit() -> void:
 func on_sim_death() -> void:
 	if state == S_CORPSE:
 		return
+	_clear_attack_context()
+	_melee_windup = 0.0
 	state = S_CORPSE
 	_hunt_mode = false
 	velocity = Vector2.ZERO
@@ -942,10 +956,12 @@ func _chase_tick(_delta: float, player: Node2D) -> void:
 
 func _attack_tick(_delta: float, player: Node2D) -> void:
 	if player == null or not player.visible:
+		_cancel_melee_windup()
 		state = S_PATROL
 		return
 	var dist := global_position.distance_to(player.global_position)
 	if dist > inst.species.attack_range * 1.1:
+		_cancel_melee_windup()
 		state = S_CHASE
 		return
 	velocity = Vector2.ZERO
@@ -958,10 +974,12 @@ func _attack_tick(_delta: float, player: Node2D) -> void:
 			_melee_windup = 0.0
 			set_tint(_restore_tint())  # 收回出刀预警色
 			_attack_cd = inst.species.attack_cooldown
+			_clear_attack_warning()
 			_perform_attack(player)
 		return
 	if _attack_cd <= 0.0:
 		_melee_windup = MELEE_WINDUP
+		_begin_attack_warning(player, inst.attack_power() * _melee_damage_mult())
 		set_tint(WINDUP_TINT)
 		_squash(Vector2(1.08, 0.92), 0.2)  # 出刀前蹲伏预备
 
@@ -978,10 +996,61 @@ func _perform_attack(player: Node2D) -> void:
 	# 压制窗略宽防冷却期 walk 盖掉收招）
 	_play_action_anim("attack", 0.45)
 	if player.has_method("take_damage"):
-		player.take_damage(CombatMath.physical_damage(inst.attack_power() * _melee_damage_mult()), global_position, inst.display_name())
-		# 命中紫色邪光（美术 v5 fx 全量；Boss ×1.5）
-		EventBus.fx_requested.emit("orb", (player as Node2D).global_position,
-			1.5 if inst.species.is_boss else 0.8)
+		var context := _damage_context(player, inst.attack_power() * _melee_damage_mult())
+		var landed: Variant = player.take_damage(CombatMath.physical_damage(float(context["strength"])),
+			global_position, inst.display_name(), context)
+		# 完全格挡/无敌/重复动作不叠加“受伤”邪光，防御接触由玩家反馈。
+		# 旧的测试靶返回 null，仍保留原有命中表现。
+		if landed != false:
+			EventBus.fx_requested.emit("orb", (player as Node2D).global_position,
+				1.5 if inst.species.is_boss else 0.8)
+	_clear_attack_context()
+
+
+## 准备阶段锁定真实招式强度，不消耗伤害 RNG；所有盾数值/分档在角色公式中。
+func _begin_attack_warning(player: Node2D, strength: float, blockable := true) -> void:
+	_attack_context = EnemyAttackContext.create(strength, blockable)
+	_attack_context_state = state
+	if _guard_hint == null:
+		_guard_hint = MonsterGuardHint.new()
+		add_child(_guard_hint)
+	var stats: CharacterStats = player.stats if player is Player else null
+	# 使用固定美术锚点和资源尺寸，不读回贴图或累计已经像素吸附的 Visual 位置。
+	var frame := visual.sprite_frames.get_frame_texture(&"idle", 0)
+	var head_y := _visual_anchor.y - float(frame.get_height()) * _visual_base().round().y * 0.5
+	var bar_y := MonsterHpBar.OFFSET_Y * clampf(body_k(), 0.45, 2.6)
+	_guard_hint.show_attack(stats, strength, blockable,
+		Vector2(_visual_anchor.x, minf(head_y - 18.0, bar_y - 22.0)))
+
+
+## 命中来向约定为“朝向来源”，不是伤害前进方向；冲锋/弹幕可明确传入反飞行向量。
+func _damage_context(player: Node2D, fallback_strength: float,
+		blockable := true, incoming_direction := Vector2.ZERO) -> Dictionary:
+	if _attack_context.is_empty():
+		_attack_context = EnemyAttackContext.create(fallback_strength, blockable)
+	var context := _attack_context.duplicate()
+	context["incoming_direction"] = incoming_direction.normalized() \
+		if not incoming_direction.is_zero_approx() else \
+		(global_position - player.global_position).normalized()
+	return context
+
+
+func _clear_attack_warning() -> void:
+	if _guard_hint != null:
+		_guard_hint.clear()
+
+
+func _clear_attack_context() -> void:
+	_attack_context = {}
+	_attack_context_state = -1
+	_clear_attack_warning()
+
+
+func _cancel_melee_windup() -> void:
+	if _melee_windup > 0.0:
+		_melee_windup = 0.0
+		set_tint(_restore_tint())
+	_clear_attack_context()
 
 
 ## 受击后钩子（狂暴触发等）；from_position 为 Vector2.INF 表示无来源
