@@ -59,6 +59,7 @@ func _chase_tick(delta: float, player: Node2D) -> void:
 		state = S_TELL
 		_state_timer = inst.species.charge_tell_time
 		_charge_dir = (player.global_position - global_position).normalized()
+		_begin_attack_warning(player, inst.attack_power() * inst.species.charge_damage_mult)
 		velocity = Vector2.ZERO
 		set_tint(Color(1.0, 0.85, 0.6))  # 前摇预警色
 		_squash(Vector2(1.12, 0.88), 0.45)  # 低头蹲伏预备
@@ -77,7 +78,9 @@ func _extra_state_tick(delta: float, _player: Node2D) -> void:
 			velocity = Vector2.ZERO
 			_state_timer -= delta
 			if _state_timer <= 0.0:
+				_clear_attack_warning()
 				state = S_CHARGE
+				_attack_context_state = S_CHARGE
 				_charge_start = global_position
 				_state_timer = inst.species.charge_max_time
 				_squash(Vector2(0.88, 1.12), 0.15)  # 起冲拉伸
@@ -132,9 +135,11 @@ func _post_move_hook(_delta: float) -> void:
 		_end_charge(false)
 	elif player != null and player.visible and (hit_player or _swept_charge_hits(player)):
 		if player.has_method("take_damage"):
+			var context := _damage_context(player,
+				inst.attack_power() * inst.species.charge_damage_mult, true, -_charge_dir)
 			player.take_damage(
-				CombatMath.physical_damage(inst.attack_power() * inst.species.charge_damage_mult),
-				global_position, inst.display_name())
+				CombatMath.physical_damage(float(context["strength"])),
+				global_position, inst.display_name(), context)
 		_end_charge(true)
 	elif _state_timer <= 0.0:
 		_end_charge(false)
@@ -159,6 +164,7 @@ func _swept_charge_hits(player: Node2D) -> bool:
 
 
 func _end_charge(stunned: bool) -> void:
+	_clear_attack_context()
 	velocity = Vector2.ZERO
 	_attack_cd = inst.species.attack_cooldown
 	if stunned:

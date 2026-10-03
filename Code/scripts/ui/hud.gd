@@ -33,6 +33,7 @@ const DAY_TOAST_MAX := 4
 @onready var quest_label: Label = %QuestLabel
 @onready var shop_panel: Control = %ShopPanel
 @onready var shop_gold_label: Label = %GoldLabel
+@onready var guard_button: Button = %ShieldBtn
 ## 强化三按钮引用在 reparent 进页签前缓存：% 唯一名查找在 reparent 到
 ## 代码构建容器后不可靠（金币行能刷新而按钮行静默失败的根因）
 @onready var shop_upgrade_btns: Array = [%BtnWeapon, %BtnStaff, %BtnVigor]
@@ -115,6 +116,12 @@ var _task_rows: VBoxContainer
 var _task_snapshot: Array = []
 var _tracked_quest_id := ""
 var _pending_abandon_id := ""
+var _guard_state := "idle"
+var _guard_charge := 0
+var _guard_strength := 0.0
+var _guard_break_remaining := 0.0
+var _guard_caption: Label
+var _guard_dead := false
 var _return_active := false
 var _return_panel: VBoxContainer
 var _return_label: Label
@@ -220,6 +227,8 @@ func _ready() -> void:
 	quest_label.gui_input.connect(_on_quest_label_input)
 	EventBus.bounty_completed.connect(func(text: String) -> void: _toast(text))
 	EventBus.player_skills_changed.connect(_on_skills_changed)
+	EventBus.player_guard_changed.connect(_on_player_guard_changed)
+	EventBus.player_respawned.connect(_on_guard_respawned)
 	EventBus.achievement_unlocked.connect(func(title: String) -> void: _toast("🏆 成就解锁：%s" % title))
 	EventBus.region_threat_warning.connect(_on_threat_warning)
 	EventBus.day_phase_changed.connect(_on_day_phase)
@@ -273,6 +282,7 @@ func _ready() -> void:
 	_setup_stats_row()
 	_setup_hud_hierarchy()
 	_setup_mobile_controls()
+	_setup_guard_control()
 	_equipment_badge = HotwTheme.add_badge(%BtnBag, "")
 	_on_equipment_offer_changed()
 	_apply_vignette()
@@ -374,7 +384,8 @@ func _setup_dialogue_bubble() -> void:
 	_dialogue_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	_dialogue_panel.anchor_top = 0.5
 	_dialogue_panel.anchor_bottom = 0.5
-	_dialogue_panel.position = Vector2(-300, -75)
+	# 给新增持盾钮留出空隙；1160×680 安全区下仍不遮挡右下战斗区。
+	_dialogue_panel.position = Vector2(-300, -146)
 	_dialogue_panel.size = Vector2(600, 252)
 	_dialogue_panel.visible = false
 	_dialogue_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -481,6 +492,7 @@ func _dialogue_action_label(button: Button, text: String) -> Label:
 
 func _open_dialogue(payload: Dictionary) -> void:
 	GameState.dialogue_open = true
+	TouchInput.cancel_guard()
 	# NA 语音短音（美术 v5 音频全量）：NPC 开口随机一条，说话感
 	SfxManager.play("voice%d" % (1 + randi() % 4))
 	_dialogue_kind = str(payload.get("kind", ""))
@@ -845,7 +857,7 @@ func _setup_hud_hierarchy() -> void:
 	# 无补给时保留可识别的空槽，而不是只剩一块无义图标。
 	_add_button_caption(_quick_btn, "补给")
 	# 战斗控件有独立键位；不进入Tab链，避免暂停后键盘焦点绕到遮罩背后。
-	for name: String in ["AttackBtn", "DashBtn", "HeavyBtn", "BoltBtn", "HealBtn", "EmpowerBtn", "QuickSlotBtn", "BtnEco", "BtnBag", "BtnCodex", "BtnShop", "PauseBtn"]:
+	for name: String in ["AttackBtn", "DashBtn", "HeavyBtn", "BoltBtn", "HealBtn", "EmpowerBtn", "ShieldBtn", "QuickSlotBtn", "BtnEco", "BtnBag", "BtnCodex", "BtnShop", "PauseBtn"]:
 		(root.get_node(name) as Button).focus_mode = Control.FOCUS_NONE
 	for button: Button in stat_buttons.get_children():
 		button.focus_mode = Control.FOCUS_NONE
@@ -873,7 +885,7 @@ func _setup_mobile_controls() -> void:
 	_return_panel.name = "ReturnTownProgress"
 	_return_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_return_panel.offset_left = -714
-	_return_panel.offset_right = -332
+	_return_panel.offset_right = -442
 	_return_panel.offset_top = -184
 	_return_panel.offset_bottom = -126
 	_return_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -894,6 +906,84 @@ func _setup_mobile_controls() -> void:
 	quest_label.custom_minimum_size.y = 44
 	quest_label.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_on_quest_updated(quest_label.text)
+
+
+## 盾是独立的持续动作，不占用或重排原来的五个技能槽。
+func _setup_guard_control() -> void:
+	var button: Button = guard_button
+	button.set("input_allowed", _can_use_guard_control)
+	HotwTheme.style_ts_round_button(button)
+	var title := _readable_label("盾 · F", 13)
+	title.name = "GuardTitle"
+	title.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	title.offset_top = 2
+	title.offset_bottom = 22
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_constant_override("outline_size", 3)
+	title.add_theme_color_override("font_outline_color", Color("17232c"))
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button.add_child(title)
+	_add_button_caption(button, "按住举盾")
+	_guard_caption = button.get_node("Caption")
+	_guard_caption.add_theme_font_size_override("font_size", 14)
+	_guard_caption.offset_top = -22
+	_guard_caption.offset_bottom = 0
+	_guard_strength = GameState.stats.guard_strength()
+	_on_player_guard_changed(_guard_state, _guard_charge, _guard_strength, _guard_break_remaining)
+
+
+func _can_use_guard_control() -> bool:
+	return _can_use_mobile_controls() and not GameState.dialogue_open and not _guard_dead
+
+
+func _on_guard_respawned() -> void:
+	_guard_dead = false
+	if is_instance_valid(guard_button):
+		guard_button.disabled = false
+	_refresh_guard_caption()
+
+
+func _on_player_guard_changed(state: String, charge: int, strength: float, break_remaining: float) -> void:
+	# 盾控件退树会同步取消输入并收到最后一次快照；此时 owner 查找已经失效。
+	if is_queued_for_deletion() or not is_instance_valid(guard_button) \
+			or not guard_button.is_inside_tree() or guard_button.is_queued_for_deletion():
+		return
+	_guard_state = state
+	_guard_charge = clampi(charge, 0, CharacterStats.GUARD_MAX_CHARGE)
+	_guard_strength = strength
+	_guard_break_remaining = maxf(break_remaining, 0.0)
+	var button: Button = guard_button
+	button.call("set_guard_feedback", state, _guard_charge)
+	button.tooltip_text = "按住 F / 按钮举盾，松手反击；滑出取消\n正面%d° · 挡击蓄力（最多%d格）\n承受%.0f强度 · 强攻或精力耗尽会破防\n每秒%.0f精力且停止回复 · 移速%d%%" % [
+		roundi(rad_to_deg(CharacterStats.GUARD_HALF_ARC) * 2.0), CharacterStats.GUARD_MAX_CHARGE,
+		strength, CharacterStats.GUARD_DRAIN_PER_SEC, roundi(CharacterStats.GUARD_MOVE_MULT * 100.0)]
+	_refresh_guard_caption()
+
+
+func _refresh_guard_caption() -> void:
+	if not is_instance_valid(_guard_caption) or not _guard_caption.is_inside_tree():
+		return
+	var caption := "按住举盾"
+	var color := HotwTheme.TEXT
+	match _guard_state:
+		"raising":
+			caption = "举盾中"
+			color = Color("a3daec")
+		"guarding":
+			caption = "松手反击" if _guard_charge > 0 else "正面格挡"
+			color = HotwTheme.GOLD if _guard_charge > 0 else Color("a3daec")
+		"counter":
+			caption = "反击"
+			color = HotwTheme.GOLD
+		"broken":
+			caption = "破防 %.1f" % _guard_break_remaining
+			color = Color("f18c78")
+	if _guard_dead:
+		caption = "重生中"
+	if _guard_caption.text != caption:
+		_guard_caption.text = caption
+	if _guard_caption.get_theme_color("font_color") != color:
+		_guard_caption.add_theme_color_override("font_color", color)
 
 
 func _can_use_mobile_controls() -> bool:
@@ -992,6 +1082,9 @@ func _process(delta: float) -> void:
 		# 否则暂停数秒后技能槽显示"就绪"而实际 CD 未到，恢复后手感错乱
 		_cd_elapsed += delta
 		_refresh_skill_bar()
+	if not get_tree().paused and _guard_break_remaining > 0.0:
+		_guard_break_remaining = maxf(0.0, _guard_break_remaining - delta)
+		_refresh_guard_caption()
 	_process_dialogue(delta)
 	_update_smooth_bars(delta)
 	# 帧率显示（4Hz）：FPS + 每帧绘制调用数（定位 GPU/CPU 侧用——真机卡顿
@@ -1303,6 +1396,10 @@ func _back_to_menu() -> void:
 # --- 死亡信息 ---
 
 func _on_player_died() -> void:
+	_guard_dead = true
+	if is_instance_valid(guard_button):
+		guard_button.disabled = true
+	_refresh_guard_caption()
 	var player := get_tree().get_first_node_in_group("player") as Player
 	var killer: String = player.last_killed_by if player != null and player.last_killed_by != "" else "荒野"
 	# 掉金详情由玩家侧 toast 单独播报（0 金时不误导），这里只报死因与战绩
@@ -1500,6 +1597,7 @@ func _toggle_shop() -> void:
 		_close_inventory()
 	shop_panel.visible = not shop_panel.visible
 	if shop_panel.visible:
+		TouchInput.cancel_guard()
 		_refresh_shop()
 
 

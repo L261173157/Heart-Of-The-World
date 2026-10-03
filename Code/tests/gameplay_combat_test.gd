@@ -11,7 +11,8 @@ var _next_id := 0
 class Target extends CharacterBody2D:
 	var hits := 0
 	var total_damage := 0.0
-	func take_damage(amount: float, _from := Vector2.INF, _source := "") -> void:
+	func take_damage(amount: float, _from := Vector2.INF, _source := "",
+			_attack_context: Dictionary = {}) -> void:
 		hits += 1
 		total_damage += amount
 

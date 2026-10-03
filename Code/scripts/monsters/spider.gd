@@ -5,6 +5,7 @@ class_name Spider
 extends MonsterBase
 
 const BACKOFF_STUCK_TIME := 0.5
+const S_SPIT_WINDUP := 10
 ## （弹幕经 Projectile.spawn 类级池发射，2026-10-01）
 
 ## 被逼到墙角的后撤卡墙计时与"困兽"状态：后撤顶墙超时后不再徒劳后退，
@@ -12,6 +13,7 @@ const BACKOFF_STUCK_TIME := 0.5
 ## 永远不还手（后撤分支直接 return，连吐息都不放）
 var _backoff_stuck := 0.0
 var _cornered := false
+var _spit_windup := 0.0
 
 
 func _chase_tick(_delta: float, player: Node2D) -> void:
@@ -76,8 +78,37 @@ func _spit(player: Node2D) -> void:
 	# 吐息动作上屏（Archer_Shoot 8 帧@10fps）：本原型从不进 S_ATTACK，
 	# 旧状态映射下这条攻击帧永远没有播放路径（2026-09-28 动作补齐）
 	_play_action_anim("attack", 0.75)
+	# 飞弹实际离手前留出与近战同长的可读前摇；风筝/困兽和射击冷却仍走原入口。
+	state = S_SPIT_WINDUP
+	_spit_windup = MELEE_WINDUP
+	velocity = Vector2.ZERO
+	_begin_attack_warning(player, inst.attack_power())
+
+
+func _extra_state_tick(delta: float, player: Node2D) -> void:
+	if state != S_SPIT_WINDUP:
+		return
+	velocity = Vector2.ZERO
+	if player == null or not player.visible:
+		_clear_attack_context()
+		_spit_windup = 0.0
+		state = S_PATROL
+		return
+	_spit_windup = maxf(0.0, _spit_windup - delta)
+	if _spit_windup > 0.0:
+		return
+	_clear_attack_warning()
+	# 蓄力期间出现掩体仍不穿墙射击；下一次继续正常导航重取视线。
+	if _has_los(player.global_position):
+		_release_spit(player)
+	_clear_attack_context()
+	state = S_CHASE
+
+
+func _release_spit(player: Node2D) -> void:
 	_squash(Vector2(0.94, 1.06), 0.12)  # 吐息轻弹
 	var dir := (player.global_position - global_position).normalized()
+	var context := _damage_context(player, inst.attack_power(), true, -dir)
 	Projectile.spawn(get_parent(), global_position + dir * 16.0, dir,
-		CombatMath.magic_damage(inst.attack_power()), 270.0, inst.display_name(),
-		inst.species.projectile_tex)
+		CombatMath.magic_damage(float(context["strength"])), 270.0, inst.display_name(),
+		inst.species.projectile_tex, context)

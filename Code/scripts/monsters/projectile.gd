@@ -10,6 +10,7 @@ extends Area2D
 const LIFE_TIME := 2.2
 ## 池上限：同屏存活弹幕理论上限 ≈ 远程怪数×(射速×2.2s)，16 只×1.4≈22
 const POOL_MAX := 32
+const EnemyAttackContext := preload("res://scripts/combat/enemy_attack_context.gd")
 
 ## 空闲池（static：跨场景生命周期，怪物表现节点流式进出不回收池）
 static var _pool: Array[Projectile] = []
@@ -19,13 +20,13 @@ static var _pool_epoch := 0
 
 ## 发射入口（池化）：从池取或新建，挂到发射者父节点并初始化
 static func spawn(parent: Node, pos: Vector2, dir: Vector2, dmg: float,
-		p_speed := 270.0, p_source := "", p_bolt := "") -> Projectile:
+		p_speed := 270.0, p_source := "", p_bolt := "", p_context: Dictionary = {}) -> Projectile:
 	var p: Projectile = _pool.pop_back() if not _pool.is_empty() else null
 	if p == null:
 		p = preload("res://scenes/monsters/projectile.tscn").instantiate()
 	parent.add_child(p)
 	p.global_position = pos
-	p.launch(dir, dmg, p_speed, p_source, p_bolt)
+	p.launch(dir, dmg, p_speed, p_source, p_bolt, p_context)
 	return p
 
 
@@ -71,13 +72,16 @@ var speed := 270.0
 var source_name := ""
 ## 弹体贴图名（Enemy Pack 弹体烘焙件，空 = 默认箭矢；launch 前赋值）
 var bolt_tex := ""
+## 每次 launch 全量重建，不继承上发的不可挡、强度、来向或 ID。
+var attack_context: Dictionary = {}
 
 var _life := LIFE_TIME
 var _retiring := false
 var _spawn_epoch := 0
 
 
-func launch(dir: Vector2, dmg: float, p_speed := 270.0, p_source := "", p_bolt := "") -> void:
+func launch(dir: Vector2, dmg: float, p_speed := 270.0, p_source := "", p_bolt := "",
+		p_context: Dictionary = {}) -> void:
 	_retiring = false
 	_spawn_epoch = _pool_epoch
 	monitoring = true
@@ -85,6 +89,10 @@ func launch(dir: Vector2, dmg: float, p_speed := 270.0, p_source := "", p_bolt :
 	show()
 	direction = dir.normalized()
 	damage = dmg
+	# 旧调用未提供确定性强度时，以该次显式伤害兜底；正式射手总是传前摇快照。
+	# 每次发射均为新弹道动作，即使调用者复用同一字典也生成全新 ID。
+	attack_context = EnemyAttackContext.create(float(p_context.get("strength", dmg)),
+		bool(p_context.get("blockable", true)), -direction)
 	speed = p_speed
 	source_name = p_source
 	bolt_tex = p_bolt
@@ -114,7 +122,7 @@ func _on_body_entered(body: Node2D) -> void:
 		return
 	if body.is_in_group("player") and body.has_method("take_damage"):
 		_release()
-		body.take_damage(damage, global_position, source_name)
+		body.take_damage(damage, global_position, source_name, attack_context.duplicate())
 		return
 	# 撞墙消散（不再穿地形，与玩家法弹对称；巢穴在独立层 4 不被检测）。
 	# 障碍瓦片（TileMapLayer）同样消散——怪物弹幕不能替玩家开路

@@ -11,7 +11,7 @@ extends CharacterBody2D
 const Skill := preload("res://scripts/character/character_stats.gd")
 const SpritePlayback := preload("res://scripts/animation/sprite_playback.gd")
 const DirectionalWeapon := preload("res://scripts/player/directional_weapon.gd")
-const GUARD_WEAPON_MASK := preload("res://scripts/player/warrior_guard_weapon_mask.gdshader")
+const GuardFeedback := preload("res://scripts/player/guard_feedback.gd")
 
 ## 原画四帧：前两帧蓄势，第三帧挥刃，第四帧收招；总时长仍是 0.32s。
 const ATTACK_WINDUP := 0.16
@@ -19,7 +19,7 @@ const ATTACK_WINDOW := 0.26
 ## 攻击动画收尾残留：判定窗结束后攻击动画再停留片刻播完收招段再回 walk/idle。
 ## 只影响表现（攻击期间本就不锁移动），连击重触发会立即切段
 const ATTACK_ANIM_LINGER := 0.06
-## TS Attack1 源帧 x162−格心96 = 66px；÷2 原生、场景×2，世界尖端仍为66px。
+## TS Attack1 刀光外缘 x162−格心96 = 66px；这是挥击弧半径，并非金属剑长度。
 const ATTACK_REACH := 66.0
 const ATTACK_HALF_ARC := deg_to_rad(58.0)
 ## 攻击朝向吸附：扇形半角与半径（解决"边退边打"的方向冲突）
@@ -61,12 +61,12 @@ const BOB_AMPLITUDE := 1.05
 ## 重击使用现有 TS 合成爆裂，普攻由 DirectionalWeapon 的同源刀锋绘制。
 const FX_BURST := preload("res://assets/creatures/frames/fx_burst/fx_burst_frames.res")
 
-## 三忍皮肤（美术 v5）：蓝/黑/白忍同布局表（idle/walk/attack/die 动画名同构，
-## 换帧零逻辑差异）；存档键 settings.hero_skin，缺省蓝忍
+## TS Warrior 三皮肤，存档键 blue/dark/white 沿用；离线身体分层仅改普攻，
+## idle/walk/hurt 与原切帧一致，脚点和画布不变
 const HERO_SKINS := {
-	"blue": preload("res://assets/creatures/frames/ninja/ninja_frames.res"),
-	"dark": preload("res://assets/creatures/frames/ninja_dark/ninja_dark_frames.res"),
-	"white": preload("res://assets/creatures/frames/ninja_white/ninja_white_frames.res"),
+	"blue": preload("res://assets/creatures/frames/warrior_motion/blue_frames.res"),
+	"dark": preload("res://assets/creatures/frames/warrior_motion/dark_frames.res"),
+	"white": preload("res://assets/creatures/frames/warrior_motion/white_frames.res"),
 }
 
 ## 视觉基础缩放（挤压回弹的恢复基准，_ready 时从场景读）
@@ -94,7 +94,8 @@ var _attack_elapsed := 0.0
 var _attack_previous_angle := -ATTACK_HALF_ARC
 var _attack_pose := &"right"
 var _weapon_visual: Node2D
-var _weapon_body_material: ShaderMaterial
+var _attack_sweep_sign := 1.0
+var _weapon_clearance := CircleShape2D.new()
 var _obstacles_hit_this_swing := {}
 var _respawn_timer := 0.0
 var _is_dead := false
@@ -143,6 +144,21 @@ var _was_walking := false
 ## 插值保留浮点累积，只在最终绘制取整；逐帧取整反馈会把 1px bob 永远锁在零。
 var _visual_bob := 0.0
 
+## 盾与普通攻击互斥；counter 只复用扫掠表现，不走普攻增益/回血。
+var guard_state := "idle"
+var guard_charge := 0
+var guard_direction := Vector2.RIGHT
+var _guard_raise_timer := 0.0
+var _guard_break_timer := 0.0
+var _guard_charge_age := 0.0
+var _guard_fresh_press_required := false
+var _guard_input_was_held := false
+var _guard_seen_attacks: Dictionary = {}
+var _counter_charge := 0
+var _guard_feedback: Node2D
+var _guard_last_sound := -9999.0
+
+
 
 func _ready() -> void:
 	add_to_group("player")
@@ -180,8 +196,19 @@ func _ready() -> void:
 	_weapon_visual.name = "DirectionalWeapon"
 	add_child(_weapon_visual)
 	_weapon_visual.clear()
-	_weapon_body_material = ShaderMaterial.new()
-	_weapon_body_material.shader = GUARD_WEAPON_MASK
+	_guard_feedback = GuardFeedback.new()
+	_guard_feedback.name = "GuardFeedback"
+	_guard_feedback.feet_y = _feet_y
+	_guard_feedback.body_y = _visual_anchor.y
+	_guard_feedback.z_index = 5
+	add_child(_guard_feedback)
+	_guard_feedback.clear()
+	TouchInput.guard_canceled.connect(_on_guard_input_canceled)
+	# 跨场景仍按住F/旧触点不算新手势，单独实例化Player也遵守此边界。
+	_guard_fresh_press_required = Input.is_action_pressed("guard") or TouchInput.guard_held
+	_guard_input_was_held = _guard_fresh_press_required
+	_weapon_clearance.radius = 10.0 # 护手7px/刀身4px，再留2px像素吸附边距
+	visual.frame_changed.connect(_on_attack_frame_changed)
 	# 判定由物理步扫掠查询，Area 仅保存完全相同的调试形状，避免延迟信号多打一刀。
 	attack_hitbox.monitoring = false
 	attack_shape.shape = attack_shape.shape.duplicate()
@@ -195,6 +222,267 @@ func _ready() -> void:
 	# v7 消耗品：HUD 快捷槽/物品栏发 item_use_requested，效果应用在本节点
 	# （生命/精力的权威持有者，满血满蓝拦截与治疗技能同口径）
 	EventBus.item_use_requested.connect(use_item)
+
+
+func _guard_is_held() -> bool:
+	return guard_state == "raising" or guard_state == "guarding"
+
+
+## 输入复位与正常松手分路；暂停/失焦不允许在恢复时把旧手势变成反击。
+func _poll_guard_input() -> void:
+	var held := Input.is_action_pressed("guard") or TouchInput.guard_held
+	var pad_release := TouchInput.consume_guard_release()
+	if GameState.dialogue_open or not TouchInput.guard_available:
+		if _guard_is_held() or guard_state == "counter" or guard_charge > 0:
+			cancel_guard()
+		_guard_fresh_press_required = true
+		_guard_input_was_held = held
+		return
+	if _guard_fresh_press_required:
+		if not held:
+			_guard_fresh_press_required = false
+		_guard_input_was_held = held
+		return
+	if held and not _guard_input_was_held:
+		begin_guard()
+	elif not held and (_guard_input_was_held or pad_release) and _guard_is_held():
+		release_guard()
+	_guard_input_was_held = held
+
+
+func begin_guard() -> void:
+	if not TouchInput.guard_available:
+		_guard_fresh_press_required = true
+		return
+	if _is_dead or GameState.dialogue_open or get_tree().paused \
+			or guard_state != "idle" or _guard_fresh_press_required:
+		return
+	if _dash_timer > 0.0:
+		_guard_fresh_press_required = true
+		return
+	if current_mp <= 0.0:
+		_guard_fresh_press_required = true
+		return
+	activity_serial += 1
+	# 架盾取消当前普通挥击的余下判定/表现，但绝不返还该刀已支付的冷却。
+	_attack_timer = 0.0
+	_attack_anim_linger = 0.0
+	attack_shape.set_deferred("disabled", true)
+	_hit_this_swing.clear()
+	guard_direction = facing.normalized() if facing != Vector2.ZERO else Vector2.RIGHT
+	guard_state = "raising"
+	_guard_raise_timer = Skill.GUARD_RAISE_TIME
+	_attack_buffered = false
+	_attack_buffer_timer = 0.0
+	_combo = 0
+	_combo_timer = 0.0
+	_hurt_anim_timer = 0.0
+	_weapon_visual.clear()
+	visual.material = null
+	visual.rotation = 0.0
+	_push_guard()
+	_update_anim()
+
+
+## 只有用户正常释放才进反击；取消路径不能调用这里。
+func release_guard() -> void:
+	if not TouchInput.guard_available or GameState.dialogue_open or get_tree().paused:
+		cancel_guard()
+		return
+	if not _guard_is_held():
+		return
+	activity_serial += 1
+	var charge := guard_charge
+	guard_charge = 0
+	_guard_raise_timer = 0.0
+	_guard_charge_age = 0.0
+	guard_state = "idle"
+	if charge > 0:
+		_start_guard_counter(charge, guard_direction)
+	else:
+		_push_guard()
+		_update_anim()
+
+
+func cancel_guard(require_fresh_press := true, clear_break := false) -> void:
+	var was_counter := guard_state == "counter"
+	var retain_break := guard_state == "broken" and not clear_break and _guard_break_timer > 0.0
+	guard_state = "broken" if retain_break else "idle"
+	guard_charge = 0
+	_counter_charge = 0
+	_guard_raise_timer = 0.0
+	if not retain_break:
+		_guard_break_timer = 0.0
+	_guard_charge_age = 0.0
+	if require_fresh_press:
+		_guard_fresh_press_required = true
+	if was_counter:
+		_combo = 0
+		_combo_timer = 0.0
+		_attack_timer = 0.0
+		_attack_anim_linger = 0.0
+		_attack_buffered = false
+		_attack_buffer_timer = 0.0
+		_hit_this_swing.clear()
+		if is_instance_valid(attack_shape):
+			attack_shape.set_deferred("disabled", true)
+		if is_instance_valid(_weapon_visual):
+			_weapon_visual.clear()
+	if is_instance_valid(_guard_feedback):
+		_guard_feedback.clear()
+	if stats != null and is_inside_tree():
+		_push_guard()
+		if is_node_ready() and is_instance_valid(visual):
+			_update_anim()
+
+
+func _on_guard_input_canceled() -> void:
+	cancel_guard()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED \
+			or what == NOTIFICATION_PAUSED or what == NOTIFICATION_EXIT_TREE:
+		cancel_guard()
+
+
+func _tick_guard(delta: float) -> void:
+	if _guard_break_timer > 0.0:
+		_guard_break_timer = maxf(0.0, _guard_break_timer - delta)
+		if _guard_break_timer <= 0.0 and guard_state == "broken":
+			guard_state = "idle"
+		_push_guard()
+	if not _guard_is_held():
+		return
+	activity_serial += 1
+	current_mp = maxf(0.0, current_mp - Skill.GUARD_DRAIN_PER_SEC * delta)
+	if current_mp <= 0.0:
+		_break_guard()
+		return
+	if guard_state == "raising":
+		_guard_raise_timer = maxf(0.0, _guard_raise_timer - delta)
+		if _guard_raise_timer <= 0.0:
+			guard_state = "guarding"
+			_push_guard()
+	if guard_charge > 0:
+		_guard_charge_age += delta
+		# 3s 无成功接盾先退一格，随后每1s退一格；新的成功格挡重新计时。
+		while guard_charge > 0 and _guard_charge_age >= Skill.GUARD_CHARGE_GRACE:
+			guard_charge -= 1
+			_guard_charge_age -= Skill.GUARD_CHARGE_DECAY_INTERVAL
+			_push_guard()
+
+
+func _push_guard() -> void:
+	if stats == null:
+		return
+	EventBus.player_guard_changed.emit(guard_state, guard_charge,
+		stats.guard_strength(), _guard_break_timer)
+	if is_instance_valid(_guard_feedback):
+		_guard_feedback.show_state(guard_state, guard_direction, guard_charge)
+
+
+func _break_guard() -> void:
+	cancel_guard()
+	guard_state = "broken"
+	_guard_break_timer = Skill.GUARD_BREAK_TIME
+	_hurt_anim_timer = maxf(_hurt_anim_timer, Skill.GUARD_BREAK_TIME)
+	_move_vel = Vector2.ZERO
+	_guard_feedback.impact(true)
+	_play_guard_sound(true)
+	_push_guard()
+	EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
+	EventBus.camera_shake_requested.emit(5.0)
+	EventBus.hit_stop_requested.emit(0.045)
+	_squash(Vector2(1.1, 0.9), 0.18)
+
+
+## strength 是含招式倍率、尚未±10%浮动的攻击强度；老三参调用安全兼容。
+## 只有完成举盾、正面且明确可挡的攻击才支付格挡费用并可能蓄力。
+func _resolve_guard_hit(amount: float, from_position: Vector2, context: Dictionary) -> float:
+	if (_guard_is_held() or guard_state == "counter") and (not TouchInput.guard_available or GameState.dialogue_open):
+		cancel_guard()
+		return amount
+	if guard_state == "counter":
+		cancel_guard()
+		return amount
+	if not _guard_is_held():
+		return amount
+	var incoming: Vector2 = context.get("incoming_direction", Vector2.ZERO)
+	if incoming == Vector2.ZERO and from_position != Vector2.INF:
+		incoming = from_position - global_position
+	var facing_dot := guard_direction.dot(incoming.normalized())
+	var arc_limit := cos(Skill.GUARD_HALF_ARC)
+	var frontal := incoming != Vector2.ZERO and \
+		(facing_dot >= arc_limit or is_equal_approx(facing_dot, arc_limit))
+	if guard_state != "guarding" or not frontal or not bool(context.get("blockable", true)):
+		cancel_guard()
+		return amount
+	var strength := maxf(0.0, float(context.get("strength", amount)))
+	var capacity := stats.guard_strength()
+	var cost := Skill.guard_hit_cost(minf(strength, capacity))
+	if current_mp < cost:
+		_break_guard()
+		return amount
+	current_mp -= cost
+	EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
+	_push_skills()
+	if strength > capacity:
+		var overflow := Skill.guard_overflow_damage(amount, strength, capacity)
+		_break_guard()
+		return overflow
+	guard_charge = mini(Skill.GUARD_MAX_CHARGE, guard_charge + 1)
+	_guard_charge_age = 0.0
+	_guard_feedback.impact(false)
+	_play_guard_sound()
+	_push_guard()
+	_squash(Vector2(0.95, 1.05), 0.11)
+	EventBus.camera_shake_requested.emit(2.0)
+	EventBus.hit_stop_requested.emit(0.025)
+	return 0.0
+
+
+## 轻金属接盾节流，破防/满蓄力使用现成重金属音作高优先级提示。
+func _play_guard_sound(heavy := false) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	if not heavy and now - _guard_last_sound < Skill.GUARD_SOUND_INTERVAL:
+		return
+	_guard_last_sound = now
+	SfxManager.play("heavy" if heavy else "hit")
+
+
+func _start_guard_counter(charge: int, direction: Vector2) -> void:
+	guard_state = "counter"
+	_counter_charge = clampi(charge, 1, Skill.GUARD_MAX_CHARGE)
+	if _counter_charge == Skill.GUARD_MAX_CHARGE:
+		_play_guard_sound(true)
+	_attack_cooldown = maxf(_attack_cooldown, ATTACK_WINDOW + ATTACK_ANIM_LINGER)
+	_attack_timer = ATTACK_WINDOW
+	_attack_anim_linger = ATTACK_WINDOW + ATTACK_ANIM_LINGER
+	_hit_this_swing.clear()
+	_obstacles_hit_this_swing.clear()
+	_combo = 3 if _counter_charge == Skill.GUARD_MAX_CHARGE else 1
+	_combo_timer = 0.0
+	_attack_direction = direction.normalized()
+	_attack_half_arc = ATTACK_HALF_ARC
+	_attack_elapsed = 0.0
+	_attack_pose = (&"up" if direction.y < 0.0 else &"down") if absf(direction.y) >= absf(direction.x) \
+		else (&"left" if direction.x < 0.0 else &"right")
+	_attack_visual_flip = visual.flip_h if absf(direction.x) <= 0.1 else direction.x < 0.0
+	visual.flip_h = _attack_visual_flip
+	_attack_sweep_sign = -1.0 if _attack_visual_flip else 1.0
+	_attack_previous_angle = -_attack_half_arc * _attack_sweep_sign
+	_hurt_anim_timer = 0.0
+	var anim := _attack_animation()
+	SpritePlayback.restart(visual, anim, SpritePlayback.speed_for_window(
+		visual.sprite_frames, anim, ATTACK_WINDOW + ATTACK_ANIM_LINGER))
+	visual.material = null
+	attack_shape.disabled = true
+	attack_hitbox.position = _attack_direction * ATTACK_REACH
+	attack_hitbox.rotation = _attack_direction.angle()
+	_update_weapon_visual()
+	_squash(Vector2(1.1, 0.9), 0.16)
+	_push_guard()
 
 
 func _on_leveled_up_fx(_level: int, _levels: int) -> void:
@@ -244,12 +532,13 @@ func can_begin_town_return() -> bool:
 	return not _is_dead and not GameState.dialogue_open and _dash_timer <= 0.0 \
 		and _attack_timer <= 0.0 and _attack_anim_linger <= 0.0 \
 		and _hurt_iframes <= 0.0 and _knockback.length_squared() < 1.0 \
-		and _move_vel.length_squared() < 1.0
+		and _move_vel.length_squared() < 1.0 and guard_state == "idle"
 
 
 ## 安全传送：只清移动/动作残留，不返还资源、冷却或增益；世界负责目的地校验和保存。
 func teleport_to(destination: Vector2) -> void:
 	activity_serial += 1
+	cancel_guard(true, true)
 	TouchInput.reset()
 	velocity = Vector2.ZERO
 	_move_vel = Vector2.ZERO
@@ -294,6 +583,9 @@ func teleport_to(destination: Vector2) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if not _is_dead:
+		_poll_guard_input()
+		_tick_guard(delta)
 	_update_anim(delta)
 	_attack_cooldown = maxf(0.0, _attack_cooldown - delta)
 	_dash_cd = maxf(0.0, _dash_cd - delta)
@@ -310,11 +602,17 @@ func _physics_process(delta: float) -> void:
 	_attack_buffer_timer = maxf(0.0, _attack_buffer_timer - delta)
 	_protect_timer = maxf(0.0, _protect_timer - delta)
 	_hurt_iframes = maxf(0.0, _hurt_iframes - delta)
-	if _combo_timer <= 0.0:
+	if _combo_timer <= 0.0 and guard_state != "counter":
 		_combo = 0
 	if _attack_timer > 0.0 or _attack_anim_linger > 0.0:
 		_advance_attack(delta)
 	_attack_anim_linger = maxf(0.0, _attack_anim_linger - delta)
+	if guard_state == "counter" and _attack_anim_linger <= 0.0:
+		_counter_charge = 0
+		_combo = 0
+		_combo_timer = 0.0
+		guard_state = "idle"
+		_push_guard()
 	_hurt_anim_timer = maxf(0.0, _hurt_anim_timer - delta)
 
 	if _is_dead:
@@ -388,16 +686,22 @@ func _physics_process(delta: float) -> void:
 		dir = TouchInput.move_vector
 	# HeroMotion v2：目标速度经加减速逼近（起停重量感），击退仍直接叠加；
 	# 起步/反向转身按加速走（跟手），松手滑步按减速走（利落）
-	var target_vel := dir * stats.move_speed()
+	var move_mult := Skill.GUARD_MOVE_MULT if _guard_is_held() else 1.0
+	if guard_state == "broken":
+		move_mult = 0.0
+	var target_vel := dir * stats.move_speed() * move_mult
 	var accel := MOVE_DECEL
 	if target_vel.length() > _move_vel.length() or target_vel.dot(_move_vel) < 0.0:
 		accel = MOVE_ACCEL
 	_move_vel = _move_vel.move_toward(target_vel, accel * delta)
 	velocity = _move_vel + _knockback
 	_knockback = _knockback.move_toward(Vector2.ZERO, KNOCKBACK_DECAY * delta)
-	if dir != Vector2.ZERO:
+	if dir != Vector2.ZERO and guard_state != "broken":
 		activity_serial += 1
 		facing = dir.normalized()
+		if _guard_is_held():
+			guard_direction = facing
+			_guard_feedback.show_state(guard_state, guard_direction, guard_charge)
 		# 素材朝右基准（AI 英雄与骑士包一致）：左右移动翻转即可，攻击方向由挥砍特效表达
 		if absf(dir.x) > 0.1 and _attack_anim_linger <= 0.0:
 			visual.flip_h = dir.x < 0.0
@@ -468,14 +772,19 @@ func _update_anim(delta := 0.0) -> void:
 		# 死亡由 _die 一次性定姿/播放，不能逐帧重启或回退到活体 idle。
 		return
 	var want := "idle"
-	visual.material = _weapon_body_material if _attack_anim_linger > 0.0 else null
+	visual.material = null
 	if _attack_timer <= 0.0 and _attack_anim_linger <= 0.0 and absf(facing.x) > 0.1:
 		visual.flip_h = facing.x < 0.0
 	if _attack_timer > 0.0 or _attack_anim_linger > 0.0:
-		# 所有方向共用去掉原生举剑的 Guard 身体，再叠加同源独立刀锋；
-		# 不让侧向 Attack1/2 烘焙弧光与上/下方向、墙面裁切相互矛盾。
+		# 播放由原画动作重组的完整身体：蓄势、出手、收势都有肩/盾/重心变化；
+		# 方向刀剑单独依附当前手部，不把静态 Guard 冒充挥砍。
 		want = _attack_animation()
 		visual.flip_h = _attack_visual_flip
+	elif _guard_is_held() and visual.sprite_frames.has_animation("hurt"):
+		# hurt 映射的就是 TS Warrior_Guard 原画；保持持盾姿势而非循环受击。
+		want = "hurt"
+	elif guard_state == "broken" and visual.sprite_frames.has_animation("hurt"):
+		want = "hurt"
 	elif _hurt_anim_timer > 0.0 and visual.sprite_frames.has_animation("hurt"):
 		# 受击段：不出招时压过走/站让"挨打"可读；不打断攻击窗（出招优先）
 		want = "hurt"
@@ -493,6 +802,10 @@ func _update_anim(delta := 0.0) -> void:
 	# 重启会闪回首帧（出招姿势），linger 收招段正是要停在读招帧上
 	if visual.animation != want or (visual.sprite_frames.get_animation_loop(want) and not visual.is_playing()):
 		visual.play(want)
+	if _guard_is_held() and want == "hurt":
+		visual.pause()
+		visual.frame = 0
+		visual.frame_progress = 0.0
 	var walking := want.begins_with("walk")
 	if walking:
 		# 步频同步：speed_scale=1 时步频 = 12fps/3 帧·步 = 4 步/s（步幅 40px ⇒ 160px/s）；
@@ -549,12 +862,18 @@ func _squash(amount: Vector2, dur := 0.16) -> void:
 ## 下一帧再取它就会累计误差，导致素材与阴影、碰撞和技能原点越走越远。
 func _snap_visual_to_body() -> void:
 	visual.global_position = to_global(_visual_anchor).round()
+	if _weapon_visual != null and _weapon_visual.active:
+		_weapon_visual.grip = _attack_hand_position()
+		_clip_weapon_blade()
+		_weapon_visual.queue_redraw()
 
 
 ## 冲刺：消耗 MP，朝当前朝向高速位移，期间无敌（躲冲锋/重击/弹幕）；
 ## 同时取消攻击后摇并给下一击增伤——走位输出循环的技巧上限
 func _try_dash() -> void:
 	activity_serial += 1
+	if guard_state == "broken" or _is_dead:
+		return
 	# 对话气泡开着时冲刺键 = 关闭对话（不消耗蓝不位移）
 	if GameState.dialogue_open:
 		EventBus.dialogue_action.emit("decline")
@@ -563,6 +882,8 @@ func _try_dash() -> void:
 		return
 	if current_mp < Skill.DASH_COST:
 		return
+	if guard_state != "idle" or guard_charge > 0:
+		cancel_guard()
 	current_mp -= Skill.DASH_COST
 	EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
 	_push_skills()
@@ -619,7 +940,9 @@ func _spawn_afterimage() -> void:
 	ghost.scale = visual.scale
 	ghost.flip_h = visual.flip_h
 	ghost.rotation = visual.rotation  # 冲刺前倾姿态带进残影
-	ghost.global_position = global_position
+	ghost.offset = visual.offset
+	ghost.material = null  # 池化残影不能继承旧去剑遮罩；新动作已是离线完整身体层
+	ghost.global_position = visual.global_position
 	ghost.modulate = Color(0.6, 0.8, 1.0, 0.45)
 	var tween := ghost.create_tween()
 	ghost.set_meta("vfx_tween", tween)
@@ -630,6 +953,8 @@ func _spawn_afterimage() -> void:
 ## 重击：消耗 MP，圆形 AOE 高倍率伤害 + 冲击环特效 + 震屏顿帧
 func _try_heavy_attack() -> void:
 	activity_serial += 1
+	if guard_state != "idle":
+		return
 	if _heavy_cd > 0.0 or current_mp < Skill.HEAVY_COST or _is_dead:
 		return
 	_heavy_cd = Skill.HEAVY_COOLDOWN * stats.cooldown_mult()
@@ -668,6 +993,8 @@ func _try_heavy_attack() -> void:
 ## 法弹：消耗 MP，朝当前朝向射出智力加成弹体
 func _try_cast_bolt() -> void:
 	activity_serial += 1
+	if guard_state != "idle":
+		return
 	if _bolt_cd > 0.0 or current_mp < Skill.BOLT_COST or _is_dead:
 		return
 	_bolt_cd = Skill.BOLT_COOLDOWN * stats.cooldown_mult()
@@ -684,6 +1011,8 @@ func _try_cast_bolt() -> void:
 ## 满血时拦截——白扣 25 MP + 8s 冷却在触屏端是误触重罚
 func _try_heal() -> void:
 	activity_serial += 1
+	if guard_state != "idle":
+		return
 	if _heal_cd > 0.0 or current_mp < Skill.HEAL_COST or _is_dead \
 			or current_hp >= stats.max_hp() - 0.5:
 		return
@@ -729,6 +1058,8 @@ func use_item(id: String) -> void:
 ## 持续期间金色光泽标识，与冷却共同约束不可连开
 func _try_empower() -> void:
 	activity_serial += 1
+	if guard_state != "idle":
+		return
 	if _empower_cd > 0.0 or _empower_timer > 0.0 \
 			or current_mp < Skill.EMPOWER_COST or _is_dead:
 		return
@@ -785,17 +1116,21 @@ func _process(delta: float) -> void:
 		return
 	# 自然回复（策划：生命/魔法可自然回复）
 	current_hp = minf(stats.max_hp(), current_hp + stats.hp_regen_per_sec() * delta)
-	current_mp = minf(stats.max_mp(), current_mp + stats.mp_regen_per_sec() * delta)
+	if not _guard_is_held():
+		current_mp = minf(stats.max_mp(), current_mp + stats.mp_regen_per_sec() * delta)
 	_hud_accum += delta
 	if _hud_accum >= 0.25:
 		_hud_accum = 0.0
 		EventBus.player_hp_changed.emit(current_hp, stats.max_hp())
 		EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
 		_push_skills()
+		_push_guard()
 
 
 func _try_attack() -> void:
 	activity_serial += 1
+	if guard_state != "idle":
+		return
 	if _is_dead:
 		return
 	# 对话气泡开着时攻击键 = 确认（接单/继续），不挥刀不消耗冷却
@@ -827,18 +1162,19 @@ func _try_attack() -> void:
 	_attack_direction = facing.normalized()
 	_attack_half_arc = minf(deg_to_rad(78.0), ATTACK_HALF_ARC + stats.sword_arc_bonus())
 	_attack_elapsed = 0.0
-	_attack_previous_angle = -_attack_half_arc
 	_attack_pose = (&"up" if facing.y < 0.0 else &"down") if absf(facing.y) >= absf(facing.x) \
 		else (&"left" if facing.x < 0.0 else &"right")
 	# 只锁精灵朝向，不锁移动/下一招的逻辑 facing；侧向素材必须与吸附后的出刀一致。
 	_attack_visual_flip = visual.flip_h if absf(facing.x) <= 0.1 else facing.x < 0.0
 	visual.flip_h = _attack_visual_flip
+	_attack_sweep_sign = (-1.0 if _combo == 2 else 1.0) * (-1.0 if _attack_visual_flip else 1.0)
+	_attack_previous_angle = -_attack_half_arc * _attack_sweep_sign
 	_hurt_anim_timer = 0.0
 	var anim := _attack_animation()
 	if visual.sprite_frames.has_animation(anim):
 		SpritePlayback.restart(visual, anim, SpritePlayback.speed_for_window(
 			visual.sprite_frames, anim, ATTACK_WINDOW + ATTACK_ANIM_LINGER))
-	visual.material = _weapon_body_material
+	visual.material = null
 	attack_shape.disabled = true
 	attack_hitbox.position = _attack_direction * ATTACK_REACH
 	attack_hitbox.rotation = _attack_direction.angle()
@@ -848,9 +1184,6 @@ func _try_attack() -> void:
 
 ## 同名连击/单攻击素材回退共用选择器；启动事件与状态映射必须使用同一段。
 func _attack_animation() -> StringName:
-	# Warrior 没有上下攻击帧；所有方向共享去剑 Guard 身体，刀锋拥有独立轨迹。
-	if visual.sprite_frames.has_animation(&"hurt"):
-		return &"hurt"
 	var anim := StringName("attack" + str(clampi(_combo, 1, 3)))
 	return anim if visual.sprite_frames.has_animation(anim) else &"attack"
 
@@ -862,13 +1195,12 @@ func _advance_attack(delta: float) -> void:
 		return
 	_attack_elapsed += delta
 	if _attack_timer > 0.0 and _attack_elapsed >= ATTACK_WINDUP:
-		var progress := clampf((_attack_elapsed - ATTACK_WINDUP) /
-			(ATTACK_WINDOW - ATTACK_WINDUP), 0.0, 1.0)
-		var angle := lerpf(-_attack_half_arc, _attack_half_arc, progress)
+		var progress := _swing_progress()
+		var angle := lerpf(-_attack_half_arc, _attack_half_arc, progress) * _attack_sweep_sign
 		# 极窄首段仍需有效三角形；不在蓄势期提前开启整个扇形。
-		if angle > _attack_previous_angle + 0.0001:
+		if absf(angle - _attack_previous_angle) > 0.0001:
 			var polygon := PackedVector2Array([Vector2(-ATTACK_REACH, 0.0)])
-			var steps := maxi(1, ceili((angle - _attack_previous_angle) / deg_to_rad(6.0)))
+			var steps := maxi(1, ceili(absf(angle - _attack_previous_angle) / deg_to_rad(6.0)))
 			for i in range(steps + 1):
 				var sample_angle := lerpf(_attack_previous_angle, angle, float(i) / steps)
 				polygon.append(Vector2.RIGHT.rotated(sample_angle) * ATTACK_REACH - Vector2(ATTACK_REACH, 0.0))
@@ -889,29 +1221,75 @@ func _advance_attack(delta: float) -> void:
 	_update_weapon_visual()
 
 
+## 蓄势后迅速出手，末端缓收；显示与扫掠查询消费同一个时相。
+func _swing_progress() -> float:
+	var linear := clampf((_attack_elapsed - ATTACK_WINDUP) /
+		(ATTACK_WINDOW - ATTACK_WINDUP), 0.0, 1.0)
+	return 1.0 - pow(1.0 - linear, 3.0)
+
+
+func _on_attack_frame_changed() -> void:
+	if _weapon_visual != null and _attack_anim_linger > 0.0:
+		_update_weapon_visual()
+
+
+func _attack_hand_position() -> Vector2:
+	var grips: Dictionary = visual.sprite_frames.get_meta("attack_grips", {})
+	var points: Array = grips.get(str(visual.animation), [])
+	if points.is_empty():
+		return Vector2.ZERO
+	var hand: Vector2 = points[mini(visual.frame, points.size() - 1)]
+	if visual.flip_h:
+		hand.x = -hand.x
+	# 原画手点与身体同缩放/偏移/像素吸附，不能只从逻辑原点转一根长棍。
+	return _weapon_visual.to_local(visual.to_global(hand + visual.offset))
+
+
 func _update_weapon_visual() -> void:
 	if _attack_elapsed >= ATTACK_WINDOW + ATTACK_ANIM_LINGER or _is_dead:
 		_weapon_visual.clear()
 		return
-	var progress := clampf((_attack_elapsed - ATTACK_WINDUP) /
-		(ATTACK_WINDOW - ATTACK_WINDUP), 0.0, 1.0)
-	var angle := lerpf(-_attack_half_arc, _attack_half_arc, progress)
+	var progress := _swing_progress()
+	var angle := lerpf(-_attack_half_arc, _attack_half_arc, progress) * _attack_sweep_sign
 	var damaging := _attack_elapsed >= ATTACK_WINDUP and _attack_elapsed < ATTACK_WINDOW
 	var points := PackedVector2Array()
-	if damaging:
-		var from := maxf(-_attack_half_arc, angle - deg_to_rad(42.0))
-		for i in 9:
-			var sample_angle := lerpf(from, angle, float(i) / 8.0)
+	if _attack_elapsed >= ATTACK_WINDUP:
+		var travel := minf(_attack_half_arc * 2.0 * progress, deg_to_rad(100.0))
+		var from := angle - travel * _attack_sweep_sign
+		for i in 17:
+			var sample_angle := lerpf(from, angle, float(i) / 16.0)
 			var dir := _attack_direction.rotated(sample_angle)
 			points.append((dir * _weapon_visible_reach(dir) / 2.0).round() * 2.0)
 	var opacity := 1.0
 	if _attack_elapsed < ATTACK_WINDUP:
-		opacity = 0.65
+		# 小幅反向蓄势，刀光和伤害尚未出现；出手后才扫过权威角度。
+		angle -= sin(PI * _attack_elapsed / ATTACK_WINDUP) * 0.18 * _attack_sweep_sign
 	elif _attack_elapsed >= ATTACK_WINDOW:
 		opacity = 1.0 - (_attack_elapsed - ATTACK_WINDOW) / ATTACK_ANIM_LINGER
 	_weapon_visual.show_swing(_attack_direction, angle,
 		_weapon_visible_reach(_attack_direction.rotated(angle)), points, damaging,
-		opacity, _empower_timer > 0.0, _combo)
+		opacity, _counter_charge > 0 or _empower_timer > 0.0, _combo, _attack_hand_position(),
+		str(visual.sprite_frames.get_meta("hero_skin", "blue")), _attack_elapsed < ATTACK_WINDUP)
+	_clip_weapon_blade()
+
+
+## 握点随原画手部移动，不能仅用逻辑原点射线的长度裁切偏移后的刀。
+## 以实际握点→刀尖的10px包络扫墙，连护手/刀宽都不得越过墙面。
+func _clip_weapon_blade() -> void:
+	var hand: Vector2 = _weapon_visual.grip
+	var wanted: Vector2 = _weapon_visual.desired_tip()
+	var query := PhysicsShapeQueryParameters2D.new()
+	query.shape = _weapon_clearance
+	query.transform = Transform2D(0.0, _weapon_visual.to_global(hand))
+	query.collision_mask = 1
+	query.exclude = [get_rid()]
+	var space := get_world_2d().direct_space_state
+	if not space.intersect_shape(query, 1).is_empty():
+		_weapon_visual.blade_tip = hand
+		return
+	query.motion = _weapon_visual.to_global(wanted) - query.transform.origin
+	var fractions := space.cast_motion(query)
+	_weapon_visual.blade_tip = hand.lerp(wanted, fractions[0])
 
 
 ## 墙体既挡伤害也裁短可见剑与弧；无穿墙命中或画面伸出去却打不到的长隐形刀。
@@ -996,6 +1374,8 @@ func _play_burst() -> void:
 func _take_environmental_damage(amount: float) -> void:
 	if _is_dead:
 		return
+	if _guard_is_held() or guard_state == "counter":
+		cancel_guard()
 	activity_serial += 1
 	current_hp = maxf(0.0, current_hp - amount)
 	if _hurt_tween != null and _hurt_tween.is_valid():
@@ -1012,13 +1392,25 @@ func _take_environmental_damage(amount: float) -> void:
 		_die()
 
 
-func take_damage(amount: float, from_position := Vector2.INF, source_name := "") -> void:
+func take_damage(amount: float, from_position := Vector2.INF, source_name := "",
+		attack_context: Dictionary = {}) -> bool:
 	if _is_dead:
-		return
+		return false
 	# 冲刺/重生保护/受击无敌帧：期间免疫一切伤害（群体同帧命中只结算第一下）
 	if _dash_timer > 0.0 or _protect_timer > 0.0 or _hurt_iframes > 0.0:
-		return
+		return false
+	# 已结算过的同一招不因多碰撞信号/反复架盾重复扣蓝或蓄力。
+	var attack_id := str(attack_context.get("attack_id", ""))
+	if attack_id != "" and _guard_seen_attacks.has(attack_id):
+		return false
+	if attack_id != "":
+		_guard_seen_attacks[attack_id] = true
+		if _guard_seen_attacks.size() > 128:
+			_guard_seen_attacks.erase(_guard_seen_attacks.keys()[0])
 	activity_serial += 1
+	amount = _resolve_guard_hit(amount, from_position, attack_context)
+	if amount <= 0.0:
+		return false
 	current_hp = maxf(0.0, current_hp - amount)
 	_hurt_iframes = HURT_IFRAME
 	# 出招时以白闪表达受击；不排队一段即将过期的 hurt 截断残片。
@@ -1048,10 +1440,13 @@ func take_damage(amount: float, from_position := Vector2.INF, source_name := "")
 	if current_hp <= 0.0:
 		_die()
 
+	return true
+
 
 func _die() -> void:
 	if _is_dead:
 		return
+	cancel_guard(true, true)
 	_is_dead = true
 	_weapon_visual.clear()
 	visual.material = null
@@ -1098,6 +1493,7 @@ func _die() -> void:
 
 
 func _respawn() -> void:
+	cancel_guard(true, true)
 	# 复活前再清一次触屏队列：死亡 2s 里 _physics_process 早退、无人消费，
 	# 狂点的攻击/技能会在复活第一帧全部兑现（蓝量蒸发 + CD 全开）——
 	# _die() 只清了死亡瞬间的旧队列，这里补上"死亡期间持续积压"的口子
@@ -1170,13 +1566,15 @@ func _on_attack_body_entered(body: Node) -> void:
 	if not _attack_has_line_of_sight((body as Node2D).global_position):
 		return
 	_hit_this_swing.append(body)
-	var mult := stats.sword_damage_mult()
-	if _combo == 3:
-		mult *= Skill.COMBO_HEAVY_MULT
-	if _dash_buff_timer > 0.0:
-		mult *= Skill.DASH_BUFF_MULT
-	if _empower_timer > 0.0:
-		mult *= Skill.EMPOWER_MULT
+	var is_counter := guard_state == "counter" and _counter_charge > 0
+	var mult := Skill.guard_counter_mult(_counter_charge) if is_counter else stats.sword_damage_mult()
+	if not is_counter:
+		if _combo == 3:
+			mult *= Skill.COMBO_HEAVY_MULT
+		if _dash_buff_timer > 0.0:
+			mult *= Skill.DASH_BUFF_MULT
+		if _empower_timer > 0.0:
+			mult *= Skill.EMPOWER_MULT
 	var monster := body as MonsterBase
 	var effective := false
 	if monster != null and monster.inst != null:
@@ -1190,10 +1588,10 @@ func _on_attack_body_entered(body: Node) -> void:
 				"flame" if stats.equip_element() == "fire" else "frost",
 				monster.global_position, 1.1)
 	body.take_damage(CombatMath.physical_damage(stats.physical_attack() * mult),
-			global_position, _combo == 3, stats.knockback_mult(), effective)
+			global_position, (_counter_charge == Skill.GUARD_MAX_CHARGE if is_counter else _combo == 3), stats.knockback_mult(), effective)
 	# 噬血被动：命中吸血；武装强化期间额外回复最大生命 3%（连击越快续航越强）
-	var lifesteal := stats.lifesteal_per_hit()
-	if _empower_timer > 0.0:
+	var lifesteal := 0.0 if is_counter else stats.lifesteal_per_hit()
+	if not is_counter and _empower_timer > 0.0:
 		lifesteal += stats.max_hp() * Skill.EMPOWER_HEAL_FRAC
 	if lifesteal > 0.0:
 		current_hp = minf(stats.max_hp(), current_hp + lifesteal)
@@ -1203,7 +1601,7 @@ func _on_attack_body_entered(body: Node) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	if now - _last_hit_stop >= 0.2:
 		_last_hit_stop = now
-		EventBus.hit_stop_requested.emit(0.05 if _combo == 3 else 0.035)
+		EventBus.hit_stop_requested.emit(0.05 if _combo == 3 or (is_counter and _counter_charge == Skill.GUARD_MAX_CHARGE) else 0.035)
 
 
 ## 挥砍对障碍的射线结算（世界 v5）：Area2D 的 body_entered 对"先于本次挥砍
@@ -1271,6 +1669,7 @@ func _push_skills() -> void:
 
 
 func _push_hud() -> void:
+	_push_guard()
 	EventBus.player_hp_changed.emit(current_hp, stats.max_hp())
 	EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
 	EventBus.player_progress_changed.emit(

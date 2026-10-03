@@ -19,6 +19,7 @@ iOS 优先的 2D 动作游戏：ACT 无锁定战斗 + 角色养成 + **怪物生
 完整回归入口（Python 3 标准库；自动导入资源、隔离启动夹具和存档、保留每项日志）：
 ```bash
 GODOT="/path/to/Godot" python3 Code/tests/run_headless.py
+# 架盾/反击定向：--only guard_counter,guard_controls,hero_slash_motion,directional_attack,mobile_controls
 # 可用 --only save,save_lifecycle,ui_flow 或 --log-dir /tmp/hotw-tests 做定向检查
 ```
 此入口运行既有八测、三组生命周期回归（弹幕池、世界持久化、独立进程存档）四组表现层回归、五组基础玩法回归及四组玩法选择回归，及五组实机交互回归，共二十九测。
@@ -46,6 +47,7 @@ HOTW_TEST_SAVE="res://tests/fixtures/test_save.json" "$GODOT" --headless --path 
 "$GODOT" --headless --path Code -s tools/generate_obstacle_tileset.gd             # 障碍瓦片集 data/{obstacle,nav}_tileset.tres（改 ObstacleField 的 KIND_INFO/类型表后必须重跑；贴图内嵌 tres 不产 PNG）
 "$GODOT" --headless --path Code -s tools/obstacle_probe.gd                        # 障碍覆盖率探针（调 RECIPES 阈值后看各群系实测%；sim_test 分带守闸）
 "$GODOT" --headless --path Code -s tools/slice_spritesheets.gd                    # ★ 全家切帧（双风格：STYLE=ts 为 v6 Tiny Swords 现行真源/na 为 v5 回滚线；改表后重跑，tres 自包含免 import）
+"$GODOT" --headless --path Code -s tools/generate_warrior_motion.gd                 # 英雄身体分层：重切 Tiny Swords 帧后再跑，源画姿势/手点/补足靴子；-- --check 只验资源一致性（CI覆盖）
 "$GODOT" --headless --path Code -s tools/generate_fx.gd                             # TS 色板特效合成（v6：slash 弧光/闪光4色/光束/光柱/散射/法弹球 → assets/ts/fx_generated，切帧表消费）
 "$GODOT" --headless --path Code -s tools/bake_structures.gd                         # v6 烘焙全家（TS 建筑/宝箱/箭矢/14 件世界装饰/41 件 UI 图标（含怪物条框 monster_bar）/血条贴图/室内件 → ts/structures_baked + assets/deco + ts/icons）
 "$GODOT" --headless --path Code -s tools/numbers_audit.gd                        # 数值全盘量化审计（构筑/对刀/经济/生态/寿命基线表）
@@ -68,7 +70,7 @@ scripts/
   ecology/     ★ 生态模拟纯逻辑层（EcologySim/SimRegion/MonsterInstance/SpeciesData/SpeciesCatalog/CombatBandMath 目标带/EconomyMath 经济/BiomeMap 世界群系结构（种子参数化）/ObstacleField 障碍场/LandmarkRegistry 地标——22 物种）
   character/   角色养成数据（CharacterStats）
   combat/      战斗公式（CombatMath 静态方法）
-  player/      玩家控制器（普攻+冲刺无敌帧；HeroMotion v2 动作系统：起停加减速/步频同步/锁相bob/冲刺前倾）
+  player/      玩家控制器（普攻+冲刺无敌帧+按住F/盾钮架盾反击；HeroMotion v2 动作系统：起停加减速/步频同步/锁相bob/冲刺前倾）
   monsters/    MonsterBase 状态机基类（含 _update_anim 状态→帧动画映射/ShadowBlob 落影/挤压回弹）+ 六 AI 原型子类(melee_swarm/splitter/charger/ranged/soldier/guardian) + shadow_blob + projectile + 血条
   ui/          HUD、虚拟摇杆、小地图（世界总览纹理 + 实时彩点）
   main/        game_world：世界装配 + 模拟桥接 + 区域/地标 Area2D 检测 + 迷雾揭示 + 表现层流式生成（怪物/巢穴按玩家距离进出）+ 飘血；tutorial：引导/生态事件播报；world_deco：按地表块撒放装饰；vision_lighting：昼夜压暗+提灯阴影；quest_manager：地标 NPC 委托（狩猎/捣巢/探索，真源 GameState.quests）；item_catalog：物品表（玩法 v7 P0，id→名称/图标/类型，desc 动态拼 CharacterStats 比例；价格与掉落在 EconomyMath、库存与存档 v6 在 GameState.inventory）；terrain/：terrain_painter 分块绘制 + chunk_streamer 流式加载 + obstacle_tile_layer 障碍瓦片（视觉+StaticBody2D 碰撞） + nav_tile_layer 导航瓦片
