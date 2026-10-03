@@ -29,7 +29,7 @@ jobs:
           - suite: flows
             tests: smoke,save,save_lifecycle,combat,ui_flow,projectile,world,pacing
           - suite: gameplay
-            tests: gameplay_combat,gameplay_ecology,gameplay_world,gameplay_equipment,gameplay_navigation
+            tests: gameplay_combat,gameplay_ecology,gameplay_world,gameplay_equipment,gameplay_navigation,hunt_eligibility
           - suite: choices
             tests: boss_age_balance,gameplay_tasks,ecology_feedback,gameplay_choices_ui
           - suite: interaction
@@ -38,6 +38,8 @@ jobs:
             tests: directional_attack,weapon_effects,terrain_coherence,exploration_map,exploration_lifecycle,knockback_response
     steps:
       - uses: actions/checkout@v4
+      - name: Verify complete test matrix
+        run: python3 Code/tests/validate_ci_coverage.py
       - name: Install official Godot 4.7
         shell: bash
         run: |

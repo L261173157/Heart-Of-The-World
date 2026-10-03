@@ -11,6 +11,8 @@ extends RefCounted
 ## 世界边长与斑块名义格距（BiomeMap 是结构真源，此处仅别名转发；
 ## CELL_SIZE 需函数计算，const 不允许调用函数，故为 static func）
 const WORLD_SIZE := BiomeMap.WORLD_SIZE
+## 家园营地实际范围：回血/BGM 与巡猎安全区共用。
+const HOME_CAMP_RADIUS := 420.0
 
 
 static func cell_size() -> Vector2:
