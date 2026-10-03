@@ -19,14 +19,16 @@ const S_CORPSE := 5
 
 const PATROL_RADIUS := 60.0
 const PATROL_SPEED := 40.0
-## 巡猎接近（斑块级流式生成配套）：玩家进斑块时实例在数千米外生成，
-## 侦测圈外的个体以巡猎步速主动逼近到「侦测圈外 20%（且至少可见）」处
-## 驻足转常规巡逻——跑图必与斑块种群相遇，且是渐进包围而非贴脸围殴。
+## 巡猎接近：同区且距离有效的户外个体慢速接近玩家，进入侦测圈后
+## 交给原有战斗状态机。流式预载/玩家走近均可激活，不依赖重新生成节点。
 ## 这是 AI 行为：实例 spawn_pos/锚点不漂移，巢穴与据点语义不变
 const HUNT_SPEED_MULT := 0.7
 ## 巡猎触发距离：只逼近玩家周边这一半径内的个体，更远的原地巡逻等玩家
-## 走近——同时围上来的永远只有个位数，跑图压力渐进而不至于全斑围殴
+## 走近；实际节点范围仍由世界流式窗口约束，不召集远方未加载个体。
 const HUNT_MAX_DIST := 24000.0
+## 流式预载节点会跨越玩家换区/走近时机；巡猎资格必须定期重算，不能只在
+## setup 判断一次。区域/室内采样每只最多 2Hz，近档与 LOD 远档同口径。
+const HUNT_RECHECK_INTERVAL := 0.5
 const MIGRATE_ARRIVE_DIST := 24.0
 const KNOCKBACK_DECAY := 900.0
 ## 通用近战前摇：出刀前短暂站定预警（此前火把哥布林/骷髅兵冷却一到瞬间结算，
@@ -129,8 +131,9 @@ var _knockback_rearm := 0.0
 var _patrol_target := Vector2.ZERO
 var _patrol_wait := 0.0
 var _patrol_target_valid := false
-## 巡猎接近进行中（setup 时按玩家距离判定；进入侦测圈/驻足后清除）
+## 巡猎接近进行中；只影响巡逻，不覆写仇恨、逃跑、迁徙或子类出招状态。
 var _hunt_mode := false
+var _hunt_recheck_remaining := 0.0
 ## 受击闪红 tween（写入新的闪红/技能色前先杀旧的，避免旧 tween 把颜色拉回去）
 var _flash_tween: Tween
 ## 按需创建的白闪/接触火花组件；不参与角色位置或动作状态。
@@ -172,7 +175,13 @@ func setup(p_inst: MonsterInstance) -> void:
 				away = Vector2.UP
 			offset = away.normalized() * 42.0 \
 					+ Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0))
-		global_position = inst.spawn_pos + offset
+		# 据点可走不代表随机偏移也可走：用缩放后真实形状的外接圆校验。
+		var shape: Shape2D = $CollisionShape2D.shape
+		var footprint := shape.get_rect().size.length() * 0.5 * body_k() if shape != null else 16.0
+		var candidate := inst.spawn_pos + offset
+		if ObstacleField.blocks(candidate, footprint) or ObstacleField.liquid_kind_at(candidate) != "":
+			candidate = inst.spawn_pos
+		global_position = candidate
 	elif region != null:
 		var half := region.size * 0.45
 		anchor = region.center + Vector2(randf_range(-half.x, half.x), randf_range(-half.y, half.y))
@@ -236,21 +245,8 @@ func setup(p_inst: MonsterInstance) -> void:
 		var layer := 1 << (absi(hash(inst.species.species_name)) % 30)
 		_nav.avoidance_layers = layer
 		_nav.avoidance_mask = layer
-	# 巡猎接近判定：斑块级流式下个体常在数千米外生成，侦测圈外的非 Boss
-	# 个体主动逼近（Boss 盘踞斑块中心不巡猎）。只巡猎「玩家当前所在斑块」
-	# 的个体——邻接斑块生成的原地巡逻（玩家跨斑时才触发），避免邻斑怪群
-	# 跨斑围殴把遭遇密度推到失控。stream_all 全量生成的测试场景同样受
-	# 同斑判定约束，近处个体由距离判定天然豁免
-	if not inst.species.is_boss:
-		var player0 := _get_player()
-		var in_player_patch := false
-		if player0 != null and player0.visible and WorldSim.sim != null:
-			var player_region: SimRegion = WorldSim.sim.region_of_point(player0.global_position)
-			in_player_patch = player_region != null and player_region.id == inst.region_id
-		_hunt_mode = in_player_patch \
-				and global_position.distance_to(player0.global_position) \
-						> inst.species.detect_radius * 1.5 \
-				and global_position.distance_to(player0.global_position) <= HUNT_MAX_DIST
+	_refresh_hunt_mode(_get_player())
+	_hunt_recheck_remaining = HUNT_RECHECK_INTERVAL
 
 
 func _exit_tree() -> void:
@@ -321,6 +317,44 @@ func _get_player() -> Node2D:
 	return _player_ref
 
 
+## 巡猎唯一资格入口：消费模拟归属与实际玩家位置，不改写实例/据点。
+## 已接敌后的近身仇恨和各原型出招仍由原状态机管理，不借巡猎扩大追击范围。
+func _can_hunt(player: Node2D) -> bool:
+	if inst == null or not inst.is_alive or state != S_PATROL \
+			or inst.species.is_boss or inst.species.ambient \
+			or player == null or not player.visible or WorldSim.sim == null:
+		return false
+	# 死亡动画前段仍 visible，不能等淡出才停止巡猎。
+	if player is Player and (player._is_dead or player.current_hp <= 0.0):
+		return false
+	var pos := player.global_position
+	# 营地语义与回血/BGM 共用 420px 边界；1200px 的 SPAWN_CLEAR 仅是
+	# 障碍净空，不能拿来禁止镇外巡猎，否则正常步行会错过第一批遭遇。
+	if ObstacleField.interior_index_at(pos) >= 0 \
+			or pos.distance_squared_to(WorldConfig.spawn_pos()) \
+					<= WorldConfig.HOME_CAMP_RADIUS * WorldConfig.HOME_CAMP_RADIUS:
+		return false
+	var distance_sq := global_position.distance_squared_to(pos)
+	if distance_sq > HUNT_MAX_DIST * HUNT_MAX_DIST:
+		return false
+	var region := WorldSim.sim.region_of_point(pos)
+	if region == null or region.id != inst.region_id:
+		return false
+	# 起步保留原来的 1.5×侦测距离；已经巡猎的个体继续走到侦测圈，由
+	# _patrol 自然转入追击。否则定期重算会在圈外反复撤销，永远无法接敌。
+	var start_distance := inst.species.detect_radius * 1.5
+	return _hunt_mode or distance_sq > start_distance * start_distance
+
+
+func _refresh_hunt_mode(player: Node2D) -> void:
+	var was_hunting := _hunt_mode
+	_hunt_mode = _can_hunt(player)
+	if was_hunting and not _hunt_mode and state == S_PATROL:
+		_patrol_target_valid = false
+		_patrol_wait = 0.0
+		velocity = Vector2.ZERO
+
+
 ## 体型表现（分裂子代缩小）；子类可扩展（如赤炎小魔的果冻脉动在此基础上叠加）
 func _apply_size_visual() -> void:
 	# 像素稳定：最终渲染缩放取整（非整数缩放=像素行宽窄交替，边缘毛刺闪动的
@@ -388,6 +422,11 @@ func _physics_process(delta: float) -> void:
 	if profiling:
 		_tf = Time.get_ticks_usec()
 	var player := _get_player()
+	# 在 LOD 跳帧前按真实 delta 计时，避免远近档切换改变重算周期。
+	_hunt_recheck_remaining -= delta
+	if _hunt_recheck_remaining <= 0.0:
+		_refresh_hunt_mode(player)
+		_hunt_recheck_remaining = HUNT_RECHECK_INTERVAL
 	# LOD 远档：屏外常规状态（巡逻含巡猎/追击/迁徙）10Hz 降频处理；
 	# 攻击/逃跑/子类扩展状态（>=10）与近圈个体逐位走原路径
 	if state != S_ATTACK and state != S_FLEE and state < 10 \
@@ -795,6 +834,7 @@ func on_migrate(to_region_id: String, p_dest := Vector2.INF) -> void:
 	var dir := target - global_position
 	anchor = global_position + (dir.normalized() * 900.0 if dir.length() > 1.0 else dir)
 	state = S_MIGRATING
+	_hunt_mode = false
 
 
 ## 受击求援定向派发：只遍历该物种注册的节点，无支援行为的物种零成本跳过
@@ -827,6 +867,7 @@ func on_sim_death() -> void:
 	if state == S_CORPSE:
 		return
 	state = S_CORPSE
+	_hunt_mode = false
 	velocity = Vector2.ZERO
 	_knockback = Vector2.ZERO
 	_knockback_rearm = 0.0

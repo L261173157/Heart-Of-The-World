@@ -363,7 +363,7 @@ func _process(delta: float) -> void:
 
 # --- 出生营地：TS 蓝系建筑群 + 行商 + 安全区缓回血 ---
 ## 营地落点 = 出生斑块中心（障碍抑制区内恒空地，建筑纯装饰 + 底座碰撞体）
-const CAMP_HEAL_RADIUS := 420.0
+const CAMP_HEAL_RADIUS := WorldConfig.HOME_CAMP_RADIUS
 ## 安全区缓回血：每秒 3% 最大生命（脱战自然恢复档，不走无敌帧不触发受击演出）
 const CAMP_HEAL_FRAC_PER_SEC := 0.03
 var _camp_heal_accum := 0.0

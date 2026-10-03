@@ -48,6 +48,7 @@ CASES = {
     "exploration_lifecycle": ([str(PROJECT / "tests/run_exploration_lifecycle_test.py")], "=== EXPLORATION LIFECYCLE PASSED ==="),
     "exploration_map": (["res://tests/exploration_map_test.tscn", "--quit-after", "10000"], "=== EXPLORATION MAP PASSED"),
     "knockback_response": (["res://tests/knockback_response_test.tscn", "--quit-after", "10000"], "=== KNOCKBACK RESPONSE PASS"),
+    "hunt_eligibility": (["res://tests/hunt_eligibility_test.tscn", "--quit-after", "10000"], "=== HUNT ELIGIBILITY PASS"),
     "pacing": (["res://tests/pacing_test.tscn", "--quit-after", "100000"], "=== 节奏验证全部通过 ==="),
 }
 
