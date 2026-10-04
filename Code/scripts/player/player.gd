@@ -111,6 +111,24 @@ var _heavy_cd := 0.0
 var _bolt_cd := 0.0
 var _heal_cd := 0.0
 var _empower_cd := 0.0
+## 存档只保留冷却、增益和受击保护的剩余游戏秒数；菜单/暂停/离线不扣时。
+## 半招、输入队列、连击和架盾蓄力是手势，不恢复；破防硬直仍须履行。
+const SAVED_TIMER_PROPERTIES := {
+	"attack": "_attack_cooldown", "dash": "_dash_cd", "heavy": "_heavy_cd",
+	"bolt": "_bolt_cd", "heal": "_heal_cd", "empower": "_empower_cd",
+	"empower_buff": "_empower_timer", "dash_buff": "_dash_buff_timer",
+	"guard_break": "_guard_break_timer", "hurt_iframes": "_hurt_iframes",
+	"protect": "_protect_timer",
+}
+## 上限采用原始技能常量，不按当前装备重新计算已开始的冷却。
+const SAVED_TIMER_LIMITS := {
+	"attack": 0.9, "dash": Skill.DASH_COOLDOWN, "heavy": Skill.HEAVY_COOLDOWN,
+	"bolt": Skill.BOLT_COOLDOWN, "heal": Skill.HEAL_COOLDOWN,
+	"empower": Skill.EMPOWER_COOLDOWN, "empower_buff": Skill.EMPOWER_DURATION,
+	"dash_buff": Skill.DASH_BUFF_TIME, "guard_break": Skill.GUARD_BREAK_TIME,
+	"hurt_iframes": HURT_IFRAME, "protect": RESPAWN_PROTECT,
+}
+
 ## 武装强化剩余持续时间（>0 = 强化状态中）
 var _empower_timer := 0.0
 var _dust_accum := 0.0
@@ -161,6 +179,11 @@ var _guard_last_sound := -9999.0
 
 
 func _ready() -> void:
+	# 俯视移动没有地板；默认平台模式会把树边当斜坡并吞掉绕行分量。
+	motion_mode = MOTION_MODE_FLOATING
+	# 80万像素世界的单精度步距可达0.0625px；默认0.08余量会让
+	# 碰撞恢复反复舍入回接触点。半像素余量保持真实碰撞且能稳定滑开。
+	safe_margin = 0.5
 	add_to_group("player")
 	_visual_anchor = visual.position
 	stats = GameState.stats
@@ -513,7 +536,21 @@ func _restore_saved_state() -> bool:
 		global_position = ObstacleField.nudge_free(global_position, 10.0)
 	current_hp = clampf(float(snapshot.get("hp", stats.max_hp())), 1.0, stats.max_hp())
 	current_mp = clampf(float(snapshot.get("mp", stats.max_mp())), 0.0, stats.max_mp())
+	_restore_combat_timers(snapshot.get("combat_timers", {}))
 	return true
+
+
+## 旧档缺键按零恢复；坏字段单独忽略，不能拖垮仍有效的位置/血蓝。
+func _restore_combat_timers(value: Variant) -> void:
+	var timers: Dictionary = value if typeof(value) == TYPE_DICTIONARY else {}
+	for key: String in SAVED_TIMER_PROPERTIES:
+		var raw: Variant = timers.get(key, 0.0)
+		var remaining := 0.0
+		if typeof(raw) in [TYPE_INT, TYPE_FLOAT] and is_finite(float(raw)):
+			remaining = clampf(float(raw), 0.0, float(SAVED_TIMER_LIMITS[key]))
+		set(SAVED_TIMER_PROPERTIES[key], remaining)
+	guard_state = "broken" if _guard_break_timer > 0.0 else "idle"
+	visual.modulate = Color(1.0, 0.88, 0.55) if _empower_timer > 0.0 else Color.WHITE
 
 
 ## GameState 保存与 game_world 退场缓存共用。死亡的 2 秒表现不跨会话延续：
@@ -522,9 +559,13 @@ func save_snapshot() -> Dictionary:
 	if _is_dead:
 		var respawn_pos := WorldConfig.nearest_checkpoint_respawn(global_position, GameState.discovered_checkpoints)
 		return {"position": [respawn_pos.x, respawn_pos.y],
-			"hp": stats.max_hp(), "mp": stats.max_mp()}
+			"hp": stats.max_hp(), "mp": stats.max_mp(),
+			"combat_timers": {"protect": RESPAWN_PROTECT}}
+	var timers := {}
+	for key: String in SAVED_TIMER_PROPERTIES:
+		timers[key] = maxf(0.0, float(get(SAVED_TIMER_PROPERTIES[key])))
 	return {"position": [global_position.x, global_position.y],
-		"hp": current_hp, "mp": current_mp}
+		"hp": current_hp, "mp": current_mp, "combat_timers": timers}
 
 
 ## 安全回城起手条件；世界再结合危险/模态/地图状态作最终判断。

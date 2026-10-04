@@ -62,6 +62,8 @@ const NAV_QUERY_INTERVAL_MS := 100
 ## 屏外个体无需群体避让与精确碰撞，沿墙滑走即可
 const LOD_FAR_DIST := 900.0
 const LOD_STEP := 6
+var _reward_settling := false
+
 var _lod_skip := 0
 ## 当前处于远档（_far_tick 主导）：_nav_velocity_toward 走免导航直线分支。
 ## 远档个体屏外不可见，绕障精度无意义；导航查询是怪物侧最大单项成本
@@ -245,6 +247,7 @@ func setup(p_inst: MonsterInstance) -> void:
 	# 避让层位（30 层内偶发同层 = 两个物种互相避让，无害且更生动）
 	if _nav != null:
 		_nav.radius = clampf(12.0 * maxf(0.6, inst.size_scale), 8.0, 30.0)
+		_sync_avoidance_speed()
 		_nav.avoidance_enabled = true
 		_nav.neighbor_distance = 96.0
 		_nav.max_neighbors = 6
@@ -268,6 +271,11 @@ func _exit_tree() -> void:
 
 
 func _ready() -> void:
+	# 俯视移动没有地板；默认平台模式会把树边当斜坡并吞掉绕行分量。
+	motion_mode = MOTION_MODE_FLOATING
+	# 80万像素世界的单精度步距可达0.0625px；默认0.08余量会让
+	# 碰撞恢复反复舍入回接触点。半像素余量保持真实碰撞且能稳定滑开。
+	safe_margin = 0.5
 	add_to_group("monsters")
 	_visual_anchor = visual.position
 	_snap_visual_to_body()
@@ -467,15 +475,7 @@ func _near_tick(delta: float, player: Node2D) -> void:
 	_enrage_timer = maxf(0.0, _enrage_timer - delta)
 	_action_anim_timer = maxf(0.0, _action_anim_timer - delta)
 	_hurt_anim_cd = maxf(0.0, _hurt_anim_cd - delta)
-	# 年龄增长 → max_hp 实时上调，未受伤的部分随上限同步抬升
-	# （已扣血量保持不变，血条比例对玩家始终可信）
-	var max_now := inst.max_hp()
-	if max_now > _max_hp_ref:
-		current_hp = minf(current_hp + (max_now - _max_hp_ref), max_now)
-		_max_hp_ref = max_now
-		if _hp_bar != null:
-			_hp_bar.notify_change()  # 已显示的血条同步重绘，比例不滞后到下次受击
-		_sync_hp_mirror()
+	_sync_growth_hp()
 	# 离开攻击状态（逃跑/受击断招/死亡/迁徙）即作废进行中的前摇；非死亡的中断
 	# 同时收回前摇预警色——否则走位拉开距离取消出刀后，怪身上一直挂着
 	# "要出刀"的橙色直到下次受击，前摇预警的可信度被破坏；
@@ -525,6 +525,7 @@ func _near_tick(delta: float, player: Node2D) -> void:
 			_post_move_and_anim(delta)
 		_pending_move_delta = delta
 		_awaiting_rvo = true
+		_sync_avoidance_speed()
 		_nav.set_velocity(velocity)
 	else:
 		move_and_slide()
@@ -540,13 +541,7 @@ func _far_tick(delta: float, player: Node2D) -> void:
 	_enrage_timer = maxf(0.0, _enrage_timer - delta)
 	_action_anim_timer = maxf(0.0, _action_anim_timer - delta)
 	_hurt_anim_cd = maxf(0.0, _hurt_anim_cd - delta)
-	var max_now := inst.max_hp()
-	if max_now > _max_hp_ref:
-		current_hp = minf(current_hp + (max_now - _max_hp_ref), max_now)
-		_max_hp_ref = max_now
-		if _hp_bar != null:
-			_hp_bar.notify_change()
-		_sync_hp_mirror()
+	_sync_growth_hp()
 	match state:
 		S_PATROL:
 			_patrol(delta, player)
@@ -564,7 +559,8 @@ func _far_tick(delta: float, player: Node2D) -> void:
 ## 无 RVO、无 move_and_slide 窄相。步长 ~4px（巡猎速 ×0.1s）无穿透风险
 func _far_move(motion: Vector2) -> void:
 	for i in 2:
-		var collision := move_and_collide(motion)
+		# 远档同样使用大坐标恢复余量，不能退回move_and_collide的0.08默认值。
+		var collision := move_and_collide(motion, false, safe_margin)
 		if collision == null:
 			return
 		motion = motion.slide(collision.get_normal())
@@ -580,6 +576,15 @@ func _post_move_and_anim(delta: float) -> void:
 	if _action_anim_timer <= 0.0 and absf(velocity.x) > 5.0:
 		visual.flip_h = velocity.x < 0.0
 	_update_anim()
+
+
+## 避让上限消费当前普通移动能力，不能沿用代理默认100而吞掉物种/年龄/狂暴差异。
+## 只同步上限，仍由RVO产生安全速度；巡猎的0.7倍、巡逻和站定期望不被抬高。
+## 冲锋继续由Boar的专属回调保留锁定速度，不在这里改变冲锋规则。
+func _sync_avoidance_speed() -> void:
+	var limit := maxf(PATROL_SPEED, inst.move_speed() * _speed_mult())
+	if not is_equal_approx(_nav.max_speed, limit):
+		_nav.max_speed = limit
 
 
 func _on_nav_velocity(safe_velocity: Vector2) -> void:
@@ -756,6 +761,19 @@ func _squash(amount: Vector2, dur := 0.16) -> void:
 		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
 
 
+## 生态先涨龄/镜像血量，节点按自己的上次上限补同一增量，不能再次叠到镜像上。
+## 受击前也调用：生态 tick 与下一物理步之间的命中不能把旧 HP 写回抹掉成长。
+func _sync_growth_hp() -> void:
+	var max_now := inst.max_hp()
+	if max_now <= _max_hp_ref:
+		return
+	current_hp = inst.hp_after_growth(current_hp, _max_hp_ref)
+	_max_hp_ref = max_now
+	if _hp_bar != null:
+		_hp_bar.notify_change()
+	_sync_hp_mirror()
+
+
 ## 血量镜像回写（受击/成长两处调用）：current_hp 运行期真源在节点上，
 ## 镜像进 MonsterInstance.hp_mirror 只为存档往返——读档恢复的怪带伤开局，
 ## 不再"白送满血回复"。走 EcologySim.report_hp 单点通道（与 report_killed 同构）
@@ -768,6 +786,7 @@ func take_damage(amount: float, from_position := Vector2.INF, p_heavy := false,
 		p_knock_mult := 1.0, p_effective := false) -> void:
 	if state == S_CORPSE:
 		return
+	_sync_growth_hp()
 	var armor: float = clampf(inst.species.defense_reduction, 0.0, 0.8)
 	var dealt: float = maxf(1.0, amount * (1.0 - armor))
 	current_hp -= dealt
@@ -964,6 +983,12 @@ func _attack_tick(_delta: float, player: Node2D) -> void:
 		_cancel_melee_windup()
 		state = S_CHASE
 		return
+	# 只约束本通用近战入口；守卫范围砸击/冲锋各自保留原有判定。
+	# 前摇期间每帧复查，挡住就撤销旧招式并继续导航找路，不隔墙站桩挥空。
+	if not _has_melee_los(player):
+		_cancel_melee_windup()
+		velocity = _nav_velocity_toward(player.global_position, inst.move_speed() * _speed_mult())
+		return
 	velocity = Vector2.ZERO
 	# 前摇两段式：冷却转好先站定预警，MELEE_WINDUP 秒后结算伤害；
 	# 每物理帧的 1.1× 距离门就是"出刀前复查"——玩家前摇期间拉开距离
@@ -991,6 +1016,9 @@ func _melee_damage_mult() -> float:
 
 ## 普攻执行；source 名传给玩家做死亡信息
 func _perform_attack(player: Node2D) -> void:
+	if not _has_melee_los(player):
+		_clear_attack_context()
+		return
 	_squash(Vector2(0.92, 1.08), 0.14)  # 出刀瞬间过冲
 	# 出招帧与伤害结算同相位（Interact/Attack 条带 0.3~0.4s 非循环完整走完，
 	# 压制窗略宽防冷却期 walk 盖掉收招）
@@ -1005,6 +1033,19 @@ func _perform_attack(player: Node2D) -> void:
 			EventBus.fx_requested.emit("orb", (player as Node2D).global_position,
 				1.5 if inst.species.is_boss else 0.8)
 	_clear_attack_context()
+
+
+## 普通近战检查整段障碍，排除两端身体；不能复用远程的60px贴脸豁免/终点回撤。
+## 无缓存：刚进入刀路的掩体必须在本次出刀前生效。
+func _has_melee_los(player: Node2D) -> bool:
+	if player == null:
+		return false
+	var query := PhysicsRayQueryParameters2D.create(global_position, player.global_position, 1)
+	query.exclude = [get_rid()]
+	if player is CollisionObject2D:
+		query.exclude = [get_rid(), (player as CollisionObject2D).get_rid()]
+	query.hit_from_inside = true
+	return get_world_2d().direct_space_state.intersect_ray(query).is_empty()
 
 
 ## 准备阶段锁定真实招式强度，不消耗伤害 RNG；所有盾数值/分档在角色公式中。
@@ -1137,6 +1178,11 @@ func _migrate_tick() -> void:
 
 
 func _die_by_player() -> void:
+	# 同步信号订阅者可能重入伤害或保存；先锁住本次死亡，防止重复奖励。
+	if state == S_CORPSE or _reward_settling:
+		return
+	_reward_settling = true
+	GameState.begin_world_reward()
 	# 击杀奖励：经验走 MonsterInstance 真源，金币走 EconomyMath 纯逻辑层公式
 	# （策划：尸体拾取，M0 简化为自动）；精英/Boss 倍率在公式内
 	var xp := inst.xp_reward()
@@ -1202,6 +1248,8 @@ func _die_by_player() -> void:
 		WorldSim.sim.report_killed(inst.id, global_position)  # 同步触发 on_sim_death()（赤炎小魔在此裂出子代）
 	else:
 		on_sim_death()
+	GameState.end_world_reward()
+	_reward_settling = false
 
 
 ## 击杀爆裂：碎片小方块四散旋转淡出（颜色跟怪物 tint，精英金色；池化复用，

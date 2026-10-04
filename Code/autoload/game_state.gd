@@ -15,7 +15,8 @@ const SAVE_DEBOUNCE := 2.0
 ## v8 增加装备槽锁定与已发现检查点；
 ## v9 增加单件待比较装备、自动赏金与所追踪委托（旧字段原样兼容）
 ## v10 增加委托领奖收据；新收集委托显式交付，旧单仍自动交付。
-const SAVE_VERSION := 10
+## v11 保留战斗计时剩余值；菜单/暂停/离线冻结，不恢复半招或架盾手势。
+const SAVE_VERSION := 11
 
 ## 世界种子（世界 v5）：「新的冒险」重掷，游戏内 BiomeMap.configure 消费；
 ## v3 旧档无此键 → DEFAULT_SEED（旧世界与旧 ecology 存档严丝合缝）
@@ -100,6 +101,10 @@ var _save_timer := 0.0
 const ECOLOGY_SAVE_INTERVAL := 6.0
 var _ecology_saved_at := 0.0
 var _ecology_cache: Variant = null
+## 击杀奖励及生态死亡在同一同步事务完成；信号订阅者要求立即保存时延至末尾。
+var _world_reward_depth := 0
+var _world_reward_save_requested := false
+var _world_reward_save_full := false
 ## 寿命警告已触发过的阈值（避免重复播报；读档按剩余寿命重建）
 var _lifespan_warned: Array = []
 
@@ -635,12 +640,34 @@ func _invalidate_world_save_cache() -> void:
 	_queue_save()
 
 
+## 只包住同步的击杀结算，不跨帧：奖励、掉落、图鉴与死亡/分裂必须同档。
+func begin_world_reward() -> void:
+	_world_reward_depth += 1
+
+
+func end_world_reward() -> void:
+	assert(_world_reward_depth > 0)
+	_world_reward_depth -= 1
+	if _world_reward_depth > 0:
+		return
+	_invalidate_world_save_cache()
+	if _world_reward_save_requested:
+		var include_ecology := _world_reward_save_full
+		_world_reward_save_requested = false
+		_world_reward_save_full = false
+		save_now(include_ecology)
+
+
 ## 立即落盘（公开：防抖到时/退后台/回主菜单自动调用，也是
 ## 主菜单"冒险档案"与暂停菜单"保存进度"手动保存的入口）。
 ## include_ecology=false 为自动防抖档：生态快照按 ECOLOGY_SAVE_INTERVAL
 ## 降频序列化，跳过时复用缓存——文件仍带（可能早至 6s 的）ecology 键
 ## 返回 true 只表示临时档写入/flush/原子替换全部成功；测试禁用写盘也返回 false。
 func save_now(include_ecology := true) -> bool:
+	if _world_reward_depth > 0:
+		_world_reward_save_requested = true
+		_world_reward_save_full = _world_reward_save_full or include_ecology
+		return false # 此时尚未落盘，不能向调用者声称已保存。
 	_save_timer = 0.0
 	if not save_enabled:
 		return false
@@ -817,7 +844,12 @@ func _sanitize_player_snapshot(value: Variant) -> Variant:
 		mp = _safe_float(raw.get("mp", 0.0), NAN)
 		if not is_finite(mp):
 			return null
-	return {"position": [x, y], "hp": hp, "mp": mp}
+	var clean := {"position": [x, y], "hp": hp, "mp": mp}
+	# 类型/有限数/上限的真源在 Player 恢复侧；此处仅保留独立字典，
+	# 坏计时不能连带丢弃有效位置和资源，旧档缺键按原零计时恢复。
+	if typeof(raw.get("combat_timers")) == TYPE_DICTIONARY:
+		clean["combat_timers"] = raw["combat_timers"].duplicate(true)
+	return clean
 
 
 ## 装备条目字段级消毒（equips 主路径与 v1 legacy 迁移共用）：

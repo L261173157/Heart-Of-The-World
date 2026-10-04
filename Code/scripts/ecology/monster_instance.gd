@@ -1,5 +1,5 @@
 ## 怪物个体（纯数据，RefCounted）。
-## 只存模拟状态：年龄/寿命/所属区域/世代；节点的位置、血量等表现状态不在这里。
+## 保存年龄/寿命/所属区域/世代与血量镜像；不持有任何表现节点。
 ## 架构铁律：禁止持有 Node 引用，禁止调用场景树 API。
 class_name MonsterInstance
 extends RefCounted
@@ -28,9 +28,9 @@ var threat_scale: float = 1.0
 var spawn_pos: Vector2 = Vector2.INF
 ## 死亡位置（report_killed 时由表现层回填，供分裂子代继承）
 var death_pos: Vector2 = Vector2.INF
-## 当前血量镜像（表现层受击/成长时经 report_hp 回写；-1 = 从未同步，等同满血）。
-## 只为存档往返存在：读档恢复的怪带伤开局，不再"白送满血回复"；模拟逻辑不读它，
-## 运行期真实血量仍以 MonsterBase.current_hp 为准
+## 当前血量镜像（受击经 report_hp 回写；-1 = 从未同步，等同满血）。
+## 生态涨龄时同步补上限差，离开表现层的个体也保持同样的绝对伤口；
+## 节点只将本地尚未同步的成长补齐，不会把旧血量覆盖回最新生态快照。
 var hp_mirror: float = -1.0
 
 
@@ -65,6 +65,12 @@ func intellect() -> float:
 
 func max_hp() -> float:
 	return (20.0 + strength() * 5.0) * size_scale * threat_scale
+
+
+## 成长仅补生命上限增量，不额外消除伤口。模拟与已加载节点共用此公式。
+func hp_after_growth(previous_hp: float, previous_max: float) -> float:
+	var maximum := max_hp()
+	return minf(maximum, previous_hp + maxf(0.0, maximum - previous_max))
 
 
 func attack_power() -> float:

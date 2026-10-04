@@ -14,6 +14,11 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "kill_save_consistency": (["res://tests/kill_save_consistency_test.tscn", "--quit-after", "10000"], "=== KILL SAVE CONSISTENCY PASS"),
+    "player_continuity": (["res://tests/player_continuity_test.tscn", "--quit-after", "10000"], "=== PLAYER CONTINUITY PASS"),
+    "chest_attack_priority": (["res://tests/chest_attack_priority_test.tscn", "--quit-after", "10000"], "=== CHEST ATTACK PRIORITY PASS"),
+    "enemy_mechanism": (["res://tests/enemy_mechanism_test.tscn", "--quit-after", "6000"], "=== ENEMY MECHANISM PASS"),
+    "monster_growth_persistence": (["res://tests/monster_growth_persistence_test.tscn", "--quit-after", "10000"], "=== MONSTER GROWTH PERSISTENCE PASS"),
     "smoke": (["--quit"], None),
     "sim": (["-s", "tests/sim_test.gd"], "=== 全部测试通过 ==="),
     "frames": (["-s", "tests/frames_test.gd"], "失败 0）==="),
@@ -32,6 +37,8 @@ CASES = {
     "gameplay_ecology": (["res://tests/gameplay_ecology_test.tscn", "--quit-after", "10000"], "=== 玩法生态回归全部通过"),
     "gameplay_world": (["res://tests/gameplay_world_test.tscn", "--quit-after", "10000"], "=== 玩法世界回归全部通过"),
     "gameplay_equipment": (["res://tests/gameplay_equipment_test.tscn", "--quit-after", "10000"], "=== GAMEPLAY EQUIPMENT PASSED"),
+    "tree_edge_contacts": (["res://tests/tree_edge_contacts_test.tscn", "--quit-after", "10000"], "=== TREE EDGE CONTACTS PASS"),
+    "tree_edge_navigation": (["res://tests/tree_edge_navigation_test.tscn", "--quit-after", "10000"], "=== TREE EDGE NAVIGATION PASS"),
     "gameplay_navigation": (["res://tests/gameplay_navigation_test.tscn", "--quit-after", "10000"], "=== GAMEPLAY NAVIGATION PASSED"),
     "boss_age_balance": (["res://tests/boss_age_balance_test.tscn", "--quit-after", "100000"], "=== BOSS AGE BALANCE PASS"),
     "ecology_feedback": (["res://tests/ecology_feedback_test.tscn", "--quit-after", "10000"], "=== ECOLOGY FEEDBACK PASSED"),

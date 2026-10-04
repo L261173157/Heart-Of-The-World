@@ -444,8 +444,8 @@ func report_killed(id: int, at_position := Vector2.INF) -> void:
 	_die(inst, DEATH_KILLED)
 
 
-## 表现层血量回写入口（受击/成长同步）：血量是表现态、镜像进实例只为存档往返
-## （与 report_killed 同为"表现层向模拟层报告"的单点通道）。
+## 表现层血量回写入口（受击/成长同步）；离线表现节点的成长由 tick 同步维护，
+## 不因流式卸载而遗失上限增量（与 report_killed 同为单点权威通道）。
 ## 只记录不判定——归零死亡仍由表现层触发 report_killed
 func report_hp(id: int, hp: float) -> void:
 	var inst: MonsterInstance = instances.get(id)
@@ -479,7 +479,12 @@ func _process_aging_and_corpses() -> void:
 	var expired: Array[MonsterInstance] = []
 	for inst: MonsterInstance in instances.values():
 		if inst.is_alive:
+			var previous_max := inst.max_hp() if inst.hp_mirror > 0.0 else 0.0
 			inst.age += 1
+			# 世界各处都按相同规则成长，不能让是否加载 Node 决定个体的伤口。
+			# -1 继续表示未同步的满血；0 不补血，死亡仍由 report_killed 结算。
+			if inst.hp_mirror > 0.0:
+				inst.hp_mirror = inst.hp_after_growth(inst.hp_mirror, previous_max)
 			# 老死判定走角色/怪物统一的 LifespanMath（寿命语义单点维护）
 			if LifespanMath.is_expired(inst.age, inst.lifespan):
 				aged_out.append(inst)
