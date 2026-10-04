@@ -70,7 +70,9 @@ CASES = {
     "exploration_map": (["res://tests/exploration_map_test.tscn", "--quit-after", "10000"], "=== EXPLORATION MAP PASSED"),
     "knockback_response": (["res://tests/knockback_response_test.tscn", "--quit-after", "10000"], "=== KNOCKBACK RESPONSE PASS"),
     "hunt_eligibility": (["res://tests/hunt_eligibility_test.tscn", "--quit-after", "10000"], "=== HUNT ELIGIBILITY PASS"),
-    "pacing": (["res://tests/pacing_test.tscn", "--quit-after", "100000"], "=== 节奏验证全部通过 ==="),
+    "pacing_controller": (["res://tests/pacing_controller_test.tscn", "--quit-after", "10000"], "=== PACING CONTROLLER PASS"),
+    "material_rewards": (["res://tests/material_rewards_test.tscn", "--quit-after", "10000"], "=== MATERIAL REWARDS PASS"),
+    "pacing": (["res://tests/pacing_test.tscn", "--fixed-fps", "60", "--quit-after", "100000"], "=== 节奏验证全部通过 ==="),
 }
 
 # 已在修改前的 4.7 基线逐项记录：仅允许退出清理诊断，不放过物理/解析/运行错误。

@@ -23,7 +23,7 @@ jobs:
       matrix:
         include:
           - suite: logic
-            tests: sim,frames,balance,warrior_motion_assets
+            tests: sim,frames,balance,warrior_motion_assets,material_rewards,pacing_controller
           - suite: visuals
             tests: ui_visual,menu_layout,animation,actor_alignment,hero_slash_motion
           - suite: flows
