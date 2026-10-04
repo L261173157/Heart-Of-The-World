@@ -27,13 +27,13 @@ jobs:
           - suite: visuals
             tests: ui_visual,menu_layout,animation,actor_alignment,hero_slash_motion
           - suite: flows
-            tests: smoke,save,save_lifecycle,combat,ui_flow,projectile,world,pacing
+            tests: smoke,save,save_lifecycle,kill_save_consistency,player_continuity,combat,ui_flow,projectile,world,pacing
           - suite: gameplay
-            tests: gameplay_combat,gameplay_ecology,gameplay_world,gameplay_equipment,gameplay_navigation,hunt_eligibility,guard_counter
+            tests: enemy_mechanism,gameplay_combat,gameplay_ecology,gameplay_world,gameplay_equipment,gameplay_navigation,tree_edge_contacts,tree_edge_navigation,hunt_eligibility,guard_counter
           - suite: choices
-            tests: boss_age_balance,gameplay_tasks,ecology_feedback,gameplay_choices_ui
+            tests: monster_growth_persistence,boss_age_balance,gameplay_tasks,ecology_feedback,gameplay_choices_ui
           - suite: interaction
-            tests: mobile_controls,combat_feedback,town_interaction,quest_clarity,quest_lifecycle,guard_controls
+            tests: chest_attack_priority,mobile_controls,combat_feedback,town_interaction,quest_clarity,quest_lifecycle,guard_controls
           - suite: exploration_weapons
             tests: directional_attack,weapon_effects,terrain_coherence,exploration_map,exploration_lifecycle,knockback_response
     steps:

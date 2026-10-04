@@ -827,6 +827,13 @@ class DungeonChest extends Node2D:
 			_key_hint.visible = need_key
 			_key_hint.modulate = Color(1, 0.85, 0.5, 0.7 + 0.3 * sin(Time.get_ticks_msec() * 0.004))
 
+	## 封印只作视觉提示，不抢走 Boss 战的攻击键。候选查询现场刷新，
+	## 不等待流式节拍，避免 Boss 刚倒下/重生时仍使用上一帧交互资格。
+	func can_interact() -> bool:
+		if refresh_state.is_valid():
+			refresh_state.call(self)
+		return not locked and not taken
+
 	func interact() -> void:
 		if refresh_state.is_valid():
 			refresh_state.call(self)
