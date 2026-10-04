@@ -19,10 +19,11 @@ func _ready() -> void:
 	_player = preload("res://scenes/player/player.tscn").instantiate()
 	add_child(_player)
 	_player.set_physics_process(false)
+	_player.set_process(false) # 资源断言隔离自然回复，仍由真实物品事件改变玩家状态。
 	_qm = QuestManager.new()
 	add_child(_qm)
 	await _settle()
-	await _test_resource_aware_quickuse()
+	await _test_explicit_recovery_preset()
 	await _test_stat_and_passive_choices()
 	await _test_equipment_offer()
 	await _test_task_choices()
@@ -83,27 +84,55 @@ func _test_preview_formulas() -> void:
 			"攻速到下限后预览不会虚构收益")
 
 
-func _test_resource_aware_quickuse() -> void:
+func _test_explicit_recovery_preset() -> void:
 	GameState.inventory = {"onigiri": 3, "life-pot": 1, "water-pot": 3}
+	GameState.set_setting("mobile_recovery", "heal")
 	_player.current_hp = _player.stats.max_hp()
 	_player.current_mp = 10
 	_player._push_hud()
 	EventBus.inventory_changed.emit()
-	_check(_hud._quick_id == "water-pot", "满血缺蓝时快捷槽跳过全部食物选择水壶")
+	_check(_hud._quick_id == "heal", "资源变化不会把治疗预设自动替换成物品")
+	await _touch(_hud._quick_btn)
+	_check(GameState.count_item("water-pot") == 3 and GameState.count_item("life-pot") == 1
+			and _player.current_mp == 10, "治疗不可用时不暗耗其它补给")
+	await _choose_recovery("water-pot")
+	_check(GameState.settings.mobile_recovery == "item:water-pot" and _hud._quick_id == "water-pot",
+			"真实更多面板明确预设水壶后才改变恢复键")
 	await _touch(_hud._quick_btn)
 	_check(GameState.count_item("water-pot") == 2 and _player.current_mp > 10,
 			"真实触屏补给应用在玩家精力且只扣一瓶")
-	_check(GameState.count_item("life-pot") == 1, "满血补蓝没有误耗生命药")
+	_check(GameState.count_item("life-pot") == 1, "明确补蓝没有误耗生命药")
 	_player.current_mp = _player.stats.max_mp()
 	_player._push_hud()
-	_check(_hud._quick_id == "" and _hud._quick_btn.disabled, "满血满蓝禁用无效补给")
+	var full_mp := _player.current_mp
+	await _touch(_hud._quick_btn)
+	_check(_hud._quick_id == "water-pot" and GameState.count_item("water-pot") == 2
+			and _player.current_mp == full_mp and _hud._recovery_status.text.contains("已满"),
+			"满资源保留预设，提示不可用且不耗瓶")
 	_player.current_hp = 20
 	_player._push_hud()
-	_check(_hud._quick_id == "life-pot", "仅资源变化立即刷新为可用生命补给")
+	_check(_hud._quick_id == "water-pot", "生命降低仍不自动换成生命药")
+	await _choose_recovery("life-pot")
 	await _touch(_hud._quick_btn)
 	_check(is_equal_approx(_player.current_hp, _player.stats.max_hp())
-			and GameState.count_item("life-pot") == 0, "真实触摸大药恢复生命并实时移除用尽图标")
-	_check(_hud._quick_id == "", "补满生命后不继续选择无效食物")
+			and GameState.count_item("life-pot") == 0, "真实触摸预设大药恢复生命并恰好扣一瓶")
+	_check(_hud._quick_id == "life-pot" and _hud._recovery_status.text.contains("用尽"),
+			"用尽后保留玩家选择并明确说明，不改用食物")
+	_player.current_hp = 20
+	_player._push_hud()
+	await _touch(_hud._quick_btn)
+	_check(_player.current_hp == 20 and GameState.count_item("onigiri") == 3,
+			"空预设即使有其它可用食物也不会静默代用")
+
+
+func _choose_recovery(id: String) -> void:
+	await _touch(_hud._more_btn)
+	_check(_hud._more_panel.visible and not get_tree().paused, "实际更多入口保持世界运行")
+	await _touch(_hud._more_panel.find_child("MoreTab_recovery", true, false))
+	var preset: Button = _hud._more_panel.find_child("RecoveryPreset_" + id, true, false)
+	await _reveal(preset)
+	await _touch(preset)
+	await _touch(_hud._more_btn)
 
 
 func _test_stat_and_passive_choices() -> void:
@@ -111,30 +140,44 @@ func _test_stat_and_passive_choices() -> void:
 	GameState.stats.passives = {"phys": 1}
 	GameState.stats.changed.emit()
 	var base := GameState.stats.strength
-	await _touch(_hud.get_node("Root/StatButtons/BtnStrength"))
+	_check(not _hud.stat_buttons.is_visible_in_tree() and not get_tree().paused,
+			"待分配点只保留菜单提示，不在战斗中弹出选择")
+	await _touch(_hud.get_node("Root/PauseBtn"))
+	await _touch(_hud.pause_layer.find_child("MenuGrowth", true, false))
+	_check(_hud._stats_overview_layer.visible and get_tree().paused, "真实菜单成长入口打开暂停阅读页")
+	await _touch(_hud._stats_overview_layer.find_child("PreviewAttribute_strength", true, false))
 	_check(_hud._stat_layer.visible and get_tree().paused and GameState.stats.strength == base,
-			"真实属性按钮先预览且不立刻消费")
+			"真实属性入口先预览且不立刻消费")
 	_check(_hud._stat_preview.text.contains("→") and _hud._stat_preview.text.contains("生命上限")
 			and _hud._stat_owned.text.contains("蛮力1级"), "分点面板显示实际收益及已获被动")
 	await _capture("stat-preview")
 	await _press_key(KEY_ESCAPE)
-	_check(not _hud._stat_layer.visible and not get_tree().paused and GameState.stats.pending_points == 2,
-			"取消预览保留属性点并恢复世界")
-	await _touch(_hud.get_node("Root/StatButtons/BtnStrength"))
+	_check(not _hud._stat_layer.visible and _hud._stats_overview_layer.visible
+			and get_tree().paused and GameState.stats.pending_points == 2,
+			"取消预览仅退回成长页，保留属性点与暂停")
+	await _touch(_hud._stats_overview_layer.find_child("PreviewAttribute_strength", true, false))
 	var expected: Dictionary = GameState.stats.preview_attribute("strength")["after"]
 	await _touch(_hud._stat_confirm)
 	_hud._stat_confirm.pressed.emit()
 	_check(GameState.stats.strength == base + 1 and GameState.stats.pending_points == 1,
 			"真实确认只分配一点，延迟重复回调无效")
 	_check(GameState.stats.benefit_snapshot() == expected, "真实确认后战斗属性等于展示预览")
-	_hud._open_stat_preview("intellect")
+	_check(_hud._stats_overview_layer.visible and get_tree().paused, "属性确认回到成长页而非提前恢复世界")
+	await _press_key(KEY_ESCAPE)
+	_check(_hud.pause_layer.visible and get_tree().paused, "成长页返回只退一层到菜单")
+	await _press_key(KEY_ESCAPE)
 	GameState.stats.pending_passive_picks = 1
 	GameState.stats.passive_choices.assign(["phys", "cdr", "hp"])
 	GameState.stats.passive_offer_id += 1
-	_hud._open_passive_pick()
+	GameState.stats.leveled_up.emit(GameState.stats.level, 1)
 	await _settle()
-	_check(_hud.passive_layer.visible and not _hud._stat_layer.visible,
-			"赐福中断分点时只保留最高层")
+	_check(not _hud.passive_layer.visible and not get_tree().paused,
+			"升级赐福只更新待选提示，战斗不被自动打断")
+	await _touch(_hud.get_node("Root/PauseBtn"))
+	await _touch(_hud.pause_layer.find_child("MenuGrowth", true, false))
+	await _touch(_hud._stats_overview_layer.find_child("OpenBlessing", true, false))
+	_check(_hud.passive_layer.visible and not _hud._stats_overview_layer.visible,
+			"明确选择赐福只显示最高阅读层")
 	_check((_hud.passive_cards[0] as Button).text.contains("→")
 			and _hud._passive_owned.text.contains("蛮力1级"), "赐福卡显示当下到领取后及已获构筑")
 	await _capture("blessing-preview")
@@ -142,8 +185,11 @@ func _test_stat_and_passive_choices() -> void:
 	await _touch(_hud.passive_cards[0])
 	_check(GameState.stats.benefit_snapshot() == expected and GameState.stats.pending_passive_picks == 0,
 			"真实触屏赐福所得和预览一致")
-	_check(not get_tree().paused and not _hud._stat_layer.visible and not _hud.passive_layer.visible,
-			"赐福领取后中断层没有复现或残留暂停")
+	_check(get_tree().paused and _hud._stats_overview_layer.visible and not _hud.passive_layer.visible,
+			"赐福领取只退回成长页，保持来源暂停")
+	await _press_key(KEY_ESCAPE)
+	await _press_key(KEY_ESCAPE)
+	_check(not get_tree().paused and not _hud.pause_layer.visible, "逐层返回后完整恢复世界")
 
 
 func _item(item_name: String, affixes: Dictionary, element := "fire") -> Dictionary:

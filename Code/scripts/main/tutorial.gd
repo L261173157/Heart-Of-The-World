@@ -61,9 +61,9 @@ func _ready() -> void:
 	# 进世界 14s 内回主菜单时定时器到期会对已释放节点悬空调用
 	if not _seen("open1"):
 		# 触屏设备文案不提键位（iOS 首发的主要输入是虚拟摇杆与技能键）
-		var controls := "移动 WASD　攻击 空格/J　冲刺 Shift/K（冲刺中无敌！）"
+		var controls := "移动 WASD　攻击 空格/J　架盾 F　交互 E"
 		if DisplayServer.is_touchscreen_available():
-			controls = "左侧摇杆移动　右侧按键攻击/冲刺（冲刺中无敌！）"
+			controls = "左侧摇杆移动　右侧攻击／按住架盾／冲刺；靠近对象会出现交互"
 		get_tree().create_timer(OPENING_DELAY, false).timeout.connect(_hint_opening1.bind(controls))
 	if not _seen("open2"):
 		get_tree().create_timer(SECOND_HINT_DELAY, false).timeout.connect(_hint_opening2)
@@ -99,7 +99,7 @@ func _on_hp_for_item_hint(current: float, maximum: float) -> void:
 		return
 	for id: String in ["life-pot", "medipack", "sushi", "onigiri", "water-pot"]:
 		if GameState.count_item(id) > 0:
-			_hint("quick_slot", "带上补给了！左下快捷槽一键服用 %s 回复状态" % ItemCatalog.name_of(id))
+			_hint("quick_slot", "带上 %s 了！「更多」可明确使用或设为恢复快捷键" % ItemCatalog.name_of(id))
 			return
 
 
@@ -108,7 +108,7 @@ func _hint_opening1(controls: String) -> void:
 
 
 func _hint_opening2() -> void:
-	_hint("open2", "左上「生态监测」实时显示各片群系的种群——这个世界自己在活着")
+	_hint("open2", "菜单里的「生态监测」显示种群；靠近营地巡守可调查附近真实动静")
 
 
 func _hint_find_camp() -> void:
@@ -116,7 +116,7 @@ func _hint_find_camp() -> void:
 	# 自己找到了怪，不再打扰
 	if GameState.session_kills > 0 or _seen("find_camp"):
 		return
-	_hint("find_camp", "怪物以族群营地栖居荒野，附近未必有——看小地图的彩色怪群点，朝最近的进发")
+	_hint("find_camp", "怪物以族群营地栖居荒野。先问营地巡守获取附近线索；小地图只显示看得见的活体")
 
 
 func _on_region(region_id: String, display_name: String) -> void:
@@ -126,7 +126,7 @@ func _on_region(region_id: String, display_name: String) -> void:
 	if terrain == "forest" and not _seen("goto_center"):
 		_hint("goto_center", "%s：危险与奖励一起升高——怪物强度看星级" % display_name)
 	elif terrain != "plains" and not _seen("deep_zone"):
-		_hint("deep_zone", "深入高星群系前先练级——右上小地图的彩色怪群点就是各族群的营地")
+		_hint("deep_zone", "深入高星群系前先练级；小地图只显示当前视野内的族群")
 
 
 func _on_kill(_xp: int, _gold: int, _monster_name: String, species_name: String) -> void:

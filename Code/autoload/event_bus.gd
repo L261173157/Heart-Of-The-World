@@ -39,6 +39,8 @@ signal hint_requested(text: String)
 ## 展示名（飘字用），species_name 为裸物种名（赏金/图鉴/成就的结构化判定用，
 ## 不再由消费方解析字符串——物种名含 # 或精英条件扩展时曾三处静默断链）
 signal monster_killed_by_player(xp_reward: int, gold_reward: int, monster_name: String, species_name: String)
+## 新任务只记实际被玩家击杀的实例；旧全局物种计数信号保持原契约。
+signal monster_killed_at(instance_id: int, species_name: String, region_id: String, position: Vector2)
 ## 飘血数字（受击位置、数值、是否玩家受伤、是否元素克制——克制时橙色加大）
 signal damage_number(position: Vector2, amount: int, is_player_hurt: bool, is_effective: bool)
 
@@ -65,6 +67,8 @@ signal species_extinct(species_name: String)
 signal species_recovered(species_name: String)
 ## 巢穴被捣毁（激怒信号）：同物种全体侦测提升且不再逃跑，持续一段时间
 signal nest_ransacked(species_name: String)
+## 仅由真实巢穴受玩家攻击后的销毁路径发出，携带不可混淆的区域身份。
+signal nest_ransacked_at(species_name: String, region_id: String, position: Vector2)
 
 # --- 生态模拟（由 WorldSim 转发） ---
 signal sim_tick_completed(summary: Dictionary)
@@ -83,6 +87,13 @@ signal obstacle_destroyed(cell: Vector2i, pos: Vector2, kind: String)
 signal quest_updated(text: String)
 ## 委托列表：HUD 只发请求，任务管理器验证实际已接任务后变更。
 signal quest_track_requested(quest_id: String)
+signal camp_quest_action_requested(action: String)
+## 前哨物件只请求交互；章节账本核验身份/距离/步骤后才确认保存。
+signal outpost_interaction_requested(object_id: String)
+## 已保存的物件/救援/修复表现态，不携带场景节点或偷偷修改生态。
+signal outpost_state_changed(state: Dictionary)
+## 固定情境按钮只消费当前候选；按下时锁定 target_id，不能自动改成邻近对象。
+signal context_interaction_changed(payload: Dictionary)
 signal quest_abandon_requested(quest_id: String)
 ## 收集委托完成后明确领取；任务管理器验证材料、距离与当前凭证。
 signal quest_claim_requested(quest_id: String)

@@ -12,6 +12,12 @@ extends Node
 const MAX_ACTIVE := 3
 const Presentation := preload("res://scripts/ui/quest_presentation.gd")
 const CLAIM_DISTANCE := 220.0
+const Camp := preload("res://scripts/main/camp_quest.gd")
+const Outpost := preload("res://scripts/main/outpost_quest.gd")
+const Inventory := preload("res://scripts/main/camp_quest_inventory.gd")
+var _camp: CampQuest
+var _outpost: OutpostQuest
+var _retrying_rewards := false
 
 ## 库存信号同步发出，交付会再次触发本管理器；守卫避免重复扣料/重复奖励。
 var _reconciling_collect := false
@@ -37,8 +43,17 @@ func _ready() -> void:
 	EventBus.quest_track_requested.connect(_on_track_requested)
 	EventBus.quest_abandon_requested.connect(_on_abandon_requested)
 	EventBus.quest_claim_requested.connect(_on_claim_requested)
+	_camp = Camp.new()
+	_camp.changed.connect(_push_hud)
+	add_child(_camp)
+	_outpost = Outpost.new()
+	_outpost.changed.connect(_push_hud)
+	add_child(_outpost)
+	_camp.changed.connect(_outpost.sync_legacy_contract)
+	EventBus.inventory_changed.connect(_retry_pending_rewards)
 	_reconcile_hunts()
 	_reconcile_collect()
+	_retry_pending_rewards()
 	_push_hud()
 
 
@@ -51,6 +66,10 @@ func _on_dialogue_confirmed(quest: Dictionary) -> void:
 ## 玩家按 是/否 决定接取；非委托状态（进行中/栏满/无单）返回纯文本直接播报。
 ## 返回 {"kind":"quest","quest":{...},"text":...} 或 {"kind":"info","text":...}
 func offer(landmark_id: String, quest_kind: String, giver: String) -> Dictionary:
+	if quest_kind == "outpost":
+		return _outpost.offer(giver)
+	if landmark_id == Camp.Data.LANDMARK:
+		return _camp.offer(giver)
 	var data: Dictionary = GameState.quests
 	for q: Dictionary in data["active"]:
 		if q.get("landmark_id", "") != landmark_id:
@@ -78,6 +97,12 @@ func offer(landmark_id: String, quest_kind: String, giver: String) -> Dictionary
 
 ## 确认接取（对话按"是"后调用）：offer 与 accept 分离保证生成确定性不漂移
 func accept(quest: Dictionary) -> String:
+	if quest.get("id", "") == Outpost.Data.ID:
+		return _outpost.accept()
+	if quest.get("id", "") == Camp.Data.ID:
+		if not GameState.outpost_quest.is_empty() and not Outpost.Data.valid_legacy(GameState.camp_quest):
+			return "新前哨章节已包含一次生态奖励，不能另开重复的营地调查"
+		return _camp.accept()
 	var data: Dictionary = GameState.quests
 	if str(quest.get("id", "")).is_empty() or int(quest.get("need", 0)) <= 0:
 		return "委托已失效，请重新交谈"
@@ -339,6 +364,12 @@ func _reconcile_collect() -> void:
 			if have != int(q["progress"]):
 				q["progress"] = have
 				changed = true
+			if q.get("settlement_blocked", false):
+				var bonus := _bonus_item(q)
+				if have < int(q["need"]) or Inventory.can_apply({str(q["item"]): int(q["need"])}, {bonus: 1} if bonus != "" else {}):
+					q.erase("settlement_blocked")
+					q.erase("blocked_item")
+					changed = true
 			if int(q["progress"]) >= int(q["need"]) and not Presentation.requires_claim(q):
 				_complete(q)
 				changed = true
@@ -354,6 +385,21 @@ func _reconcile_collect() -> void:
 
 ## 点击任务行只追踪；销单必须经过单独的明确放弃请求。
 func _on_track_requested(quest_id: String) -> void:
+	if quest_id.is_empty():
+		GameState.tracked_quest_id = "__untracked__"
+		GameState._queue_save()
+		_push_hud()
+		return
+	if quest_id == Outpost.Data.ID and _outpost.is_active():
+		GameState.tracked_quest_id = quest_id
+		GameState._queue_save()
+		_push_hud()
+		return
+	if quest_id == Camp.Data.ID and _camp.is_active():
+		GameState.tracked_quest_id = quest_id
+		GameState._queue_save()
+		_push_hud()
+		return
 	for quest: Dictionary in GameState.quests["active"]:
 		if str(quest["id"]) == quest_id:
 			GameState.tracked_quest_id = quest_id
@@ -370,6 +416,10 @@ func _on_claim_requested(quest_id: String) -> void:
 
 ## 只从真实活动单结算，忽略气泡里的旧奖励/库存快照；重复点击不会认领下一单。
 func claim(quest_id: String) -> String:
+	if quest_id == Outpost.Data.ID:
+		return _outpost.claim()
+	if quest_id == Camp.Data.ID:
+		return _camp.claim()
 	for quest: Dictionary in GameState.quests["active"]:
 		if str(quest["id"]) != quest_id or not Presentation.requires_claim(quest):
 			continue
@@ -387,7 +437,9 @@ func claim(quest_id: String) -> String:
 		_reconcile_collect()
 		if Presentation.state(quest) != "claimable":
 			return "材料不足：%d/%d，尚未交付" % [quest["progress"], quest["need"]]
-		_complete(quest)
+		if not _complete(quest):
+			_push_hud()
+			return "奖励物品已达99上限，请先腾出空间；材料和全部奖励仍保留"
 		_push_hud()
 		GameState._queue_save()
 		return "交付成功 · 奖励已到账"
@@ -401,6 +453,10 @@ func _on_abandon_requested(quest_id: String) -> void:
 
 
 func abandon(quest_id: String) -> String:
+	if quest_id == Outpost.Data.ID:
+		return _outpost.abandon()
+	if quest_id == Camp.Data.ID:
+		return _camp.abandon()
 	for quest: Dictionary in GameState.quests["active"]:
 		if str(quest["id"]) != quest_id:
 			continue
@@ -433,43 +489,39 @@ func _progress_match(predicate: Callable) -> void:
 		GameState._queue_save()
 
 
-func _complete(quest: Dictionary) -> void:
+func _bonus_item(quest: Dictionary) -> String:
+	return Presentation.bonus_item(quest)
+
+func _complete(quest: Dictionary) -> bool:
 	var data: Dictionary = GameState.quests
 	if not data["active"].has(quest) or _completing.has(quest["id"]):
-		return
+		return false
+	var costs := {str(quest["item"]): int(quest["need"])} if quest["kind"] == "collect" else {}
+	var bonus := _bonus_item(quest)
+	var rewards := {bonus: 1} if bonus != "" else {}
+	# 全部预检先于扣料、销单、金币/经验发放。材料本次支出释放的空间可使用。
+	if not Inventory.can_apply(costs, rewards):
+		if quest["kind"] == "collect" and GameState.count_item(str(quest["item"])) < int(quest["need"]):
+			quest["progress"] = mini(GameState.count_item(str(quest["item"])), int(quest["need"]))
+		else:
+			quest["settlement_blocked"] = true
+			quest["blocked_item"] = bonus
+		GameState._queue_save()
+		return false
 	_completing[quest["id"]] = true
-	# collect 先扣材料再销单：库存意外不足（接单后卖掉等边角）时不销单不计数，
-	# 进度回落到当前持有等再攒——先销单后扣料的旧顺序在扣料失败时任务已没了、
-	# 完成数已加、奖励没发（与"不结算不销单"的注释语义相反）
-	if quest["kind"] == "collect" and not GameState.remove_item(quest["item"], int(quest["need"])):
-		quest["progress"] = mini(GameState.count_item(str(quest["item"])), int(quest["need"]))
-		_completing.erase(quest["id"])
-		return
+	GameState.begin_world_reward()
 	data["active"].erase(quest)
 	GameState._invalidate_world_save_cache()
-	_completing.erase(quest["id"])
 	var landmark_id := str(quest.get("landmark_id", quest["id"]))
 	data["completed"][landmark_id] = int(data["completed"].get(landmark_id, 0)) + 1
-	# 老档消毒允许缺失奖励字段；恢复时自动结算同样必须安全回落。
 	var gold := maxi(0, int(quest.get("gold", 0)))
 	var xp := maxi(0, int(quest.get("xp", 0)))
 	var paid_gold := roundi(gold * GameState.stats.gold_mult())
 	var paid_xp := int(xp * GameState.stats.passive_mult("xp", 1.1) * (1.0 + GameState.stats.equip_affix("xp")))
+	Inventory.apply(costs, rewards)
 	GameState.add_gold(gold)
 	GameState.add_xp(xp)
-	# 物品奖励（P1）：collect 固定附金钥匙（lava 城塞的钥匙闭环）；其余任务
-	# 按 hash(单号) 确定性 30% 附一件随机补给（无 RNG——同单任何端结果一致）
-	var bonus := ""
-	if quest["kind"] == "collect":
-		bonus = EconomyMath.KEY_GOLD
-	elif not quest.get("hunt_adjusted", false) and hash("quest-bonus|%s" % quest["id"]) % 10 < 3:
-		var pool: Array = EconomyMath.BOSS_BONUS_POOL
-		bonus = pool[hash("quest-bonus2|%s" % quest["id"]) % pool.size()]
-	var bonus_text := ""
-	if bonus != "":
-		GameState.add_item(bonus, 1)
-		bonus_text = " +%s" % ItemCatalog.name_of(bonus)
-	# 结算金闪（美术 v5 fx 全量）：在玩家位置炸开
+	var bonus_text := " +%s" % ItemCatalog.name_of(bonus) if bonus != "" else ""
 	var player := get_tree().get_first_node_in_group("player") as Node2D
 	if player != null:
 		EventBus.fx_requested.emit("flash_yellow", player.global_position, 1.3)
@@ -482,24 +534,71 @@ func _complete(quest: Dictionary) -> void:
 		data["receipts"] = {}
 	data["receipts"][landmark_id] = receipt
 	data["last_receipt"] = landmark_id
+	if not GameState.camp_quest.is_empty():
+		GameState.camp_quest["last_summary"] = false
 	GameState._queue_save()
+	GameState.end_world_reward()
+	_completing.erase(quest["id"])
 	EventBus.quest_completed.emit("✓ %s · %s（+%d 金币 +%d 经验%s）" % [
 		quest["title"], "交付领奖成功" if Presentation.requires_claim(quest) else "已自动领奖",
 		receipt["gold"], receipt["xp"], bonus_text])
+	return true
+
+
+## 旧自动任务保留自动模式：容量恢复后重试，不能要求玩家再杀/再发现一个。
+func _retry_pending_rewards() -> void:
+	if _retrying_rewards:
+		return
+	_retrying_rewards = true
+	for quest: Dictionary in GameState.quests["active"].duplicate():
+		if quest.get("settlement_blocked", false) and not Presentation.requires_claim(quest) \
+				and int(quest.get("progress", 0)) >= int(quest.get("need", 1)):
+			_complete(quest)
+	_retrying_rewards = false
+	_push_hud()
+
+
+func camp_context() -> Dictionary:
+	return _camp.context() if _camp != null else {}
+
+func camp_target() -> Dictionary:
+	return _camp.target() if _camp != null else {}
+
+func camp_investigate() -> String:
+	return _camp.investigate()
+
+func camp_choose(branch: String) -> String:
+	return _camp.choose(branch)
+
+func npc_status(landmark_id: String, quest_kind: String, giver: String) -> Dictionary:
+	if quest_kind == "outpost":
+		return _outpost.npc_status()
+	if landmark_id == Camp.Data.LANDMARK:
+		return _camp.npc_status()
+	for quest: Dictionary in GameState.quests["active"]:
+		if quest.get("landmark_id", "") == landmark_id:
+			return Presentation.npc_status(landmark_id)
+	if GameState.quests["active"].size() >= MAX_ACTIVE or _gen_quest(landmark_id, quest_kind, giver).is_empty():
+		return {"state": "unavailable", "marker": "· 暂无委托", "color": Presentation.PROGRESS_COLOR}
+	return Presentation.npc_status(landmark_id)
 
 
 ## 追踪对象失效时仅回退到第一张剩余委托，不改变其进度或奖励。
 func _push_hud() -> void:
-	var active: Array = GameState.quests["active"]
+	var active: Array = GameState.quests["active"].duplicate()
+	if _camp != null and _camp.is_active():
+		active.append(_camp.snapshot())
+	if _outpost != null and _outpost.is_active():
+		active.append(_outpost.snapshot())
 	var selected: Dictionary = {}
 	for quest: Dictionary in active:
 		if str(quest["id"]) == GameState.tracked_quest_id:
 			selected = quest
 			break
-	if selected.is_empty() and not active.is_empty():
+	if selected.is_empty() and not active.is_empty() and GameState.tracked_quest_id != "__untracked__":
 		selected = active[0]
 	var selected_id := str(selected.get("id", ""))
-	if selected_id != GameState.tracked_quest_id:
+	if selected_id != GameState.tracked_quest_id and GameState.tracked_quest_id != "__untracked__":
 		GameState.tracked_quest_id = selected_id
 		GameState._queue_save()
 	var views: Array = []
@@ -507,6 +606,15 @@ func _push_hud() -> void:
 		views.append(Presentation.snapshot(quest))
 	EventBus.quest_list_changed.emit(views, selected_id)
 	if selected.is_empty():
+		if not active.is_empty():
+			EventBus.quest_updated.emit("委托未追踪 · 点击查看已有任务")
+			return
+		if _outpost != null and GameState.outpost_quest.get("stage", "") == "completed" and GameState.outpost_quest.get("last_summary", false):
+			EventBus.quest_updated.emit(_outpost.receipt_text())
+			return
+		if _camp != null and GameState.camp_quest.get("paid", false) and GameState.camp_quest.get("last_summary", false):
+			EventBus.quest_updated.emit(_camp.receipt_text())
+			return
 		var receipt: Dictionary = GameState.quests.get("receipts", {}).get(GameState.quests.get("last_receipt", ""), {})
 		EventBus.quest_updated.emit(Presentation.receipt_text(receipt) if not receipt.is_empty() else "! 委托：找带 ! 的居民接取")
 		return
@@ -514,3 +622,43 @@ func _push_hud() -> void:
 	var others := " +另 %d 项" % (active.size() - 1) if active.size() > 1 else ""
 	EventBus.quest_updated.emit("%s %s（%d/%d）%s · %s" % [view["ui_status"], selected["title"],
 		selected["progress"], selected["need"], others, view["ui_objective"]])
+
+
+## 前哨公开接口；表现层只拿快照和提交明确动作，不直接写证据。
+func outpost_object_payload(id: String) -> Dictionary:
+	return _outpost.object_payload(id)
+
+func outpost_action(id: String) -> String:
+	match id.trim_prefix("outpost:"):
+		"accept", "resume": return _outpost.accept()
+		"investigate": return _outpost.investigate()
+		"choose_hunt": return _outpost.choose("hunt")
+		"choose_ransack": return _outpost.choose("ransack")
+		"find_hunt_clue": return _outpost.find_hunt_clue()
+		_: return _outpost.object_action(id.trim_prefix("outpost:"))
+
+func outpost_object_state(id: String) -> Dictionary:
+	return _outpost.object_state(id)
+
+func outpost_context() -> Dictionary:
+	return _outpost.context()
+
+func outpost_target() -> Dictionary:
+	return _outpost.target()
+
+func outpost_snapshot() -> Dictionary:
+	return _outpost.snapshot()
+
+func outpost_evidence(id: String) -> bool:
+	return _outpost.evidence(id)
+
+func outpost_visual_state() -> Dictionary:
+	return _outpost.visual_state()
+
+func outpost_state() -> Dictionary:
+	return _outpost.visual_state()
+
+func legacy_camp_offer(giver: String = "营地巡守") -> Dictionary:
+	var payload := _camp.offer(giver)
+	payload["back_action"] = "outpost:menu"
+	return payload

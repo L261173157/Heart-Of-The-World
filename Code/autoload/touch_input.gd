@@ -20,6 +20,7 @@ var guard_available: bool:
 var move_vector: Vector2 = Vector2.ZERO
 var joystick_active: bool = false
 
+var _interaction_queued := ""
 var _attack_queued: bool = false
 var _dash_queued: bool = false
 var _heavy_queued: bool = false
@@ -32,6 +33,17 @@ func _ready() -> void:
 	# 死亡/复活均结束上一次手势；局部触点与全局向量必须一同复位。
 	EventBus.player_died.connect(reset)
 	EventBus.player_respawned.connect(reset)
+
+
+## 独立交互通道；空参数只供键盘/测试按当前对象发起，不与攻击共用。
+func queue_interact(target_id: String = "") -> void:
+	_interaction_queued = target_id if not target_id.is_empty() else "__nearest__"
+
+
+func consume_interact() -> String:
+	var target := _interaction_queued
+	_interaction_queued = ""
+	return target
 
 
 ## 攻击按钮按下时调用
@@ -144,6 +156,7 @@ func cancel_guard() -> void:
 ## 玩家死亡/游戏暂停时清空排队：消费方不可用期间的点击不应在恢复后一次性兑现
 func clear_queues() -> void:
 	cancel_guard()
+	_interaction_queued = ""
 	_attack_queued = false
 	_dash_queued = false
 	_heavy_queued = false

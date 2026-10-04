@@ -52,7 +52,7 @@ func _check(ok: bool, label: String) -> void:
 
 
 func _button(node_name: String) -> Button:
-	return _hud.get_node("Root/" + node_name)
+	return _hud.get_node("Root").find_child(node_name, true, false) as Button
 
 
 func _center(node_name: String) -> Vector2:
@@ -79,7 +79,7 @@ func _test_dialogue_paper() -> void:
 
 func _test_layout() -> void:
 	var root: Control = _hud.get_node("Root")
-	var names: Array[String] = ["AttackBtn", "DashBtn", "HeavyBtn", "BoltBtn", "HealBtn", "EmpowerBtn", "QuickSlotBtn", "ReturnTownBtn"]
+	var names: Array[String] = ["AttackBtn", "ShieldBtn", "DashBtn", "ShortcutBtn", "QuickSlotBtn", "MoreBtn"]
 	for canvas: Vector2 in [Vector2(1280, 720), Vector2(1560, 720), Vector2(1280, 960), Vector2(1160, 680)]:
 		root.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		root.position = Vector2(40, 20)
@@ -94,14 +94,25 @@ func _test_layout() -> void:
 		_hud._open_dialogue({"kind": "quest", "giver": "营地猎人", "text": "可接：探索地标\n奖励：金币与经验。发现尚未到访的地标，接下吗？", "quest": {"id": "layout"}})
 		await _settle()
 		_check(root.get_global_rect().encloses(_hud._dialogue_panel.get_global_rect()), "对话和按钮保持安全区内")
-		for node_name: String in names:
-			_check(not _hud._dialogue_panel.get_global_rect().intersects(_button(node_name).get_global_rect()), "对话不覆盖 " + node_name)
+		_check(get_tree().paused and not _hud._can_use_mobile_controls(), "阅读对话暂停世界且阻止战斗触控")
 		_check(not _hud._dialogue_text.get_global_rect().intersects(_hud._dialogue_yes.get_global_rect()), "对话正文不覆盖明确接取按钮")
 		_hud._close_dialogue()
-		_check(_button("AttackBtn").size.x > _button("HeavyBtn").size.x * 1.4, "攻击视觉/触控层级大于技能")
-		_check(_center("DashBtn").x < _center("HeavyBtn").x and _center("HeavyBtn").x < _center("BoltBtn").x \
-				and _center("DashBtn").y > _center("HeavyBtn").y and _center("HeavyBtn").y > _center("BoltBtn").y, "三技能沿攻击左上弧排列")
-		_check(_button("EmpowerBtn").get_global_rect().end.x + 32 < _button("DashBtn").get_global_rect().position.x, "低频工具带与战斗扇区独立")
+		_check(_button("AttackBtn").size.x > _button("ShieldBtn").size.x and _button("AttackBtn").size.x > _button("ShortcutBtn").size.x, "攻击视觉/触控层级大于盾与预设技能")
+		_check(_center("ShieldBtn").x < _center("AttackBtn").x and _center("DashBtn").y < _center("AttackBtn").y,
+				"盾在攻击左侧且冲刺在上方，三项高频动作独立")
+		for node_name: String in ["HeavyBtn", "BoltBtn", "HealBtn", "EmpowerBtn", "ReturnTownBtn", "BtnBag", "BtnEco", "BtnCodex", "BtnShop"]:
+			_check(not _button(node_name).is_visible_in_tree(), "战斗视图隐藏低频入口 " + node_name)
+		for node_name: String in names:
+			_check(_button(node_name).is_visible_in_tree(), "六个常驻战斗键可见 " + node_name)
+		_hud._toggle_more()
+		await _settle()
+		_check(root.get_global_rect().encloses(_hud._more_panel.get_global_rect()) and not get_tree().paused,
+				"更多展开保持安全区内且世界继续运行")
+		for node_name: String in ["HeavyBtn", "BoltBtn", "HealBtn", "EmpowerBtn"]:
+			var skill := _button(node_name)
+			_check(skill.is_visible_in_tree() and _hud._more_panel.get_global_rect().encloses(skill.get_global_rect())
+					and skill.size.x >= 80 and skill.size.y >= 80, "更多中的原技能保留足够触控面积 " + node_name)
+		_hud._toggle_more()
 	root.position = Vector2.ZERO
 	root.size = Vector2(1280, 720)
 	await _settle()
@@ -112,7 +123,7 @@ func _test_multitouch_combat() -> void:
 	_touch_event(0, Vector2(160, 560), true)
 	_drag_event(0, Vector2(205, 560))
 	_touch_event(1, _center("AttackBtn"), true)
-	_touch_event(2, _center("BoltBtn"), true)
+	_touch_event(2, _center("ShortcutBtn"), true)
 	await _physics(3)
 	_check(TouchInput.joystick_active and _player.global_position.x > start.x, "左手移动与两根右手触点同时响应")
 	_check(_player._combo == 1 and _player._bolt_cd > 0, "真实多指同时触发玩家普攻与法弹")
@@ -120,9 +131,9 @@ func _test_multitouch_combat() -> void:
 	_check(not TouchInput.consume_attack() and not TouchInput.consume_bolt(), "技能队列已被真实玩家消费，无重复排队")
 	_drag_event(1, Vector2(700, 320))
 	_touch_event(1, Vector2(700, 320), false)
-	_touch_event(2, _center("BoltBtn"), false)
+	_touch_event(2, _center("ShortcutBtn"), false)
 	await _settle()
-	_check(_button("AttackBtn").get("_touch_index") == -1 and _button("BoltBtn").get("_touch_index") == -1, "滑出和冷却禁用后释放都清触点")
+	_check(_button("AttackBtn").get("_touch_index") == -1 and _button("ShortcutBtn").get("_touch_index") == -1, "滑出和冷却禁用后释放都清触点")
 	_check(TouchInput.joystick_active, "右手释放不抢走左手摇杆")
 	_touch_event(0, _center("AttackBtn"), false)
 	await _physics(12)
@@ -140,6 +151,8 @@ func _test_multitouch_combat() -> void:
 	_player.current_hp = 40
 	_player.current_mp = _player.stats.max_mp()
 	_player._push_hud()
+	await _tap("MoreBtn", 5)
+	_check(_hud._more_panel.visible and not get_tree().paused, "更多技能面板保持世界运行")
 	await _tap("HeavyBtn", 5)
 	_check(_player._heavy_cd > 0, "真实重击触控施放")
 	await _tap("DashBtn", 6)
@@ -149,7 +162,9 @@ func _test_multitouch_combat() -> void:
 	_player.current_mp = _player.stats.max_mp()
 	_player._push_hud()
 	await _tap("EmpowerBtn", 8)
-	_check(_player._empower_cd > 0 and _player._empower_timer > 0, "辅助区强化实际生效")
+	_check(_player._empower_cd > 0 and _player._empower_timer > 0, "更多面板强化实际生效")
+	await _tap("MoreBtn", 8)
+	_check(not _hud._more_panel.visible, "再次触摸更多收起技能，不改变暂停状态")
 	await _physics(20)
 	_player._dash_cd = 0
 	_player.current_mp = _player.stats.max_mp()
@@ -267,10 +282,16 @@ func _test_transition_reset() -> void:
 	await _physics(12)
 	_check(_player.global_position.distance_to(respawn_position) < 0.1 and _player._combo == 0 \
 			and joystick.get("_touch_index") == -1, "复活清除死亡期间的新手势，旧事件不带出攻击或漂移")
+	# 取消局部捕获不等于用户真的松指；先结束这些物理手势，再测试新的阅读手势。
+	for index in [21, 31, 34]:
+		_touch_event(index, Vector2(205, 560), false)
+	_touch_event(32, _center("AttackBtn"), false)
+	await _physics(2)
 
 
 func _test_utilities() -> void:
 	GameState.inventory = {"water-pot": 2}
+	GameState.set_setting("mobile_recovery", "item:water-pot")
 	_player.current_hp = _player.stats.max_hp()
 	_player.current_mp = 10
 	_player._push_hud()
@@ -280,19 +301,22 @@ func _test_utilities() -> void:
 	await _tap("QuickSlotBtn", 1)
 	_check(GameState.count_item("water-pot") == 1 and _player.current_mp > 10 and TouchInput.joystick_active, "移动中另一指补给只消耗一次且不影响摇杆")
 	_touch_event(0, Vector2(205, 560), false)
-	await _tap("ReturnTownBtn", 2)
-	_check(_return_requests == 1, "独立回城按钮只发送一次请求")
+	await _tap("PauseBtn", 2)
+	await _touch_control(_button("MenuRecall"))
+	_check(_return_requests == 1, "菜单中的回城入口只发送一次请求并恢复世界")
 	EventBus.return_to_town_progress.emit(true, 2.0, 3.0)
 	await _settle()
-	_check(_hud._return_panel.visible and _hud._return_caption.text == "取消回城" \
+	_check(_hud._return_panel.visible and _button("MenuRecall").text == "取消回城" \
 			and is_equal_approx(_hud._return_bar.value, 1.0), "真实进度事件显示读条与取消语义")
-	await _tap("ReturnTownBtn", 3)
+	await _tap("PauseBtn", 3)
+	await _touch_control(_button("MenuRecall"))
 	_check(_return_requests == 2, "读条中再次触摸发送取消请求")
 	EventBus.return_to_town_progress.emit(false, 0.0, 3.0)
-	_check(not _hud._return_panel.visible and _hud._return_caption.text == "回城", "取消/完成后清理读条")
+	_check(not _hud._return_panel.visible and _button("MenuRecall").text == "回城", "取消/完成后清理读条")
+	await _tap("PauseBtn", 4)
 	var click := InputEventMouseButton.new()
 	click.button_index = MOUSE_BUTTON_LEFT
-	click.position = _center("ReturnTownBtn")
+	click.position = _center("MenuRecall")
 	click.pressed = true
 	get_viewport().push_input(click, true)
 	await _settle()
@@ -301,11 +325,14 @@ func _test_utilities() -> void:
 	get_viewport().push_input(click, true)
 	await _settle()
 	_check(_return_requests == 3, "普通鼠标入口仍只触发一次回城")
-	_touch_event(9, _center("ReturnTownBtn"), true)
+	await _tap("PauseBtn", 5)
+	_touch_event(9, _center("MenuRecall"), true)
 	await _settle()
-	_touch_event(9, _center("ReturnTownBtn"), false, true)
+	_check(_button("MenuRecall").get("_touch_index") == 9, "菜单回城按钮持有真实触点，以取消事件判断提交")
+	_touch_event(9, _center("MenuRecall"), false, true)
 	await _settle()
 	_check(_return_requests == 3, "系统取消回城触点不触发请求")
+	await _key(KEY_ESCAPE)
 
 
 func _test_quest_confirmation() -> void:
@@ -324,7 +351,10 @@ func _test_quest_confirmation() -> void:
 	await _reveal(abandon)
 	await _touch_control(abandon)
 	await _key(KEY_ESCAPE)
-	_check(GameState.quests["active"].size() == 1 and _hud._pending_abandon_id == "", "返回关闭列表也取消待确认放弃")
+	_check(GameState.quests["active"].size() == 1 and _hud._pending_abandon_id == ""
+			and _hud._task_layer.visible and get_tree().paused, "返回先取消待确认放弃，保留任务列表")
+	await _key(KEY_ESCAPE)
+	_check(not _hud._task_layer.visible and not get_tree().paused, "再返回才关闭任务列表恢复世界")
 	await _touch_control(_hud.quest_label)
 	abandon = _hud._task_rows.find_child("Abandon_touch_quest", true, false)
 	await _touch_control(abandon)

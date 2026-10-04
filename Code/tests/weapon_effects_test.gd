@@ -132,6 +132,12 @@ func _test_save_and_ui() -> void:
 	var hud: CanvasLayer = preload("res://scenes/ui/hud.tscn").instantiate()
 	add_child(hud)
 	await get_tree().process_frame
+	_check(not hud.passive_layer.visible and not get_tree().paused
+		and GameState.stats.pending_passive_picks == 3, "冷读档保留赐福资格，不自动打开选卡")
+	await _touch_control(hud.get_node("Root/PauseBtn"))
+	await _touch_control(hud.pause_layer.find_child("MenuGrowth", true, false))
+	await _touch_control(hud._stats_overview_layer.find_child("OpenBlessing", true, false))
+	_check(hud.passive_layer.visible and get_tree().paused, "明确成长菜单打开三选一赐福阅读层")
 	var card: Button = hud.passive_cards[1]
 	_check(card.text.contains("上限1") and card.text.contains("80%") and card.text.contains("35%")
 		and card.text.contains("不再分裂"), "真实三选一卡显示效果、上限与伤害取舍")
@@ -360,3 +366,19 @@ func _test_pool() -> void:
 	await _frames()
 	_check(PlayerBolt._pool.is_empty() and get_tree().get_nodes_in_group("player_bolts").is_empty(),
 		"命中待分裂瞬间退出世界不会生成孤立碎片或污染下一世界")
+
+
+func _touch_control(control: Control) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var touch := InputEventScreenTouch.new()
+	touch.index = 71
+	touch.position = get_viewport().get_screen_transform() * control.get_global_rect().get_center()
+	touch.pressed = true
+	Input.parse_input_event(touch)
+	await get_tree().process_frame
+	touch = touch.duplicate()
+	touch.pressed = false
+	Input.parse_input_event(touch)
+	await get_tree().process_frame
+	await get_tree().process_frame

@@ -189,6 +189,11 @@ func setup(p_inst: MonsterInstance) -> void:
 		var candidate := inst.spawn_pos + offset
 		if ObstacleField.blocks(candidate, footprint) or ObstacleField.liquid_kind_at(candidate) != "":
 			candidate = inst.spawn_pos
+		# 旧档个体可能恰好落在新增前哨墙格。只修正这片已编排场地的
+		# 表现落点/巡逻锚点；不挪动模拟出生记录、不改变种群或生命。
+		if OutpostLayout.reserved_ground(candidate) and ObstacleField.blocks(candidate, footprint):
+			candidate = ObstacleField.nudge_free(candidate, footprint)
+			anchor = candidate
 		global_position = candidate
 	elif region != null:
 		var half := region.size * 0.45
@@ -1246,6 +1251,7 @@ func _die_by_player() -> void:
 	# 本地置尸体态：否则同帧第二来源命中会再次走完本函数（双倍经验/金币/掉落）
 	if WorldSim.sim != null:
 		WorldSim.sim.report_killed(inst.id, global_position)  # 同步触发 on_sim_death()（赤炎小魔在此裂出子代）
+		EventBus.monster_killed_at.emit(inst.id, inst.species.species_name, inst.region_id, global_position)
 	else:
 		on_sim_death()
 	GameState.end_world_reward()

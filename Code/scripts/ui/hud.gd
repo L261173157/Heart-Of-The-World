@@ -133,8 +133,8 @@ var _stat_owned: Label
 var _stat_confirm: Button
 var _stat_attribute := ""
 var _passive_owned: Label
-## 同类优先使用高恢复品；满生命时跳过食物改用缺少的精力补给。
-const QUICK_PRIORITY := ["life-pot", "medipack", "sushi", "onigiri", "water-pot"]
+## 显式恢复预设；不因血量、精力或物品耗尽自动改用另一种资源。
+const RECOVERY_ITEMS := ["life-pot", "medipack", "sushi", "onigiri", "water-pot"]
 var _quick_btn: Button
 var _quick_icon: TextureRect
 var _quick_badge: Label
@@ -196,15 +196,15 @@ func _ready() -> void:
 	%BtnAgility.pressed.connect(_open_stat_preview.bind("agility"))
 	%BtnIntellect.pressed.connect(_open_stat_preview.bind("intellect"))
 
-	%AttackBtn.button_down.connect(TouchInput.queue_attack)
-	%DashBtn.button_down.connect(TouchInput.queue_dash)
-	%HeavyBtn.button_down.connect(TouchInput.queue_heavy)
-	%BoltBtn.button_down.connect(TouchInput.queue_bolt)
-	%HealBtn.button_down.connect(TouchInput.queue_heal)
-	%EmpowerBtn.button_down.connect(TouchInput.queue_empower)
-	%BtnEco.pressed.connect(func() -> void: ecology_panel.visible = not ecology_panel.visible)
+	%AttackBtn.button_down.connect(_queue_mobile_skill.bind("attack"))
+	%DashBtn.button_down.connect(_queue_mobile_skill.bind("dash"))
+	%HeavyBtn.button_down.connect(_queue_mobile_skill.bind("heavy"))
+	%BoltBtn.button_down.connect(_queue_mobile_skill.bind("bolt"))
+	%HealBtn.button_down.connect(_queue_mobile_skill.bind("heal"))
+	%EmpowerBtn.button_down.connect(_queue_mobile_skill.bind("empower"))
+	%BtnEco.pressed.connect(_toggle_ecology)
 	%BtnShop.pressed.connect(_toggle_shop)
-	%BtnShopClose.pressed.connect(func() -> void: shop_panel.visible = false)
+	%BtnShopClose.pressed.connect(func() -> void: _pop_modal(shop_panel))
 	%BtnWeapon.pressed.connect(func() -> void: _try_buy("weapon"))
 	%BtnStaff.pressed.connect(func() -> void: _try_buy("staff"))
 	%BtnVigor.pressed.connect(func() -> void: _try_buy("vigor"))
@@ -217,8 +217,7 @@ func _ready() -> void:
 		if _inv_layer != null and _inv_layer.visible:
 			_refresh_inventory())
 	EventBus.world_event.connect(func(text: String) -> void: _toast(text))
-	EventBus.bounty_updated.connect(func(text: String) -> void:
-		bounty_label.text = text.replace(" · 本地线索 ", "\n本地线索："))
+	EventBus.bounty_updated.connect(_on_bounty_updated)
 	# 任务行（世界 v5 地标 NPC 委托）：空串隐藏（无任务时不占行高）
 	EventBus.quest_updated.connect(_on_quest_updated)
 	# 任务行只打开小列表，跟踪与放弃为两个明确动作。
@@ -283,6 +282,7 @@ func _ready() -> void:
 	_setup_hud_hierarchy()
 	_setup_mobile_controls()
 	_setup_guard_control()
+	_setup_six_button_hud()
 	_equipment_badge = HotwTheme.add_badge(%BtnBag, "")
 	_on_equipment_offer_changed()
 	_apply_vignette()
@@ -291,8 +291,7 @@ func _ready() -> void:
 			GameState.stats.xp_to_next(), GameState.stats.pending_points)
 	_on_gold_changed(GameState.gold)
 	# 读档/菜单往返不再等待下一次升级信号；立即续接角色尚未领取的赐福。
-	if GameState.stats.pending_passive_picks > 0:
-		_open_passive_pick()
+	_refresh_menu_badge()
 
 
 ## 战斗播报位：与顶部世界事件/引导提示分离的第二条 toast 通道。
@@ -338,7 +337,7 @@ func _swap_title_ribbon(node_path: String, color_idx: int, min_width := 240.0) -
 
 # ==================== NPC 对话气泡（美术 v6，TS RegularPaper 纸面） ====================
 ## RegularPaper 九宫格底 + 合成金边头像框 + TS 方钮 yes/no + 丝带名牌。
-## 攻击键=确认 / 冲刺键=关闭（player 侧经 dialogue_action 路由，触屏同通道）；
+## 独立交互入口打开阅读层；攻击永远不承担打开或确认对话。
 ## 确认接单经 dialogue_confirmed 信号回到 QuestManager 结算
 var _dialogue_panel: Control
 var _dialogue_tag: Control
@@ -370,8 +369,7 @@ func _heart_frame(idx: int) -> AtlasTexture:
 	return _heart_cache[clampi(idx, 0, 4)]
 const DIALOGUE_INFO_SECONDS := 3.5
 const DIALOGUE_OFFER_SECONDS := 12.0
-## 离开发起 NPC 超过此距离自动收气泡：对话期间攻击键=确认/冲刺=关闭，
-## 玩家已走远时旧委托还挂屏会误接单（NPC 交互半径 96px，180px 留走位余量）
+## 旧气泡时间/距离常量仅保留给既有外部引用；新阅读层暂停且由玩家关闭。
 const DIALOGUE_WALKAWAY_RADIUS := 180.0
 
 
@@ -406,6 +404,7 @@ func _setup_dialogue_bubble() -> void:
 
 	var box := TextureRect.new()
 	# v6：TS 无现成头像框 → 金边深底合成件（icon_frame）
+	box.name = "PortraitFrame"
 	box.texture = preload("res://assets/ts/icons/icon_frame.png")
 	box.position = Vector2(20, 40)
 	box.size = Vector2(96, 96)
@@ -492,52 +491,78 @@ func _dialogue_action_label(button: Button, text: String) -> Label:
 
 func _open_dialogue(payload: Dictionary) -> void:
 	GameState.dialogue_open = true
-	TouchInput.cancel_guard()
-	# NA 语音短音（美术 v5 音频全量）：NPC 开口随机一条，说话感
 	SfxManager.play("voice%d" % (1 + randi() % 4))
 	_dialogue_kind = str(payload.get("kind", ""))
+	_dialogue_action_name = str(payload.get("action", ""))
+	_dialogue_back_action_name = str(payload.get("back_action", ""))
 	var origin: Variant = payload.get("origin", Vector2.INF)
 	_dialogue_origin = origin if origin is Vector2 else Vector2.INF
 	_dialogue_quest = payload.get("quest", {}) if _dialogue_kind in ["quest", "claim"] else {}
-	var giver := str(payload.get("giver", ""))
-	if _dialogue_tag != null:
-		_dialogue_tag.size = Vector2(maxf(340.0, 244.0 + giver.length() * 24.0), 44.0)
-	_dialogue_name.text = giver
+	_dialogue_options = payload.get("options", []).duplicate(true)
+	_dialogue_selected_option = {}
+	_dialogue_name.text = str(payload.get("giver", ""))
 	_dialogue_text.text = str(payload.get("text", ""))
+	_dialogue_text.set_meta("opening_text", _dialogue_text.text)
 	var face_path := str(payload.get("faceset", ""))
-	_dialogue_faceset.texture = load(face_path) \
-			if not face_path.is_empty() and ResourceLoader.exists(face_path) else null
-	var has_offer: bool = not _dialogue_quest.is_empty() or _dialogue_kind == "shop"
+	_dialogue_faceset.texture = load(face_path) if not face_path.is_empty() and ResourceLoader.exists(face_path) else null
+	var has_offer := not _dialogue_quest.is_empty() or _dialogue_kind in ["shop", "camp_action"]
 	_dialogue_yes.visible = has_offer
 	_dialogue_no.visible = true
-	_dialogue_yes_label.visible = has_offer
+	_dialogue_yes_label.visible = true
 	_dialogue_no_label.visible = true
-	_dialogue_yes_label.text = str(payload.get("confirm_text", "交付领奖" if _dialogue_kind == "claim" else ("进入商店" if _dialogue_kind == "shop" else "接取委托")))
-	_dialogue_no_label.text = "暂时离开" if has_offer else "关闭"
-	_dialogue_timer = DIALOGUE_OFFER_SECONDS if has_offer else DIALOGUE_INFO_SECONDS
-	_dialogue_panel.visible = true
+	_dialogue_yes_label.text = str(payload.get("confirm_text", "交付领奖" if _dialogue_kind == "claim" else ("进入商店" if _dialogue_kind == "shop" else ("继续委托" if _dialogue_kind == "camp_action" else "接取委托"))))
+	_dialogue_no_label.text = "返回上一层" if not _dialogue_back_action_name.is_empty() else "返回 / 关闭"
+	_show_dialogue_options()
+	_push_modal(_dialogue_panel)
+	if _gesture_gate != null:
+		_gesture_gate.require_release()
+	_layout_dialogue()
 
 
 func _on_dialogue_action(action: String) -> void:
 	if not _dialogue_panel.visible:
 		return
-	if action == "confirm":
-		SfxManager.play("menu")
-		if _dialogue_kind == "claim" and not _dialogue_quest.is_empty():
-			EventBus.quest_claim_requested.emit(str(_dialogue_quest.get("id", "")))
-		elif not _dialogue_quest.is_empty():
-			EventBus.dialogue_confirmed.emit(_dialogue_quest)
-		elif _dialogue_kind == "shop":
-			shop_panel.visible = true
+	if action != "confirm":
+		if not _dialogue_selected_option.is_empty():
+			_dialogue_selected_option = {}
+			_show_dialogue_options()
+		else:
+			var back_action := _dialogue_back_action_name
+			_close_dialogue()
+			if not back_action.is_empty():
+				EventBus.camp_quest_action_requested.emit(back_action)
+		return
+	if _gesture_gate != null and not _gesture_gate.armed:
+		return
+	if _dialogue_kind == "camp_choice" and (_dialogue_selected_option.is_empty() or not bool(_dialogue_selected_option.get("enabled", true))):
+		return
+	var kind := _dialogue_kind
+	var quest := _dialogue_quest.duplicate(true)
+	var choice_action := str(_dialogue_selected_option.get("action", _dialogue_action_name))
 	_close_dialogue()
+	SfxManager.play("menu")
+	if kind in ["camp_choice", "camp_action"]:
+		EventBus.emit_signal("camp_quest_action_requested", choice_action)
+	elif kind == "claim" and not quest.is_empty():
+		EventBus.quest_claim_requested.emit(str(quest.get("id", "")))
+	elif not quest.is_empty():
+		EventBus.dialogue_confirmed.emit(quest)
+	elif kind == "shop":
+		_toggle_shop()
 
 
 func _close_dialogue() -> void:
-	_dialogue_panel.visible = false
+	_pop_modal(_dialogue_panel)
+	_dialogue_panel.hide()
 	_dialogue_quest = {}
 	_dialogue_kind = ""
+	_dialogue_action_name = ""
+	_dialogue_back_action_name = ""
+	_dialogue_options.clear()
+	_dialogue_selected_option.clear()
 	_dialogue_origin = Vector2.INF
 	GameState.dialogue_open = false
+	_release_gameplay_touches()
 
 
 func _exit_tree() -> void:
@@ -545,19 +570,9 @@ func _exit_tree() -> void:
 	GameState.dialogue_open = false
 
 
-func _process_dialogue(delta: float) -> void:
-	if not _dialogue_panel.visible:
-		return
-	# 中途走开自动关闭（距离见 DIALOGUE_WALKAWAY_RADIUS 注释）
-	if _dialogue_origin != Vector2.INF:
-		var player := get_tree().get_first_node_in_group("player") as Node2D
-		if player == null or player.global_position.distance_to(_dialogue_origin) \
-				> DIALOGUE_WALKAWAY_RADIUS:
-			_close_dialogue()
-			return
-	_dialogue_timer -= delta
-	if _dialogue_timer <= 0.0:
-		_close_dialogue()
+func _process_dialogue(_delta: float) -> void:
+	# Reading is user-paced. No expiry, walking timeout, or combat confirmation.
+	pass
 
 
 func _toast_combat(message: String) -> void:
@@ -865,14 +880,14 @@ func _setup_hud_hierarchy() -> void:
 	death_label.add_theme_constant_override("outline_size", 6)
 
 
-## 主攻击 + 左上三技能扇区；回城/补给/治疗/强化独立低频工具带。
+## 先绑定既有动作与回城事件；六键布局随后将低频项归入菜单。
 ## 全部保留 Root 安全区锚点与原输入动作，不缩放触摸区来迁就平板。
 func _setup_mobile_controls() -> void:
 	for node_name: String in ["AttackBtn", "DashBtn", "HeavyBtn", "BoltBtn", "HealBtn", "EmpowerBtn", "QuickSlotBtn", "ReturnTownBtn"]:
 		var button: Button = get_node("Root/" + node_name)
 		button.focus_mode = Control.FOCUS_NONE
 		button.set("input_allowed", _can_use_mobile_controls)
-		button.tooltip_text = {"AttackBtn": "攻击 / 与附近居民交流", "DashBtn": "冲刺 · Shift / K", "HeavyBtn": "重击 · L", "BoltBtn": "法弹 · I", "HealBtn": "治疗 · H", "EmpowerBtn": "强化 · U", "QuickSlotBtn": "使用当前有效补给", "ReturnTownBtn": "返回出生城镇；移动、出招或受击将取消"}[node_name]
+		button.tooltip_text = {"AttackBtn": "攻击 · 只出招，不与居民交互", "DashBtn": "冲刺 · Shift / K", "HeavyBtn": "重击 · L", "BoltBtn": "法弹 · I", "HealBtn": "治疗 · H", "EmpowerBtn": "强化 · U", "QuickSlotBtn": "使用预设恢复方式；不会自动替换资源", "ReturnTownBtn": "返回出生城镇；移动、出招或受击将取消"}[node_name]
 	HotwTheme.style_ts_round_button(%ReturnTownBtn)
 	HotwTheme.add_icon(%ReturnTownBtn, preload("res://assets/ts/structures_baked/ts_house1.png"), 18)
 	_add_button_caption(%ReturnTownBtn, "回城")
@@ -987,7 +1002,7 @@ func _refresh_guard_caption() -> void:
 
 
 func _can_use_mobile_controls() -> bool:
-	return not get_tree().paused and not shop_panel.visible
+	return not get_tree().paused and not shop_panel.visible and not GameState.dialogue_open
 
 
 func _release_gameplay_touches() -> void:
@@ -998,6 +1013,9 @@ func _on_return_to_town_progress(active: bool, remaining: float, total: float) -
 	_return_active = active
 	_return_panel.visible = active
 	_return_caption.text = "取消回城" if active else "回城"
+	var menu_recall := pause_layer.find_child("MenuRecall", true, false) as Button
+	if menu_recall != null:
+		menu_recall.text = "取消回城" if active else "回城"
 	if active:
 		var text := "回城中 %.1f秒 · 再点取消\n移动、出招或受击也会取消" % remaining
 		if _return_label.text != text:
@@ -1008,11 +1026,7 @@ func _on_return_to_town_progress(active: bool, remaining: float, total: float) -
 
 func _resize_status_plate() -> void:
 	if _hud_plate != null:
-		var top := get_node("Root/TopLeft") as Control
-		_hud_plate.size = Vector2(338, top.size.y + 24)
-		# 任务行出现/换行会改变信息块高度，生态面板必须跟随，不能压住任务文字。
-		ecology_panel.position = Vector2(14, top.position.y + top.size.y + 22)
-		ecology_panel.size = Vector2(400, 234)
+		_hud_plate.size = Vector2(292, 88) if _shortcut_btn != null else Vector2(338, 150)
 
 
 func _bar_value_label(bar: ProgressBar) -> Label:
@@ -1086,6 +1100,7 @@ func _process(delta: float) -> void:
 		_guard_break_remaining = maxf(0.0, _guard_break_remaining - delta)
 		_refresh_guard_caption()
 	_process_dialogue(delta)
+	_refresh_six_action_feedback()
 	_update_smooth_bars(delta)
 	# 帧率显示（4Hz）：FPS + 每帧绘制调用数（定位 GPU/CPU 侧用——真机卡顿
 	# 时 DC 高而 FPS 低指向 GPU，DC 低而 FPS 低指向 CPU）
@@ -1149,7 +1164,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_echo():
 		return
 	if event.is_action_pressed("toggle_ecology"):
-		ecology_panel.visible = not ecology_panel.visible
+		_toggle_ecology()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("toggle_codex"):
 		_toggle_codex()
@@ -1168,23 +1183,26 @@ func _unhandled_input(event: InputEvent) -> void:
 ## ESC 先关最上层弹层（设置→图鉴→物品栏→商店），全关后才切暂停——
 ## 否则世界解除暂停恢复战斗，设置层却还悬浮在画面上挡操作
 func _close_top_layer_or_toggle_pause() -> void:
-	if passive_layer.visible:
+	if _more_panel != null and _more_panel.visible:
+		_more_panel.hide()
 		return
-	if _choice_layer_visible():
-		_close_choice_layer()
-	elif pause_settings_layer.visible:
-		_close_pause_settings()
-	elif codex_layer.visible:
-		_close_codex()
-	elif _inv_layer != null and _inv_layer.visible:
-		_close_inventory()
-	elif shop_panel.visible:
-		shop_panel.visible = false
-	else:
-		_toggle_pause()
+	if _dialogue_panel.visible and not _dialogue_selected_option.is_empty():
+		_dialogue_selected_option = {}
+		_show_dialogue_options()
+		return
+	if not _pending_abandon_id.is_empty():
+		_pending_abandon_id = ""
+		_refresh_task_list()
+		return
+	if not _modal_stack.is_empty():
+		var layer: Control = _modal_stack.back()["layer"]
+		if layer == _dialogue_panel:
+			_on_dialogue_action("decline")
+		else:
+			_pop_modal(layer)
+		return
+	_toggle_pause()
 
-
-# --- 技能冷却条 ---
 
 func _on_skills_changed(dash_cd: float, heavy_cd: float, bolt_cd: float, heal_cd: float,
 		empower_cd: float, mp: float, _max_mp: float) -> void:
@@ -1266,48 +1284,23 @@ func _refresh_skill_bar() -> void:
 # --- 暂停 / 主菜单 ---
 
 func _toggle_pause() -> void:
-	var world := get_tree().current_scene
-	if world == null or not world is Node2D:
+	if not _modal_stack.is_empty():
+		_close_top_layer_or_toggle_pause()
 		return
-	if passive_layer.visible:
-		return  # 三选一未选时不允许暂停卡死流程
-	if _choice_layer_visible():
-		_close_choice_layer()
-		return
-	if _inv_layer != null and _inv_layer.visible:
-		_toggle_inventory()
-		return
-	if codex_layer.visible:
-		# 图鉴打开期间世界已暂停：任何暂停入口（按钮/ESC）先收起图鉴，
-		# 直接翻转 paused 会造成"世界恢复运行而图鉴还开着"的坏状态
-		_toggle_codex()
-		return
-	# 鼠标暂停入口也必须收起商店，不能把仍可键盘购买的商店留在遮罩背后。
-	shop_panel.visible = false
-	var paused := not get_tree().paused
-	get_tree().paused = paused
-	if paused:
-		# 暂停期间触屏按钮的排队不应在恢复后一次性兑现
-		TouchInput.clear_queues()
-	pause_layer.visible = paused
-	pause_settings_layer.visible = false
-	_sync_modal_focus()
+	_push_modal(pause_layer)
+	_refresh_menu_badge()
 
 
 func _open_pause_settings() -> void:
-	if not pause_layer.visible:
-		return
-	pause_settings_layer.visible = true
-	_sync_modal_focus()
+	if pause_layer.visible:
+		_push_modal(pause_settings_layer)
 
 
 func _close_pause_settings() -> void:
-	pause_settings_layer.visible = false
+	_pop_modal(pause_settings_layer)
 	_sync_modal_focus(%PauseSettingsBtn)
 
 
-## 遮罩只挡鼠标，不挡键盘焦点。仅最上层可进入 Tab 链，关闭后恢复原始模式。
-## 模态内动态生成的背包格子也在每次打开后登记；不改常驻战斗按钮的 FOCUS_NONE。
 func _sync_modal_focus(preferred: Control = null) -> void:
 	var active: Control = null
 	var fallback: Control = null
@@ -1332,6 +1325,21 @@ func _sync_modal_focus(preferred: Control = null) -> void:
 	elif pause_layer.visible:
 		active = pause_layer
 		fallback = %ResumeBtn
+	if not _modal_stack.is_empty():
+		active = _modal_stack.back()["layer"]
+		fallback = active.find_child("ChoiceClose", true, false)
+		if active == _dialogue_panel:
+			fallback = _dialogue_no
+		elif active == pause_layer:
+			fallback = %ResumeBtn
+		elif active == pause_settings_layer:
+			fallback = %PauseSettingsClose
+		elif active == codex_layer:
+			fallback = %CodexClose
+		elif active == _inv_layer:
+			fallback = _inv_layer.find_child("InventoryClose", true, false)
+		elif active == shop_panel:
+			fallback = %BtnShopClose
 	for node: Node in get_node("Root").find_children("*", "Control", true, false):
 		var control := node as Control
 		if not control.has_meta("hud_focus_mode"):
@@ -1340,6 +1348,7 @@ func _sync_modal_focus(preferred: Control = null) -> void:
 		control.focus_mode = int(control.get_meta("hud_focus_mode")) if eligible else Control.FOCUS_NONE
 	if active == null:
 		return
+	_bind_reading_buttons(active)
 	_release_gameplay_touches()
 	if preferred != null and preferred.is_visible_in_tree() \
 			and active.is_ancestor_of(preferred) and preferred.focus_mode != Control.FOCUS_NONE:
@@ -1353,35 +1362,17 @@ func _sync_modal_focus(preferred: Control = null) -> void:
 
 ## 关闭动作必须幂等：同帧重复点击不能把刚收起的面板重新打开。
 func _resume_game() -> void:
-	if not pause_layer.visible:
-		return
-	pause_layer.visible = false
-	pause_settings_layer.visible = false
-	get_tree().paused = false
-	TouchInput.clear_queues()
-	_sync_modal_focus()
+	_pop_modal(pause_layer)
 
 
 func _close_codex() -> void:
-	if not codex_layer.visible:
-		return
-	codex_layer.visible = false
-	get_tree().paused = false
-	TouchInput.clear_queues()
-	_sync_modal_focus()
+	_pop_modal(codex_layer)
 
 
 func _close_inventory() -> void:
-	if _inv_layer == null or not _inv_layer.visible:
-		return
-	_inv_layer.visible = false
-	get_tree().paused = false
-	TouchInput.clear_queues()
-	_sync_modal_focus()
+	_pop_modal(_inv_layer)
 
 
-## 手动保存（暂停菜单"保存进度"）：自动存档本已覆盖，按钮的价值是
-## 给玩家确定感；toast 计时在暂停态冻结，"已保存"会停留到恢复游戏后淡出
 func _save_progress() -> void:
 	var saved := GameState.save_now()
 	_toast("已保存" if saved else ("存档已禁用" if not GameState.save_enabled else "保存失败，请重试"))
@@ -1416,27 +1407,11 @@ func _on_player_died() -> void:
 # --- 图鉴与成就 ---
 
 func _toggle_codex() -> void:
-	if _choice_layer_visible():
-		return
-	if _inv_layer != null and _inv_layer.visible:
-		return
-	# 暂停菜单/三选一已占住屏幕时不响应（键 C 穿透暂停层打开图鉴会造成
-	# 双弹层叠加 + 暂停态翻转错乱）
-	if not codex_layer.visible and (pause_layer.visible or pause_settings_layer.visible \
-			or passive_layer.visible):
-		return
-	shop_panel.visible = false
-	codex_layer.visible = not codex_layer.visible
 	if codex_layer.visible:
-		# 图鉴是 29 物种 + 成就的长列表阅读界面：读条时被围殴不是乐趣是干扰，
-		# 与升级三选一同口径（暂停 + 清触屏队列）；商店维持打开不暂停（已拍板）
-		get_tree().paused = true
-		TouchInput.clear_queues()
-		_refresh_codex()
+		_pop_modal(codex_layer)
 	else:
-		get_tree().paused = false
-		TouchInput.clear_queues()
-	_sync_modal_focus()
+		_refresh_codex()
+		_push_modal(codex_layer)
 
 
 func _refresh_codex() -> void:
@@ -1486,16 +1461,13 @@ func _refresh_codex() -> void:
 # --- 三选一被动（升级赐福） ---
 
 func _on_leveled_up(_new_level: int, _levels_gained: int) -> void:
-	# 资格由 CharacterStats 在发信号前记账；HUD 只展示，重建场景不会丢失。
-	if not passive_layer.visible:
-		_open_passive_pick()
+	# Combat never interrupts itself with a reading/choice modal.
+	_refresh_menu_badge()
 
 
 func _open_passive_pick() -> void:
 	if GameState.stats.pending_passive_picks <= 0:
-		passive_layer.visible = false
-		get_tree().paused = false
-		_sync_modal_focus()
+		_pop_modal(passive_layer)
 		return
 	GameState.stats.ensure_passive_choices()
 	var chosen: Array[String] = GameState.stats.passive_choices
@@ -1520,17 +1492,7 @@ func _open_passive_pick() -> void:
 		else:
 			btn.visible = false
 	_passive_owned.text = _owned_passive_text()
-	# 升级可发生于读取/调试信号中断：先收起旧模态，再把赐福放到最上层。
-	for layer: Control in [_inv_layer, _task_layer, _stat_layer, codex_layer,
-			pause_layer, pause_settings_layer, shop_panel]:
-		if layer != null:
-			layer.visible = false
-	passive_layer.get_parent().move_child(passive_layer, -1)
-	# 读卡时暂停世界，领取后不会遗留隐藏模态的暂停态。
-	passive_layer.visible = true
-	get_tree().paused = true
-	TouchInput.clear_queues()
-	_sync_modal_focus()
+	_push_modal(passive_layer)
 
 
 func _pick_passive(index: int) -> void:
@@ -1558,13 +1520,40 @@ func _on_threat_warning(_threat: float) -> void:
 
 
 func _on_quest_updated(text: String) -> void:
-	quest_label.text = text
 	quest_label.visible = true
-	if text.is_empty():
-		quest_label.text = "委托：暂无 · 点击查看"
+	quest_label.text = "未跟踪委托\n点击选择当前目标"
+	for quest: Dictionary in _task_snapshot:
+		if str(quest.get("id", "")) != _tracked_quest_id:
+			continue
+		var objective := str(quest.get("ui_objective", ""))
+		if quest.get("kind", "") == "camp_ecology":
+			match str(quest.get("camp_stage", "")):
+				"investigate":
+					objective = "前往%s据点 · 靠近后调查" % str(quest.get("species", "目标"))
+				"choose":
+					objective = "已调查 · 选择处理方式"
+				"act":
+					objective = " · ".join(objective.split(" · ").slice(0, 2))
+				"return":
+					objective = "返回营地巡守 · 交付领奖"
+		elif quest.get("kind", "") == "outpost":
+			# 段落前缀不是下一步动作；不能沿用旧委托的首段截取而只剩「第二段」。
+			var separator := objective.find(" · ")
+			if objective.begins_with("第") and separator >= 0:
+				objective = objective.substr(separator + 3)
+			objective = objective.get_slice("；", 0)
+		else:
+			objective = objective.get_slice(" · ", 0)
+		quest_label.text = "%s  %d/%d\n%s" % [quest.get("title", "当前委托"), int(quest.get("progress", 0)), int(quest.get("need", 1)), objective]
+		return
+	if _task_snapshot.is_empty() and GameState.outpost_quest.get("stage", "") == "completed" and GameState.outpost_quest.get("last_summary", false):
+		# 修复后仍给出明确的自愿交接，避免通用空任务文案吞掉常驻巡守的后续线索。
+		quest_label.text = "失联的前哨  3/3\n" + ("前哨已恢复 · 与留守巡守交流后续线索" if not GameState.outpost_quest.get("evidence", {}).get("next_clue_received", false) else "区域线索已记录 · 可以自由探索")
+		return
+	if _task_snapshot.is_empty() and not text.is_empty():
+		quest_label.text = "暂无进行中的委托\n与附近居民交流 · 点击查看"
 
 
-## 行点击只打开列表，不改任务。真实触摸和鼠标经同一 GUI 输入通道。
 func _on_quest_label_input(event: InputEvent) -> void:
 	var clicked: bool = event is InputEventMouseButton and event.pressed \
 			and event.button_index == MOUSE_BUTTON_LEFT
@@ -1588,17 +1577,11 @@ func _on_day_phase(night: bool) -> void:
 # --- 游商营地 ---
 
 func _toggle_shop() -> void:
-	if _choice_layer_visible():
-		return
-	if pause_layer.visible or pause_settings_layer.visible or passive_layer.visible or codex_layer.visible:
-		return
-	# 物品栏开着（世界暂停）时开商店会留下"商店可点而世界冻结"的怪态——先收起
-	if _inv_layer != null and _inv_layer.visible:
-		_close_inventory()
-	shop_panel.visible = not shop_panel.visible
 	if shop_panel.visible:
-		TouchInput.cancel_guard()
+		_pop_modal(shop_panel)
+	else:
 		_refresh_shop()
+		_push_modal(shop_panel)
 
 
 func _refresh_shop() -> void:
@@ -1848,26 +1831,11 @@ func _setup_inventory_layer() -> void:
 
 
 func _toggle_inventory() -> void:
-	if _choice_layer_visible():
-		return
-	# 暂停菜单/设置/三选一/图鉴已占屏时不响应（与 _toggle_codex 同防穿层）
-	if _inv_layer == null:
-		return
-	if not _inv_layer.visible and (pause_layer.visible or pause_settings_layer.visible \
-			or passive_layer.visible or codex_layer.visible):
-		return
-	if _inv_layer.visible == false and shop_panel.visible:
-		shop_panel.visible = false  # 商店不暂停，与暂停态物品栏互斥
-	_inv_layer.visible = not _inv_layer.visible
 	if _inv_layer.visible:
-		# 阅读型面板（照图鉴口径）：读背包时被围殴不是乐趣是干扰
-		get_tree().paused = true
-		TouchInput.clear_queues()
-		_refresh_inventory()
+		_pop_modal(_inv_layer)
 	else:
-		get_tree().paused = false
-		TouchInput.clear_queues()
-	_sync_modal_focus()
+		_refresh_inventory()
+		_push_modal(_inv_layer)
 
 
 func _refresh_inventory() -> void:
@@ -1940,8 +1908,8 @@ func _on_inv_cell(id: String) -> void:
 			EconomyMath.item_sell_price(id)])
 
 
-## 战斗快捷槽：零配置绑定——按 QUICK_PRIORITY 取当前资源有缺口的恢复品，
-## 显示持有数；点击经 item_use_requested 交 player（满血满蓝拦截在 player 侧）
+## 恢复键只使用明确选定的治疗技能或消耗品。
+## 显示精力成本/持有数及不可用原因，绝不自动替换资源。
 func _setup_quick_slot() -> void:
 	_quick_btn = %QuickSlotBtn
 	HotwTheme.style_ts_round_button(_quick_btn)
@@ -1954,26 +1922,33 @@ func _setup_quick_slot() -> void:
 func _refresh_quick_slot() -> void:
 	if _quick_btn == null:
 		return
-	var pick := ""
-	for id: String in QUICK_PRIORITY:
-		if GameState.count_item(id) <= 0:
-			continue
-		var needs_hp := _hp_known and not _hp_full and CharacterStats.ITEM_HP_FRAC.has(id)
-		var needs_mp := _mp_known and _mp_now < _mp_max_cache - 0.5 and CharacterStats.ITEM_MP_FRAC.has(id)
-		if needs_hp or needs_mp:
-			pick = id
-			break
-	_quick_id = pick
-	_quick_btn.disabled = pick == ""
-	_quick_icon.texture = ItemCatalog.icon_of(pick) if pick != "" else ICON_BAG
-	_quick_badge.text = str(GameState.count_item(pick)) if pick != "" else ""
+	var preset := str(GameState.settings.get("mobile_recovery", "heal"))
+	_quick_id = preset.trim_prefix("item:") if preset.begins_with("item:") else "heal"
+	_quick_btn.disabled = false
+	_quick_icon.texture = ICON_HEAL if _quick_id == "heal" else ItemCatalog.icon_of(_quick_id)
+	var caption := _quick_btn.get_node_or_null("Caption") as Label
+	if caption != null:
+		caption.text = "治疗" if _quick_id == "heal" else ItemCatalog.name_of(_quick_id)
+	var reason := _recovery_unavailable_reason()
+	_quick_badge.text = str(int(CharacterStats.HEAL_COST)) + "MP" if _quick_id == "heal" else "×%d" % GameState.count_item(_quick_id)
+	_quick_btn.tooltip_text = ("预设：治疗技能" if _quick_id == "heal" else "预设：" + ItemCatalog.name_of(_quick_id)) + (" · " + reason if not reason.is_empty() else "")
+	_quick_icon.modulate = Color.WHITE if reason.is_empty() else Color(0.5, 0.5, 0.55)
+	if _recovery_status != null:
+		_recovery_status.text = reason
 
 
 func _on_quick_slot() -> void:
-	_refresh_quick_slot()
-	if _quick_id == "":
+	if not _can_use_mobile_controls():
 		return
-	EventBus.item_use_requested.emit(_quick_id)
+	_refresh_quick_slot()
+	var reason := _recovery_unavailable_reason()
+	if not reason.is_empty():
+		_toast_combat(reason + " · 可在更多中更换预设")
+		return
+	if _quick_id == "heal":
+		TouchInput.queue_heal()
+	else:
+		EventBus.item_use_requested.emit(_quick_id)
 
 
 func _on_hp_changed(current: float, maximum: float) -> void:
@@ -2026,7 +2001,8 @@ func _on_gold_changed(_amount: int) -> void:
 
 func _refresh_stats_label(level: int, pending_points: int) -> void:
 	# 有待分配属性点时亮出分配按钮，分完收起
-	stat_buttons.visible = pending_points > 0
+	stat_buttons.visible = false
+	_refresh_menu_badge()
 	stats_label.text = "Lv.%d  金币 %d" % [level, GameState.gold]
 	if _region_name != "":
 		stats_label.text += "\n%s" % _region_name
@@ -2253,30 +2229,18 @@ func _choice_layer_visible() -> bool:
 
 
 func _can_open_choice() -> bool:
-	return not passive_layer.visible and not pause_layer.visible and not pause_settings_layer.visible \
-			and not codex_layer.visible and not _choice_layer_visible() \
-			and not (_inv_layer != null and _inv_layer.visible)
+	return not passive_layer.visible and not _choice_layer_visible()
 
 
 func _open_choice_layer(layer: Control) -> void:
-	shop_panel.visible = false
-	layer.visible = true
-	layer.get_parent().move_child(layer, -1)
-	get_tree().paused = true
-	TouchInput.clear_queues()
-	_sync_modal_focus()
+	_push_modal(layer)
 
 
 func _close_choice_layer() -> void:
-	if not _choice_layer_visible() or passive_layer.visible:
-		return
-	_task_layer.visible = false
-	_stat_layer.visible = false
 	_stat_attribute = ""
 	_pending_abandon_id = ""
-	get_tree().paused = false
-	TouchInput.clear_queues()
-	_sync_modal_focus()
+	if not _modal_stack.is_empty():
+		_pop_modal(_modal_stack.back()["layer"])
 
 
 func _open_stat_preview(attribute: String) -> void:
@@ -2320,9 +2284,10 @@ func _on_quest_list_changed(active_quests: Array, tracked_quest_id: String) -> v
 func _open_task_list() -> void:
 	if not _can_open_choice():
 		return
-	_task_snapshot = []
-	for quest: Dictionary in GameState.quests.get("active", []):
-		_task_snapshot.append(preload("res://scripts/ui/quest_presentation.gd").snapshot(quest))
+	# quest_list_changed is the authoritative full list, including the camp pilot.
+	if _task_snapshot.is_empty():
+		for quest: Dictionary in GameState.quests.get("active", []):
+			_task_snapshot.append(preload("res://scripts/ui/quest_presentation.gd").snapshot(quest))
 	_tracked_quest_id = GameState.tracked_quest_id
 	_refresh_task_list()
 	_open_choice_layer(_task_layer)
@@ -2332,12 +2297,31 @@ func _refresh_task_list() -> void:
 	for child: Node in _task_rows.get_children():
 		_task_rows.remove_child(child)
 		child.queue_free()
+	# Automatic bounties retain their existing settlement rules and have no
+	# new tracking/abandon actions. They stay readable even with no NPC quests.
+	var bounty_section := VBoxContainer.new()
+	bounty_section.name = "AutomaticBountySection"
+	bounty_section.add_theme_constant_override("separation", 6)
+	_task_rows.add_child(bounty_section)
+	var bounty_title := _readable_label("自动赏金（达成自动结算）", 18)
+	bounty_title.add_theme_color_override("font_color", HotwTheme.GOLD)
+	bounty_section.add_child(bounty_title)
+	var bounty_text := bounty_label.text
+	if bounty_text.is_empty():
+		bounty_text = "附近暂无合适赏金 · 继续探索"
+	if not GameState.bounty.is_empty():
+		bounty_text += "\n奖励基数：%d 金币 · %d 经验" % [int(GameState.bounty.get("gold", 0)), int(GameState.bounty.get("xp", 0))]
+	var bounty_detail := _readable_label(bounty_text, 16)
+	bounty_detail.name = "AutomaticBountyDetail"
+	bounty_section.add_child(bounty_detail)
+	_task_rows.add_child(HSeparator.new())
 	if _task_snapshot.is_empty():
-		_task_rows.add_child(_readable_label("暂无进行中的委托\n寻找头顶「!」标记的居民，靠近后点击攻击交流。"))
+		_task_rows.add_child(_readable_label("暂无进行中的委托\n寻找头顶「!」标记的居民，靠近后点击独立的交互按钮交流。"))
 		return
-	for quest: Dictionary in _task_snapshot.slice(0, 3):
+	for quest: Dictionary in _task_snapshot:
 		var id := str(quest.get("id", ""))
 		var row := VBoxContainer.new()
+		row.name = "QuestRow_" + id
 		_task_rows.add_child(row)
 		var status := str(quest.get("ui_status", "可交付" if int(quest.get("progress", 0)) >= int(quest.get("need", 1)) else "进行中"))
 		row.add_child(_readable_label("【%s】%s  %d/%d" % [status, quest.get("title", "委托"),
@@ -2348,14 +2332,17 @@ func _refresh_task_list() -> void:
 		var reward := str(quest.get("ui_reward", ""))
 		if not reward.is_empty():
 			row.add_child(_readable_label(reward, 16))
+		for detail: String in ["history", "live_facts"]:
+			if not str(quest.get(detail, "")).is_empty():
+				row.add_child(_readable_label(str(quest[detail]), 16))
 		var actions := HBoxContainer.new()
 		actions.add_theme_constant_override("separation", 12)
 		row.add_child(actions)
 		var track := Button.new()
 		track.name = "Track_" + id
-		track.text = "正在跟踪" if id == _tracked_quest_id else "跟踪此委托"
+		track.text = "取消跟踪" if id == _tracked_quest_id else "跟踪此委托"
 		track.custom_minimum_size = Vector2(188, 56)
-		track.disabled = id == _tracked_quest_id
+		track.disabled = false
 		track.pressed.connect(_request_quest_action.bind(id, false))
 		actions.add_child(track)
 		var abandon := Button.new()
@@ -2365,7 +2352,7 @@ func _refresh_task_list() -> void:
 		abandon.pressed.connect(_request_quest_action.bind(id, true))
 		actions.add_child(abandon)
 		if id == _pending_abandon_id:
-			row.add_child(_readable_label("放弃后当前进度不会保留，确定放弃？", 16))
+			row.add_child(_readable_label("暂停此调查？已发生的世界变化、任务物件和已支付记录仍会保留，可向巡守继续。" if quest.get("kind", "") in ["camp_ecology", "outpost"] else "放弃后当前进度不会保留，确定放弃？", 16))
 			var confirm := Button.new()
 			confirm.name = "ConfirmAbandon_" + id
 			confirm.text = "确认放弃此委托"
@@ -2393,7 +2380,7 @@ func _request_quest_action(id: String, abandon: bool) -> void:
 		_sync_modal_focus()
 	else:
 		_pending_abandon_id = ""
-		EventBus.quest_track_requested.emit(id)
+		EventBus.quest_track_requested.emit("" if id == _tracked_quest_id else id)
 
 
 func _confirm_quest_abandon(id: String) -> void:
@@ -2463,3 +2450,605 @@ func _resolve_equipment_offer(equip_new: bool, token: int) -> void:
 	_sync_modal_focus()
 	await get_tree().process_frame
 	_equipment_pick_locked = false
+
+# --- Six fixed combat actions and reversible reading stack ---
+var _shortcut_btn: Button
+var _shortcut_icon: TextureRect
+var _shortcut_status: Label
+var _recovery_status: Label
+var _more_btn: Button
+var _more_panel: PanelContainer
+var _more_body: VBoxContainer
+var _more_page := "actions"
+var _more_skills: HBoxContainer
+var _more_items: VBoxContainer
+var _context_btn: Button
+var _context_payload: Dictionary = {}
+var _context_pressed_id := ""
+var _modal_stack: Array[Dictionary] = []
+var _gesture_gate: Node
+var _ecology_layer: Control
+var _map_layer: Control
+var _stats_overview_layer: Control
+var _menu_growth_btn: Button
+var _tracked_plate: Panel
+var _dialogue_options: Array = []
+var _dialogue_option_box: VBoxContainer
+var _dialogue_option_scroll: ScrollContainer
+var _dialogue_selected_option: Dictionary = {}
+var _dialogue_action_name := ""
+var _dialogue_back_action_name := ""
+
+func _setup_six_button_hud() -> void:
+	var root: Control = get_node("Root")
+	_shortcut_btn = _new_mobile_action("ShortcutBtn", ICON_BOLT, "法弹")
+	_shortcut_icon = _shortcut_btn.get_node("ActionIcon")
+	_shortcut_status = _action_status(_shortcut_btn)
+	_shortcut_btn.button_down.connect(_activate_shortcut)
+	_more_btn = _new_mobile_action("MoreBtn", ICON_BAG, "更多")
+	_more_btn.pressed.connect(_toggle_more)
+	_recovery_status = _action_status(_quick_btn)
+	_context_btn = _new_mobile_action("ContextBtn", ICON_CODEX, "交流")
+	_context_btn.visible = false
+	_context_btn.button_down.connect(func() -> void: _context_pressed_id = str(_context_payload.get("target_id", "")))
+	_context_btn.pressed.connect(_request_context_action)
+	if EventBus.has_signal("context_interaction_changed"):
+		EventBus.connect("context_interaction_changed", _on_context_changed)
+	_setup_more_panel()
+	_setup_adventure_menu()
+	_setup_reading_surfaces()
+	for button: Button in [%BtnBag, %BtnEco, %BtnCodex, %BtnShop, %ReturnTownBtn]:
+		button.hide()
+	bounty_label.hide()
+	stats_label.get_parent().hide()
+	stat_buttons.hide()
+	_tracked_plate = Panel.new()
+	_tracked_plate.name = "TrackedQuestPlate"
+	_tracked_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tracked_style := HotwTheme.panel_style()
+	tracked_style.bg_color = Color(0.065, 0.105, 0.14, 0.93)
+	tracked_style.border_color = Color("8f8a65")
+	tracked_style.shadow_size = 4
+	_tracked_plate.add_theme_stylebox_override("panel", tracked_style)
+	root.add_child(_tracked_plate)
+	quest_label.reparent(root)
+	quest_label.name = "TrackedQuest"
+	quest_label.add_theme_font_size_override("font_size", 17)
+	quest_label.add_theme_color_override("font_color", Color("fff0c5"))
+	quest_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	quest_label.clip_text = true
+	quest_label.max_lines_visible = 3
+	# The embedded iOS font includes 三, while U+2630 would rely on unavailable system fallback.
+	%PauseBtn.text = "三"
+	%PauseBtn.get_node("Caption").text = "菜单"
+	%Minimap.mouse_filter = Control.MOUSE_FILTER_STOP
+	%Minimap.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	%Minimap.gui_input.connect(_on_minimap_input)
+	var passive_close := Button.new()
+	passive_close.name = "PassiveClose"
+	passive_close.text = "稍后选择 / 返回"
+	passive_close.custom_minimum_size.y = 52
+	passive_close.pressed.connect(func() -> void: _pop_modal(passive_layer))
+	passive_layer.get_node("PassiveVB").add_child(passive_close)
+	root.resized.connect(_layout_six_button_hud)
+	_gesture_gate = preload("res://scripts/ui/fresh_gesture_gate.gd").new()
+	_gesture_gate.name = "FreshGestureGate"
+	add_child(_gesture_gate)
+	_layout_six_button_hud()
+	_refresh_six_action_feedback()
+
+func _new_mobile_action(node_name: String, texture: Texture2D, caption: String) -> Button:
+	var button := Button.new()
+	button.set_script(preload("res://scripts/ui/mobile_action_button.gd"))
+	button.name = node_name
+	button.focus_mode = Control.FOCUS_NONE
+	button.set("input_allowed", _can_use_mobile_controls)
+	get_node("Root").add_child(button)
+	HotwTheme.style_ts_round_button(button)
+	var icon := HotwTheme.add_icon(button, texture, 20)
+	icon.name = "ActionIcon"
+	_add_button_caption(button, caption)
+	return button
+
+func _action_status(button: Button) -> Label:
+	var label := _readable_label("", 14)
+	label.name = "ActionStatus"
+	label.set_anchors_preset(Control.PRESET_CENTER)
+	label.offset_left = -44
+	label.offset_right = 44
+	label.offset_top = -14
+	label.offset_bottom = 14
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.add_theme_color_override("font_outline_color", Color("102232"))
+	label.add_theme_constant_override("outline_size", 5)
+	button.add_child(label)
+	return label
+
+func _bottom_action(button: Control, rect: Rect2) -> void:
+	button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	button.custom_minimum_size = rect.size
+	button.offset_left = rect.position.x
+	button.offset_top = rect.position.y
+	button.offset_right = rect.end.x
+	button.offset_bottom = rect.end.y
+
+func _layout_six_button_hud() -> void:
+	if _shortcut_btn == null:
+		return
+	var root: Control = get_node("Root")
+	_bottom_action(%AttackBtn, Rect2(-140, -148, 120, 120))
+	_bottom_action(guard_button, Rect2(-250, -116, 92, 92))
+	_bottom_action(%DashBtn, Rect2(-124, -254, 88, 88))
+	_bottom_action(_shortcut_btn, Rect2(-238, -224, 88, 88))
+	_bottom_action(_quick_btn, Rect2(-346, -206, 80, 80))
+	_bottom_action(_more_btn, Rect2(-346, -104, 80, 80))
+	_bottom_action(_context_btn, Rect2(-184, -330, 160, 58))
+	_context_btn.get_node("ActionIcon").visible = false
+	var context_caption: Label = _context_btn.get_node("Caption")
+	context_caption.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	context_caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	context_caption.add_theme_font_size_override("font_size", 19)
+	HotwTheme.style_ts_square_button(_context_btn)
+	var joystick: Control = root.get_node("Joystick")
+	joystick.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	joystick.offset_left = 34
+	joystick.offset_top = -214
+	joystick.offset_right = 210
+	joystick.offset_bottom = -38
+	%PauseBtn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	%PauseBtn.custom_minimum_size = Vector2(64, 64)
+	%PauseBtn.offset_left = -80
+	%PauseBtn.offset_right = -16
+	%PauseBtn.offset_top = 16
+	%PauseBtn.offset_bottom = 80
+	%Minimap.offset_left = -320
+	%Minimap.offset_right = -96
+	%Minimap.offset_top = 16
+	%Minimap.offset_bottom = 130
+	var top: Control = root.get_node("TopLeft")
+	top.position = Vector2(48, 22)
+	# HP is nested inside the ghost bar: its legacy 286px minimum must not
+	# expand the 246px container beyond the status plate.
+	hp_bar.custom_minimum_size.x = 0
+	_hp_ghost_bar.custom_minimum_size.x = 246
+	mp_bar.custom_minimum_size.x = 246
+	xp_bar.custom_minimum_size.x = 246
+	# Lower every child minimum before shrinking the parent: the reverse order
+	# clamps the first mount to the old 286px minimum until a later resize.
+	top.reset_size()
+	top.size = Vector2(246, 70)
+	_hud_plate.position = Vector2(14, 14)
+	_hud_plate.size = Vector2(292, 88)
+	_tracked_plate.position = Vector2(320, 14)
+	_tracked_plate.size = Vector2(clampf(root.size.x - 650, 230, 500), 86)
+	quest_label.position = Vector2(336, 24)
+	quest_label.custom_minimum_size = Vector2.ZERO
+	quest_label.size = Vector2(_tracked_plate.size.x - 32, 66)
+	toast_label.offset_top = 154
+	toast_label.offset_bottom = 222
+	_combat_toast.offset_top = 226
+	_combat_toast.offset_bottom = 264
+	_boss_layer.position.y = 98
+	_more_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_more_panel.offset_left = -minf(816, root.size.x - 232)
+	_more_panel.offset_right = -366
+	_more_panel.offset_top = -minf(470, root.size.y - 144)
+	_more_panel.offset_bottom = -20
+	_return_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_return_panel.offset_left = -160
+	_return_panel.offset_right = 160
+	_return_panel.offset_top = -98
+	_return_panel.offset_bottom = -34
+	for layer: Control in [_task_layer, _stat_layer, _ecology_layer, _map_layer, _stats_overview_layer]:
+		if layer != null:
+			var panel: Control = layer.get_node("Panel")
+			panel.offset_top = -minf(276, root.size.y * 0.5 - 20)
+			panel.offset_bottom = minf(276, root.size.y * 0.5 - 20)
+			panel.offset_left = -minf(356, root.size.x * 0.5 - 24)
+			panel.offset_right = minf(356, root.size.x * 0.5 - 24)
+	_layout_dialogue()
+
+func _push_modal(layer: Control) -> void:
+	if layer == null:
+		return
+	# Account for queued physical input before freezing and gating a new surface.
+	Input.flush_buffered_events()
+	if not _modal_stack.is_empty() and _modal_stack.back()["layer"] == layer:
+		return
+	if _more_panel != null:
+		_more_panel.hide()
+	if not _modal_stack.is_empty():
+		(_modal_stack.back()["layer"] as Control).hide()
+	_modal_stack.append({"layer": layer, "paused": get_tree().paused, "focus": get_viewport().gui_get_focus_owner()})
+	layer.show()
+	layer.get_parent().move_child(layer, -1)
+	get_tree().paused = true
+	_release_gameplay_touches()
+	if _gesture_gate != null:
+		_gesture_gate.require_release()
+	_sync_modal_focus()
+
+func _pop_modal(layer: Control) -> void:
+	if layer == null or _modal_stack.is_empty() or _modal_stack.back()["layer"] != layer:
+		return
+	var previous: Dictionary = _modal_stack.pop_back()
+	layer.hide()
+	get_tree().paused = bool(previous["paused"])
+	if not _modal_stack.is_empty():
+		(_modal_stack.back()["layer"] as Control).show()
+	_release_gameplay_touches()
+	if _gesture_gate != null:
+		_gesture_gate.require_release()
+	_pending_abandon_id = ""
+	_sync_modal_focus(previous.get("focus") as Control)
+
+func _setup_adventure_menu() -> void:
+	var vb: VBoxContainer = pause_layer.get_node("PausePanel/Margin/VB")
+	var grid := GridContainer.new()
+	grid.name = "AdventurePages"
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 12)
+	grid.add_theme_constant_override("v_separation", 12)
+	vb.add_child(grid)
+	vb.move_child(grid, 2)
+	for spec: Array in [["MenuInventory", "背包", _toggle_inventory], ["MenuTasks", "委托", _open_task_list],
+			["MenuGrowth", "成长", _open_stats_overview], ["MenuCodex", "图鉴", _toggle_codex],
+			["MenuEcology", "生态", _toggle_ecology], ["MenuShop", "游商商店", _toggle_shop],
+			["MenuRecall", "回城", _menu_recall], ["MenuMap", "地图", _open_map]]:
+		var button := Button.new()
+		button.name = spec[0]
+		button.text = spec[1]
+		button.custom_minimum_size = Vector2(160, 56)
+		button.pressed.connect(spec[2])
+		grid.add_child(button)
+		if spec[0] == "MenuGrowth":
+			_menu_growth_btn = button
+	%ResumeBtn.custom_minimum_size = Vector2(0, 48)
+	%SaveBtn.custom_minimum_size = Vector2(0, 48)
+	%PauseSettingsBtn.custom_minimum_size = Vector2(0, 48)
+	%MenuBtn.custom_minimum_size = Vector2(0, 48)
+
+func _refresh_menu_badge() -> void:
+	if _menu_growth_btn != null:
+		var count := GameState.stats.pending_points + GameState.stats.pending_passive_picks
+		_menu_growth_btn.text = "成长" + (" · %d待选" % count if count > 0 else "")
+
+func _menu_recall() -> void:
+	while not _modal_stack.is_empty():
+		_pop_modal(_modal_stack.back()["layer"])
+	EventBus.return_to_town_requested.emit()
+
+func _setup_reading_surfaces() -> void:
+	_ecology_layer = _new_choice_layer("EcologyReadingLayer", "生态监测")
+	var body: VBoxContainer = _ecology_layer.find_child("Body", true, false)
+	ecology_label.reparent(body)
+	ecology_label.custom_minimum_size.x = 0
+	body.add_child(_readable_label("↑ 增长　↓ 减少　＋ 迁入　✕ 消失\n生态仍在持续演变，详情来自最近一次观测。", 16))
+	_stats_overview_layer = _new_choice_layer("GrowthLayer", "角色成长")
+	_map_layer = _new_choice_layer("MapReadingLayer", "已知地图与当前线索")
+	body = _map_layer.find_child("Body", true, false)
+	var map := preload("res://scripts/ui/minimap.gd").new()
+	map.name = "ReadingMap"
+	map.custom_minimum_size = Vector2(580, 280)
+	body.add_child(map)
+	body.add_child(_readable_label("只显示当前看见的目标。居民提供的情报只表示大致区域；离开视野后的线索会标注最后所见。", 16))
+
+func _open_stats_overview() -> void:
+	var body: VBoxContainer = _stats_overview_layer.find_child("Body", true, false)
+	for child in body.get_children():
+		body.remove_child(child)
+		child.queue_free()
+	body.add_child(_readable_label("等级 %d　金币 %d\n%s\n%s" % [GameState.stats.level, GameState.gold, _region_name, _owned_passive_text()]))
+	for attribute: String in ["strength", "agility", "intellect"]:
+		var button := Button.new()
+		button.name = "PreviewAttribute_" + attribute
+		button.text = "分配" + {"strength": "力量", "agility": "敏捷", "intellect": "智力"}[attribute] + " · 查看收益"
+		button.custom_minimum_size.y = 52
+		button.disabled = GameState.stats.pending_points <= 0
+		button.pressed.connect(_open_stat_preview.bind(attribute))
+		body.add_child(button)
+	var blessing := Button.new()
+	blessing.name = "OpenBlessing"
+	blessing.text = "选择赐福（%d次）" % GameState.stats.pending_passive_picks
+	blessing.disabled = GameState.stats.pending_passive_picks <= 0
+	blessing.custom_minimum_size.y = 56
+	blessing.pressed.connect(_open_passive_pick)
+	body.add_child(blessing)
+	_push_modal(_stats_overview_layer)
+
+func _toggle_ecology() -> void:
+	if _ecology_layer.visible:
+		_pop_modal(_ecology_layer)
+	else:
+		_push_modal(_ecology_layer)
+
+func _on_minimap_input(event: InputEvent) -> void:
+	if (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) \
+			or (event is InputEventScreenTouch and event.pressed):
+		%Minimap.accept_event()
+		_open_map()
+
+func _open_map() -> void:
+	(_map_layer.find_child("ReadingMap", true, false) as Control).call("_refresh_navigation")
+	_push_modal(_map_layer)
+
+func _setup_more_panel() -> void:
+	_more_panel = PanelContainer.new()
+	_more_panel.name = "MoreActions"
+	_more_panel.visible = false
+	HotwTheme.paper_panel(_more_panel, HotwTheme.WOOD_TILE, 28)
+	get_node("Root").add_child(_more_panel)
+	var margin := MarginContainer.new()
+	for edge: String in ["left", "top", "right", "bottom"]:
+		margin.add_theme_constant_override("margin_" + edge, 16)
+	_more_panel.add_child(margin)
+	_more_body = VBoxContainer.new()
+	_more_body.add_theme_constant_override("separation", 10)
+	margin.add_child(_more_body)
+	var top := HBoxContainer.new()
+	_more_body.add_child(top)
+	for spec: Array in [["actions", "技能 / 物品"], ["shortcut", "战斗预设"], ["recovery", "恢复预设"]]:
+		var tab := Button.new()
+		tab.name = "MoreTab_" + str(spec[0])
+		tab.text = spec[1]
+		tab.custom_minimum_size = Vector2(112, 48)
+		tab.pressed.connect(_set_more_page.bind(spec[0]))
+		top.add_child(tab)
+	_more_skills = HBoxContainer.new()
+	_more_skills.add_theme_constant_override("separation", 10)
+	_more_body.add_child(_more_skills)
+	for button: Button in [%HeavyBtn, %BoltBtn, %HealBtn, %EmpowerBtn]:
+		button.reparent(_more_skills)
+		button.custom_minimum_size = Vector2(88, 88)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_more_body.add_child(scroll)
+	_more_items = VBoxContainer.new()
+	_more_items.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_more_items.add_theme_constant_override("separation", 8)
+	scroll.add_child(_more_items)
+	var close := Button.new()
+	close.name = "MoreClose"
+	close.text = "关闭 · 世界继续运行"
+	close.custom_minimum_size.y = 48
+	close.pressed.connect(func() -> void: _more_panel.hide())
+	_more_body.add_child(close)
+
+func _toggle_more() -> void:
+	if not _can_use_mobile_controls():
+		return
+	_more_panel.visible = not _more_panel.visible
+	if _more_panel.visible:
+		_set_more_page("actions")
+
+func _set_more_page(page: String) -> void:
+	_more_page = page
+	_more_skills.visible = page == "actions"
+	for child in _more_items.get_children():
+		_more_items.remove_child(child)
+		child.queue_free()
+	if page == "shortcut":
+		_more_items.add_child(_readable_label("选择常驻战斗键。所有技能仍可从更多中使用。", 16))
+		for id: String in ["bolt", "heavy", "empower"]:
+			_add_more_row("ShortcutPreset_" + id, _skill_name(id) + (" · 已预设" if GameState.settings.get("mobile_shortcut", "bolt") == id else ""), _set_shortcut.bind(id))
+	elif page == "recovery":
+		_more_items.add_child(_readable_label("恢复键只使用选定资源。缺少物品、精力或冷却时不会自动替换。", 16))
+		_add_more_row("RecoveryPreset_heal", "治疗技能 · %d MP" % CharacterStats.HEAL_COST, _set_recovery.bind("heal"))
+		for id: String in ItemCatalog.ids_of_kind("consumable"):
+			_add_more_row("RecoveryPreset_" + id, "%s ×%d" % [ItemCatalog.name_of(id), GameState.count_item(id)], _set_recovery.bind("item:" + id))
+	else:
+		var count := 0
+		for id: String in GameState.inventory:
+			if GameState.count_item(id) <= 0:
+				continue
+			count += 1
+			_add_more_row("QuickItem_" + id, "%s ×%d%s" % [ItemCatalog.name_of(id), GameState.count_item(id), " · 使用" if ItemCatalog.is_consumable(id) else " · 用途"], _more_item_action.bind(id))
+		if count == 0:
+			_more_items.add_child(_readable_label("暂无物品。技能始终可用，不受装备限制。", 16))
+
+func _add_more_row(node_name: String, text: String, action: Callable) -> void:
+	var button := Button.new()
+	button.set_script(preload("res://scripts/ui/mobile_action_button.gd"))
+	button.name = node_name
+	button.text = text
+	button.custom_minimum_size.y = 52
+	button.set("input_allowed", _can_use_mobile_controls)
+	button.pressed.connect(action)
+	_more_items.add_child(button)
+
+func _set_shortcut(id: String) -> void:
+	GameState.set_setting("mobile_shortcut", id)
+	_refresh_six_action_feedback()
+	_set_more_page("shortcut")
+
+func _set_recovery(preset: String) -> void:
+	GameState.set_setting("mobile_recovery", preset)
+	_refresh_quick_slot()
+	_set_more_page("recovery")
+	_toast_combat("恢复预设：" + ("治疗技能" if preset == "heal" else ItemCatalog.name_of(preset.trim_prefix("item:"))))
+
+func _more_item_action(id: String) -> void:
+	if ItemCatalog.is_consumable(id):
+		EventBus.item_use_requested.emit(id)
+		_set_more_page("actions")
+	else:
+		_toast_combat(ItemCatalog.name_of(id) + "：" + ItemCatalog.desc_of(id))
+
+func _skill_name(id: String) -> String:
+	return {"bolt": "法弹", "heavy": "重击", "empower": "强化"}.get(id, "法弹")
+
+func _activate_shortcut() -> void:
+	if not _can_use_mobile_controls():
+		return
+	var id := str(GameState.settings.get("mobile_shortcut", "bolt"))
+	var reason := _skill_unavailable_reason({"heavy": 1, "bolt": 2, "empower": 4}.get(id, 2))
+	if not reason.is_empty():
+		_toast_combat(_skill_name(id) + "：" + reason)
+		return
+	match id:
+		"heavy": TouchInput.queue_heavy()
+		"empower": TouchInput.queue_empower()
+		_: TouchInput.queue_bolt()
+
+func _skill_unavailable_reason(index: int) -> String:
+	var remaining := maxf(0, float(_cd_values[index]) - _cd_elapsed)
+	if remaining > 0.05:
+		return "冷却 %.1f" % remaining
+	if _mp_now < float(skill_cds[index]["mp"]):
+		return "精力不足"
+	if index == 3 and _hp_full:
+		return "生命已满"
+	return ""
+
+func _recovery_unavailable_reason() -> String:
+	if _quick_id == "heal":
+		return _skill_unavailable_reason(3)
+	if GameState.count_item(_quick_id) <= 0:
+		return "物品用尽"
+	var needs_hp := CharacterStats.ITEM_HP_FRAC.has(_quick_id) and not _hp_full
+	var needs_mp := CharacterStats.ITEM_MP_FRAC.has(_quick_id) and _mp_now < _mp_max_cache - 0.5
+	return "" if needs_hp or needs_mp else "资源已满"
+
+func _refresh_six_action_feedback() -> void:
+	if _shortcut_btn == null:
+		return
+	var id := str(GameState.settings.get("mobile_shortcut", "bolt"))
+	_shortcut_icon.texture = {"bolt": ICON_BOLT, "heavy": ICON_HEAVY, "empower": ICON_EMPOWER}.get(id, ICON_BOLT)
+	(_shortcut_btn.get_node("Caption") as Label).text = _skill_name(id)
+	_shortcut_status.text = _skill_unavailable_reason({"heavy": 1, "bolt": 2, "empower": 4}.get(id, 2))
+	_refresh_quick_slot()
+	_context_btn.visible = bool(_context_payload.get("available", false)) and _can_use_mobile_controls() and not _more_panel.visible
+
+func _on_context_changed(payload: Dictionary) -> void:
+	_context_payload = payload.duplicate(true)
+	(_context_btn.get_node("Caption") as Label).text = str(payload.get("label", "交流"))
+	_refresh_six_action_feedback()
+
+func _request_context_action() -> void:
+	if not _can_use_mobile_controls() or _context_pressed_id.is_empty():
+		return
+	# Target is pinned at touch-down. A changing nearby candidate cannot steal release.
+	TouchInput.call("queue_interact", _context_pressed_id)
+	_context_pressed_id = ""
+
+func _layout_dialogue() -> void:
+	if _dialogue_panel == null:
+		return
+	var root: Control = get_node("Root")
+	var width := minf(720, root.size.x - 64)
+	var desired_height := (568 if _dialogue_options.size() > 2 else 510) if not _dialogue_options.is_empty() else 348
+	var height := minf(desired_height, root.size.y - 48)
+	_dialogue_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_dialogue_panel.offset_left = -width * 0.5
+	_dialogue_panel.offset_top = -height * 0.5
+	_dialogue_panel.offset_right = width * 0.5
+	_dialogue_panel.offset_bottom = height * 0.5
+	_dialogue_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	var has_portrait := _dialogue_faceset.texture != null
+	_dialogue_faceset.visible = has_portrait
+	(_dialogue_panel.get_node("PortraitFrame") as Control).visible = has_portrait
+	var text_left := 130.0 if has_portrait else 32.0
+	_dialogue_text.position = Vector2(text_left, 52)
+	_dialogue_text.size = Vector2(width - text_left - 28, 122 if not _dialogue_options.is_empty() else 194)
+	_dialogue_text.add_theme_font_size_override("font_size", 18)
+	_dialogue_text.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	_dialogue_tag.position.x = 126 if has_portrait else 28
+	_dialogue_tag.size.x = width - _dialogue_tag.position.x - 28
+	_dialogue_yes.position = Vector2(width - 338, height - 76)
+	_dialogue_yes.size = Vector2(148, 56)
+	_dialogue_no.position = Vector2(width - 176, height - 76)
+	_dialogue_no.size = Vector2(148, 56)
+	if _dialogue_option_scroll != null:
+		_dialogue_option_scroll.position = Vector2(28, 184)
+		_dialogue_option_scroll.size = Vector2(width - 56, height - 274)
+
+func _show_dialogue_options() -> void:
+	if _dialogue_option_box == null:
+		_dialogue_option_scroll = ScrollContainer.new()
+		_dialogue_option_scroll.name = "BranchOptionsScroll"
+		_dialogue_option_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		_dialogue_panel.add_child(_dialogue_option_scroll)
+		_dialogue_option_box = VBoxContainer.new()
+		_dialogue_option_box.name = "BranchOptions"
+		_dialogue_option_box.add_theme_constant_override("separation", 8)
+		_dialogue_option_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_dialogue_option_scroll.add_child(_dialogue_option_box)
+	for child in _dialogue_option_box.get_children():
+		_dialogue_option_box.remove_child(child)
+		child.queue_free()
+	_dialogue_option_scroll.visible = not _dialogue_options.is_empty()
+	if _dialogue_options.is_empty():
+		return
+	_dialogue_text.text = str(_dialogue_text.get_meta("opening_text", ""))
+	_dialogue_yes.visible = not _dialogue_selected_option.is_empty()
+	_dialogue_no_label.text = "返回方案" if not _dialogue_selected_option.is_empty() else "关闭"
+	if not _dialogue_selected_option.is_empty():
+		var option := _dialogue_selected_option
+		var summary := _readable_label("选择：%s\n结果：%s\n风险：%s\n\n确认后才执行；返回不会提交选择。" % [option.get("label", ""), option.get("consequence", ""), option.get("risk", "")], 17)
+		summary.add_theme_color_override("font_color", Color("291c10"))
+		_dialogue_option_box.add_child(summary)
+		_dialogue_yes_label.text = "确认：" + str(option.get("label", "选择"))
+		_dialogue_yes_label.add_theme_font_size_override("font_size", 15)
+	else:
+		for option: Dictionary in _dialogue_options:
+			var button := Button.new()
+			var action := str(option.get("action", ""))
+			button.name = ("Branch_" + action).replace(":", "_")
+			button.set_meta("quest_action", action)
+			button.disabled = not bool(option.get("enabled", true))
+			var utility := bool(option.get("utility", false))
+			button.custom_minimum_size.y = 48 if utility else (112 if button.disabled else 96)
+			button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			button.add_theme_font_size_override("font_size", 16)
+			button.text = "%s\n结果：%s\n风险：%s" % [option.get("label", ""), option.get("consequence", ""), option.get("risk", "")]
+			if utility:
+				button.text = str(option.get("label", "寻找其他线索"))
+			if button.disabled:
+				button.text += "\n不可选：" + str(option.get("disabled_reason", "当前条件不足"))
+			button.pressed.connect(_preview_dialogue_option.bind(option))
+			_dialogue_option_box.add_child(button)
+	_layout_dialogue()
+	_bind_reading_buttons(_dialogue_panel)
+
+func _preview_dialogue_option(option: Dictionary) -> void:
+	if not bool(option.get("enabled", true)):
+		return
+	if _gesture_gate != null and not _gesture_gate.armed:
+		return
+	_dialogue_selected_option = option.duplicate(true)
+	_show_dialogue_options()
+	_sync_modal_focus()
+	_gesture_gate.require_release()
+
+func _bind_reading_buttons(layer: Control) -> void:
+	for node in layer.find_children("*", "Button", true, false):
+		var button := node as Button
+		if button.get_script() == null:
+			button.set_script(preload("res://scripts/ui/reading_action_button.gd"))
+			button.set_process_input(true)
+			EventBus.touch_input_reset.connect(button.cancel_touch)
+			button.set("input_allowed", _can_use_reading_control)
+
+func _can_use_reading_control() -> bool:
+	return _gesture_gate == null or _gesture_gate.armed
+
+func _queue_mobile_skill(skill: String) -> void:
+	# Native mouse clicks and synthetic touch mouse events must obey the same
+	# gameplay boundary as the independent multitouch path.
+	if not _can_use_mobile_controls():
+		return
+	match skill:
+		"attack": TouchInput.queue_attack()
+		"dash": TouchInput.queue_dash()
+		"heavy": TouchInput.queue_heavy()
+		"bolt": TouchInput.queue_bolt()
+		"heal": TouchInput.queue_heal()
+		"empower": TouchInput.queue_empower()
+
+func _on_bounty_updated(text: String) -> void:
+	bounty_label.text = text.replace(" · 本地线索 ", "\n本地线索：")
+	if _task_layer != null and _task_layer.visible:
+		_refresh_task_list()
+		_sync_modal_focus()

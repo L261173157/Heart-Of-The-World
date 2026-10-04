@@ -1,5 +1,5 @@
 ## 明确交互的门：可见门框 + 前方入口区；只踩上绝不自动传送。
-## 门与 NPC 共用攻击键/触屏交互通道，前后边界由真实 Area2D 判断。
+## 门与 NPC 共用独立 E 键/触屏交互通道，前后边界由真实 Area2D 判断。
 class_name TownDoor
 extends Node2D
 
@@ -67,7 +67,7 @@ func interact() -> void:
 func _refresh_prompt() -> void:
 	if _prompt == null:
 		return
-	_prompt.text = ("出门 · 攻击键" if is_exit else "进入%s · 攻击键" % title) if can_interact() else ("出口" if is_exit else title)
+	_prompt.text = ("出门 · 交互 E" if is_exit else "进入%s · 交互 E" % title) if can_interact() else ("出口" if is_exit else title)
 	queue_redraw()
 
 

@@ -16,7 +16,9 @@ const SAVE_DEBOUNCE := 2.0
 ## v9 增加单件待比较装备、自动赏金与所追踪委托（旧字段原样兼容）
 ## v10 增加委托领奖收据；新收集委托显式交付，旧单仍自动交付。
 ## v11 保留战斗计时剩余值；菜单/暂停/离线冻结，不恢复半招或架盾手势。
-const SAVE_VERSION := 11
+## v12 新营地生态链独立账本；旧委托字段和结算方式不迁改。
+## v13 失联前哨独立章节证据与分段支付；v12营地委托保持原账本。
+const SAVE_VERSION := 13
 
 ## 世界种子（世界 v5）：「新的冒险」重掷，游戏内 BiomeMap.configure 消费；
 ## v3 旧档无此键 → DEFAULT_SEED（旧世界与旧 ecology 存档严丝合缝）
@@ -42,6 +44,9 @@ var destroyed_cells: Array[String] = []
 var chest_claims: Dictionary = {}
 ## 任务系统数据真源（存档 v5）：active=进行中任务数组，completed=各 NPC 已完成数
 var quests := {"active": [], "completed": {}, "receipts": {}, "last_receipt": ""}
+## 一次性生态链：放弃只停追踪，已核实行动和已付凭证永久保留。
+var camp_quest: Dictionary = {}
+var outpost_quest: Dictionary = {}
 ## 物品栏（玩法 v7，存档 v6）：id -> 数量（钳 ITEM_MAX）。合法 id 真源是
 ## EconomyMath 的价格表（纯逻辑层，随迁服务端）；表现元数据在 ItemCatalog
 var inventory: Dictionary = {}
@@ -83,11 +88,11 @@ var player_snapshot: Variant = null
 ## （默认关，真机性能定位用）
 var settings: Dictionary = {"volume": 0.8, "music_volume": 1.0, "sfx_volume": 1.0,
 	"screen_shake": true, "damage_numbers": true, "auto_aim": false,
-	"hero_skin": "blue", "lantern_shadows": true, "show_fps": false}
+	"hero_skin": "blue", "lantern_shadows": true, "show_fps": false,
+	"mobile_shortcut": "bolt", "mobile_recovery": "heal"}
 ## 本局击杀数（死亡信息/统计用）
 var session_kills: int = 0
-## NPC 对话气泡开合标记（运行态，不存档）：player 侧据此把攻击键路由为
-## 对话确认、冲刺键路由为关闭，避免对话期间挥刀/位移
+## 主动阅读对话开合标记（运行态，不存档）；攻击与交互始终独立。
 var dialogue_open := false
 ## 最近一次成功落盘的时刻（Unix 秒）：冒险档案面板显示"最后保存 HH:MM"。
 ## 0 = 尚未保存过（首启无档 / 测试关闭写盘）
@@ -526,6 +531,8 @@ func discover_landmark(id: String) -> bool:
 
 ## 只有定义内的检查点可被发现；重复触发 Area2D 不重复写档。
 func discover_checkpoint(id: String) -> bool:
+	if id == "outpost:lost_watch" and not outpost_quest.get("evidence", {}).get("signpost_repaired", false):
+		return false
 	if discovered_checkpoints.has(id) or not WorldConfig.checkpoints().has(id):
 		return false
 	discovered_checkpoints.append(id)
@@ -569,6 +576,8 @@ func reset_all() -> void:
 	destroyed_cells = []
 	chest_claims = {}
 	quests = {"active": [], "completed": {}, "receipts": {}, "last_receipt": ""}
+	camp_quest = {}
+	outpost_quest = {}
 	inventory = {}
 	equipment_locks = {}
 	pending_equipment = {}
@@ -701,6 +710,8 @@ func save_now(include_ecology := true) -> bool:
 		"equipment_offer_id": equipment_offer_id,
 		"bounty": bounty.duplicate(true),
 		"tracked_quest_id": tracked_quest_id,
+		"camp_quest": camp_quest.duplicate(true),
+		"outpost_quest": outpost_quest.duplicate(true),
 		"age_days": stats.age_days,
 		"lifespan_days": stats.lifespan_days,
 		"codex": codex,
@@ -1066,6 +1077,14 @@ func _load() -> void:
 				"screen_shake", "damage_numbers", "auto_aim", "lantern_shadows", "show_fps":
 					if typeof(saved_settings[key]) == TYPE_BOOL:
 						settings[key] = saved_settings[key]
+				"mobile_shortcut":
+					if typeof(saved_settings[key]) == TYPE_STRING and saved_settings[key] in ["bolt", "heavy", "empower"]:
+						settings[key] = saved_settings[key]
+				"mobile_recovery":
+					if typeof(saved_settings[key]) == TYPE_STRING:
+						var recovery: String = saved_settings[key]
+						if recovery == "heal" or (recovery.begins_with("item:") and ItemCatalog.is_consumable(recovery.trim_prefix("item:"))):
+							settings[key] = recovery
 				"hero_skin":
 					# 三忍外观只认三个合法值，其余一律回落蓝忍
 					if str(saved_settings[key]) in ["blue", "dark", "white"]:
@@ -1107,6 +1126,13 @@ func _load() -> void:
 		for entry in saved_cells:
 			if typeof(entry) == TYPE_STRING and entry.contains(","):
 				destroyed_cells.append(entry)
+	camp_quest = preload("res://scripts/main/camp_quest_data.gd").sanitize(data.get("camp_quest", {}))
+	outpost_quest = preload("res://scripts/main/outpost_quest_data.gd").sanitize(data.get("outpost_quest", {}), camp_quest)
+	# 章节携带独立原合同备份；恢复缺失合同或不可逆已付证明，保留正常最新进度。
+	if preload("res://scripts/main/outpost_quest_data.gd").valid_legacy(outpost_quest.get("legacy_contract", {})) and (not preload("res://scripts/main/outpost_quest_data.gd").valid_legacy(camp_quest) \
+			or (outpost_quest["legacy_contract"].get("paid", false) and not camp_quest.get("paid", false))):
+		camp_quest = preload("res://scripts/main/camp_quest_data.gd").sanitize(outpost_quest["legacy_contract"])
+
 	# 任务进度（v5+）：字段级消毒——缺键/坏类型的条目丢弃而非中断整个任务栏
 	quests = {"active": [], "completed": {}, "receipts": {}, "last_receipt": ""}
 	var saved_quests: Variant = data.get("quests", {})
@@ -1174,6 +1200,10 @@ func _load() -> void:
 			if typeof(id) == TYPE_STRING and valid_checkpoints.has(id) \
 					and not discovered_checkpoints.has(id):
 				discovered_checkpoints.append(id)
+	# 前哨只继承亲手修复证据，不因雾、到访、旧检查点数组或终态字符串解锁。
+	discovered_checkpoints.erase("outpost:lost_watch")
+	if outpost_quest.get("evidence", {}).get("signpost_repaired", false):
+		discovered_checkpoints.append("outpost:lost_watch")
 	# 物品栏（v6+）：逐条消毒——未知 id / 非 String 键丢弃，数量只收正整数钳
 	# ITEM_MAX（手改档负数/浮点/超限都按边界收敛，不中断整个背包）
 	inventory = {}

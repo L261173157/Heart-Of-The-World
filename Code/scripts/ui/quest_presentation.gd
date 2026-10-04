@@ -10,7 +10,7 @@ const COMPLETED_COLOR := Color("bfebcb")
 
 
 static func requires_claim(quest: Dictionary) -> bool:
-	return quest.get("kind", "") == "collect" and quest.get("claim_at_npc", false) == true
+	return quest.get("kind", "") in ["collect", "camp_ecology", "outpost"] and quest.get("claim_at_npc", false) == true
 
 
 static func state(quest: Dictionary) -> String:
@@ -20,6 +20,10 @@ static func state(quest: Dictionary) -> String:
 
 
 static func objective(quest: Dictionary) -> String:
+	if quest.get("kind", "") in ["camp_ecology", "outpost"]:
+		return str(quest.get("ui_objective", "与营地巡守交谈"))
+	if quest.get("settlement_blocked", false):
+		return "奖励待发：请腾出%s空间，材料与奖励保留" % ItemCatalog.name_of(str(quest.get("blocked_item", "")))
 	if state(quest) == "claimable":
 		return "返回%s，交付领奖" % quest.get("giver", "委托人")
 	match str(quest.get("kind", "")):
@@ -39,15 +43,18 @@ static func objective(quest: Dictionary) -> String:
 
 static func reward(quest: Dictionary) -> String:
 	var text := "+%d 金币  +%d 经验" % [int(quest.get("gold", 0)), int(quest.get("xp", 0))]
-	if quest.get("kind", "") == "collect":
-		text += "  +金钥匙"
+	var bonus := bonus_item(quest)
+	if bonus != "":
+		text += "  +" + ItemCatalog.name_of(bonus)
 	return text
 
 
 static func snapshot(quest: Dictionary) -> Dictionary:
+	if quest.get("kind", "") in ["camp_ecology", "outpost"]:
+		return quest.duplicate(true)
 	var view := quest.duplicate(true)
 	view["ui_state"] = state(quest)
-	view["ui_status"] = "可交付" if view["ui_state"] == "claimable" else "进行中"
+	view["ui_status"] = "奖励待发" if quest.get("settlement_blocked", false) else ("可交付" if view["ui_state"] == "claimable" else "进行中")
 	view["ui_objective"] = objective(quest)
 	view["ui_reward"] = reward(quest)
 	return view
@@ -57,6 +64,8 @@ static func npc_status(landmark_id: String) -> Dictionary:
 	for quest: Dictionary in GameState.quests.get("active", []):
 		if str(quest.get("landmark_id", "")) != landmark_id:
 			continue
+		if quest.get("settlement_blocked", false):
+			return {"state": "pending", "marker": "· 奖励待发", "color": PROGRESS_COLOR}
 		if state(quest) == "claimable":
 			return {"state": "claimable", "marker": "? 可交付", "color": CLAIMABLE_COLOR}
 		return {"state": "in_progress", "marker": "· 进行中 %d/%d" % [
@@ -72,3 +81,15 @@ static func receipt_text(receipt: Dictionary) -> String:
 	return "✓ 已领奖：%s（+%d 金币 +%d 经验%s）" % [receipt.get("title", "委托"),
 			int(receipt.get("gold", 0)), int(receipt.get("xp", 0)),
 			" +" + ItemCatalog.name_of(str(receipt["bonus"])) if str(receipt.get("bonus", "")) != "" else ""]
+
+
+## 展示与实际交易共用确定性物品奖励，满仓提示不能猜测另一件补给。
+static func bonus_item(quest: Dictionary) -> String:
+	if quest.get("kind", "") in ["camp_ecology", "outpost"]:
+		return str(quest.get("bonus", ""))
+	if quest.get("kind", "") == "collect":
+		return EconomyMath.KEY_GOLD
+	if not quest.get("hunt_adjusted", false) and hash("quest-bonus|%s" % quest.get("id", "")) % 10 < 3:
+		var pool: Array = EconomyMath.BOSS_BONUS_POOL
+		return pool[hash("quest-bonus2|%s" % quest.get("id", "")) % pool.size()]
+	return ""

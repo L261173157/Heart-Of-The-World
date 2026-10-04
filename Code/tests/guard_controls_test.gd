@@ -144,7 +144,7 @@ func _run() -> void:
 
 func _layout() -> void:
 	var root: Control = _hud.get_node("Root")
-	var names := ["AttackBtn", "DashBtn", "HeavyBtn", "BoltBtn", "HealBtn", "EmpowerBtn", "QuickSlotBtn", "ReturnTownBtn"]
+	var names := ["AttackBtn", "DashBtn", "ShortcutBtn", "QuickSlotBtn", "MoreBtn"]
 	for canvas: Vector2 in [Vector2(1280, 720), Vector2(1560, 720), Vector2(1280, 960), Vector2(1160, 680)]:
 		root.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		root.position = Vector2(40, 20)
@@ -158,7 +158,7 @@ func _layout() -> void:
 				"盾钮与%s至少8px间隔%s" % [name, canvas])
 		EventBus.npc_dialogue.emit({"kind": "quest", "giver": "营地猎人", "text": "测试架盾不穿透对话", "quest": {"id": "guard_layout"}})
 		await _frames(2)
-		_check(not shield.get_global_rect().intersects(_hud._dialogue_panel.get_global_rect()), "盾钮不遮挡对话%s" % canvas)
+		_check(get_tree().paused and not TouchInput.guard_available, "阅读对话暂停且盾钮不可用%s" % canvas)
 		EventBus.dialogue_action.emit("cancel")
 	root.position = Vector2.ZERO
 	root.size = Vector2(1280, 720)
@@ -312,7 +312,7 @@ func _keyboard_availability() -> void:
 		var counters := _counter_starts
 		if mode == "shop":
 			await _tap_key(KEY_B)
-			_check(_hud.shop_panel.visible and not get_tree().paused, "真实B键打开不暂停商店")
+			_check(_hud.shop_panel.visible and get_tree().paused, "真实B键打开商店并暂停阅读")
 		elif mode == "hidden":
 			_button("ShieldBtn").hide()
 		else:

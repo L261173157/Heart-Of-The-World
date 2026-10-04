@@ -14,6 +14,16 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "outpost_live_targets": (["res://tests/outpost_live_targets_test.tscn", "--quit-after", "100000"], "=== OUTPOST LIVE TARGETS PASS"),
+    "outpost_live_targets_lifecycle": ([str(PROJECT / "tests/run_outpost_live_targets_lifecycle_test.py")], "=== OUTPOST LIVE TARGETS LIFECYCLE PASS"),
+    "outpost_ledger": (["res://tests/outpost_ledger_test.tscn", "--quit-after", "10000"], "=== OUTPOST LEDGER PASS"),
+    "outpost_layout": (["res://tests/outpost_layout_test.tscn", "--quit-after", "30000"], "=== OUTPOST LAYOUT PASS"),
+    "outpost_chapter_contract": (["res://tests/outpost_chapter_contract_test.tscn", "--quit-after", "100000"], "=== OUTPOST CHAPTER CONTRACT PASS"),
+    "outpost_chapter_lifecycle": ([str(PROJECT / "tests/run_outpost_chapter_lifecycle_test.py")], "=== OUTPOST CHAPTER LIFECYCLE PASS"),
+    "camp_quest_core": (["res://tests/camp_quest_core_test.tscn", "--quit-after", "20000"], "=== CAMP QUEST CORE PASS"),
+    "camp_pilot_contract": (["res://tests/camp_pilot_contract_test.tscn", "--quit-after", "30000"], "=== CAMP PILOT CONTRACT PASS"),
+    "camp_pilot_lifecycle": ([str(PROJECT / "tests/run_camp_pilot_lifecycle_test.py")], "=== CAMP PILOT LIFECYCLE PASS"),
+    "six_button_hud": (["res://tests/six_button_hud_test.tscn", "--quit-after", "20000"], "=== SIX BUTTON HUD PASS"),
     "kill_save_consistency": (["res://tests/kill_save_consistency_test.tscn", "--quit-after", "10000"], "=== KILL SAVE CONSISTENCY PASS"),
     "player_continuity": (["res://tests/player_continuity_test.tscn", "--quit-after", "10000"], "=== PLAYER CONTINUITY PASS"),
     "chest_attack_priority": (["res://tests/chest_attack_priority_test.tscn", "--quit-after", "10000"], "=== CHEST ATTACK PRIORITY PASS"),
@@ -104,7 +114,7 @@ def unexpected_errors(case: str, output: str) -> list[str]:
 
 def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str],
              godot: str, logs: Path, timeout: int) -> bool:
-    command = ([sys.executable, args[0], godot] if name in {"save_lifecycle", "quest_lifecycle", "exploration_lifecycle"}
+    command = ([sys.executable, args[0], godot] if name in {"save_lifecycle", "quest_lifecycle", "exploration_lifecycle", "camp_pilot_lifecycle", "outpost_chapter_lifecycle", "outpost_live_targets_lifecycle"}
                else [godot, "--headless", "--path", str(PROJECT), *args])
     print(f"[{name}] 开始", flush=True)
     with subprocess.Popen(command, env=env, stdout=subprocess.PIPE,

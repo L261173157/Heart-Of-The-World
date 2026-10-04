@@ -31,7 +31,7 @@ func _run() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var root: Control = hud.get_node("Root")
-	var controls: Array[String] = ["AttackBtn", "DashBtn", "HeavyBtn", "BoltBtn", "HealBtn", "EmpowerBtn", "QuickSlotBtn", "BtnEco", "BtnBag", "BtnCodex", "BtnShop", "PauseBtn"]
+	var controls: Array[String] = ["AttackBtn", "ShieldBtn", "DashBtn", "ShortcutBtn", "QuickSlotBtn", "MoreBtn"]
 	for canvas: Vector2 in [Vector2(1280, 720), Vector2(1560, 720), Vector2(1280, 960), Vector2(1160, 680)]:
 		root.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		root.position = Vector2(40, 20)
@@ -51,9 +51,16 @@ func _run() -> void:
 	hud._on_quest_updated("委托·捣巢：摧毁荒废遗迹旁的巢穴（0/1）")
 	await get_tree().process_frame
 	await get_tree().process_frame
-	_check(hud.ecology_panel.position.y >= hud._hud_plate.position.y + hud._hud_plate.size.y,
-		"生态展开避开增长后的任务/状态区")
-	_check(hud.ecology_label.get_parent() is ScrollContainer, "生态长列表进入有界滚动区")
+	_check(not hud.ecology_panel.is_visible_in_tree() and not hud.stat_buttons.is_visible_in_tree(),
+		"生态详情与属性分配退出常驻战斗界面")
+	hud._toggle_ecology()
+	_check(hud._ecology_layer.visible and get_tree().paused, "生态详情明确打开暂停阅读页")
+	var ecology_scroll: Node = hud.ecology_label.get_parent()
+	while ecology_scroll != null and not ecology_scroll is ScrollContainer:
+		ecology_scroll = ecology_scroll.get_parent()
+	_check(ecology_scroll is ScrollContainer, "生态长列表进入有界滚动区")
+	hud._close_top_layer_or_toggle_pause()
+	_check(not get_tree().paused, "生态详情返回恢复世界")
 	# 任意实际施放冷却（已含减冷却）都从满环开始，再按本次总时长回收。
 	hud._on_skills_changed(0, 0, 0, 0, 0, 100, 100)
 	hud._on_skills_changed(1.104, 3.68, 0.736, 7.36, 13.8, 100, 100)
@@ -66,13 +73,14 @@ func _run() -> void:
 	_check(is_equal_approx(float(mask.get("fraction")), 0.5), "后续事件不重置本次总冷却")
 	# 经真实 GUI 分发验证焦点隔离：遮罩本身不能挡住背后仍持焦的商店按钮。
 	GameState.gold = 1000
+	hud._toggle_pause()
 	hud._toggle_shop()
 	var purchase: Button = hud.shop_upgrade_btns[0]
 	purchase.grab_focus()
-	(hud.get_node("Root/PauseBtn") as Button).pressed.emit()
+	await _press_key(KEY_ESCAPE)
 	await get_tree().process_frame
 	_check(hud.pause_layer.visible and not hud.shop_panel.visible and get_tree().paused,
-		"商店到暂停会先收起商店")
+		"商店返回仅收起商店并恢复来源菜单")
 	_check(hud.pause_layer.is_ancestor_of(get_viewport().gui_get_focus_owner()),
 		"暂停捕获原商店键盘焦点")
 	await _press_key(KEY_ENTER)
@@ -106,22 +114,36 @@ func _run() -> void:
 		hud._toggle_inventory()
 		_check(hud._inv_layer.visible and get_tree().paused, "物品栏打开并暂停")
 		hud._toggle_codex()
-		_check(not hud.codex_layer.visible and hud._inv_layer.visible and get_tree().paused, "图鉴不能穿透物品栏")
+		_check(hud.codex_layer.visible and not hud._inv_layer.visible and get_tree().paused,
+			"嵌套图鉴只显示最上阅读层")
+		hud._close_top_layer_or_toggle_pause()
+		_check(hud._inv_layer.visible and not hud.codex_layer.visible and get_tree().paused,
+			"图鉴返回只退一层，恢复物品栏和暂停")
 		hud._toggle_pause()
-		_check(not hud._inv_layer.visible and not get_tree().paused and not hud.pause_layer.visible, "暂停入口先关闭物品栏不留双层")
+		_check(not hud._inv_layer.visible and not get_tree().paused and not hud.pause_layer.visible,
+			"最后一层返回完整恢复世界")
 		hud._toggle_codex()
 		hud._toggle_shop()
-		_check(hud.codex_layer.visible and not hud.shop_panel.visible and get_tree().paused, "商店不能穿透图鉴")
+		_check(not hud.codex_layer.visible and hud.shop_panel.visible and get_tree().paused,
+			"嵌套商店只显示最上阅读层")
+		hud._close_top_layer_or_toggle_pause()
+		_check(get_tree().paused and hud.codex_layer.visible and not hud.shop_panel.visible,
+			"商店返回保持来源图鉴暂停")
 		hud._close_top_layer_or_toggle_pause()
 		_check(not get_tree().paused and not hud.codex_layer.visible, "图鉴返回解除暂停")
 		hud._toggle_pause()
 		hud._open_pause_settings()
-		hud._toggle_shop()
-		_check(hud.pause_settings_layer.visible and not hud.shop_panel.visible and get_tree().paused, "设置期间商店不穿层")
 		hud._close_top_layer_or_toggle_pause()
-		_check(hud.pause_layer.visible and get_tree().paused and not hud.pause_settings_layer.visible, "设置返回保留暂停")
+		_check(hud.pause_layer.visible and get_tree().paused and not hud.pause_settings_layer.visible,
+			"设置返回保留暂停")
 		hud._close_top_layer_or_toggle_pause()
 		_check(not hud.pause_layer.visible and not get_tree().paused, "暂停恢复回到世界")
+	# 来源本来已暂停时，阅读返回不能错误地恢复物理世界。
+	get_tree().paused = true
+	hud._toggle_inventory()
+	hud._close_inventory()
+	_check(get_tree().paused and not hud._inv_layer.visible, "关闭阅读页恢复进入前的外部暂停状态")
+	get_tree().paused = false
 	# 实际关闭回调重复交付时仍只关闭一次，并丢弃暂停期间残留的战斗排队。
 	hud._toggle_inventory()
 	hud._close_inventory()

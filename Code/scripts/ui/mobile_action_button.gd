@@ -27,6 +27,10 @@ func _input(event: InputEvent) -> void:
 			cancel_touch()
 			get_viewport().set_input_as_handled()
 			if activate:
+				# Raw touches bypass BaseButton GUI handling. Mirror its toggle
+				# transition once; native mouse/keyboard retain their own path.
+				if toggle_mode:
+					button_pressed = not button_pressed
 				pressed.emit()
 		elif touch.pressed and not touch.canceled and _touch_index == -1 \
 				and _allowed() and get_global_rect().has_point(touch.position):

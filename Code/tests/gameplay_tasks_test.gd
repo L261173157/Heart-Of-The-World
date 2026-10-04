@@ -97,7 +97,8 @@ func _run() -> void:
 	_check(int(initial["need"]) <= bounty._species_alive_count(), "发单目标不超过真实可战胜存量")
 	var target: MonsterInstance
 	for inst: MonsterInstance in WorldSim.sim.instances.values():
-		if inst.is_alive and inst.species.species_name == initial["species"] and inst.region_id == initial["region_id"]:
+		if inst.is_alive and inst.species.species_name == initial["species"] and inst.region_id == initial["region_id"] \
+				and inst.id in initial["target_ids"]:
 			target = inst
 			break
 	_check(target != null and not target.species.is_boss and bounty._feasible(target), "自动目标有实体且难度符合当前战力")
@@ -129,12 +130,18 @@ func _run() -> void:
 	if body == null:
 		_finish()
 		return
+	# 镜头和视线绑定真实已核验目标，避免抽中同物种但不在此单目标清单的个体。
+	player.teleport_to(body.global_position + Vector2(24, 0))
+	var camera: Camera2D = player.get_node("Camera2D")
+	camera.reset_smoothing()
+	camera.force_update_scroll()
 	world._reveal_fog()
 	var bounty_radar: Minimap = world.get_node("HUD/Root/Minimap")
 	bounty_radar._refresh_navigation()
-	_check(bounty_radar._target.get("category", "") == "赏金目标"
-		and str(bounty_radar._target.get("id", "")).trim_prefix("monster:").to_int() in initial["target_ids"],
-		"真实赏金在揭示迷雾后导航到已核验可达的活目标")
+	_check(bounty_radar._target.is_empty() and bounty_radar._known_candidates().any(func(candidate: Dictionary) -> bool:
+		return (candidate.get("kind", "") == "monster"
+			and str(candidate["id"]).trim_prefix("monster:").to_int() in initial["target_ids"])),
+		"已核验可达的赏金活体在当前地图可见，但无追踪选择时不擅自导航")
 	body.take_damage(1000000.0, player.global_position)
 	await _frames()
 	_check(not target.is_alive and int(GameState.bounty.get("progress", 0)) == 1,
@@ -148,10 +155,18 @@ func _run() -> void:
 	EventBus.quest_track_requested.emit(ransack["id"])
 	_check(GameState.quests["active"].size() == 2 and GameState.tracked_quest_id == ransack["id"],
 		"切换追踪保留全部任务，绝不隐式放弃")
+	# 实际镜头靠近一个真实巢穴，不能把历史探索当作当前可见目标。
+	player.position = WorldSim.sim.camp_pos(origin, target.species) + Vector2(40, 0)
+	world._stream_pass()
+	await _frames(2)
+	camera.reset_smoothing()
+	camera.force_update_scroll()
 	world._reveal_fog()
 	var radar: Minimap = world.get_node("HUD/Root/Minimap")
 	radar._refresh_navigation()
-	_check(radar._target.get("category", "") == "委托 · 捣巢", "雷达追踪选中的第二项委托")
+	_check(radar._target.get("category", "") == "当前视野 · 委托"
+		and radar._target.get("kind", "") == "nest" and radar._target.get("precise", false),
+		"雷达仅精确追踪当前视野内所选第二项捣巢委托")
 	EventBus.quest_track_requested.emit("no_such_task")
 	_check(GameState.tracked_quest_id == ransack["id"], "不存在的追踪请求不破坏当前选择")
 	GameState.save_enabled = true

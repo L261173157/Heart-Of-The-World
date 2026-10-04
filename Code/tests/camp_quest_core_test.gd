@@ -1,0 +1,298 @@
+## 核心边界回归；真实演员/触屏闭环另由 camp_pilot_contract/UI 契约覆盖。
+extends Node2D
+
+const Data := preload("res://scripts/main/camp_quest_data.gd")
+const Inventory := preload("res://scripts/main/camp_quest_inventory.gd")
+var _checks := 0
+var _fails := 0
+var _qm: QuestManager
+var _player: Node2D
+var _npc: Node2D
+
+class TestNPC extends Node2D:
+	var landmark_id := "camp_ecology"
+
+func _ready() -> void:
+	GameState.save_enabled = false
+	GameState.SAVE_PATH = "user://camp_quest_core_%d.json" % OS.get_process_id()
+	GameState.reset_all()
+	WorldSim.stop()
+	WorldSim.sim = null
+	_run.call_deferred()
+
+func _check(ok: bool, label: String) -> void:
+	_checks += 1
+	if not ok:
+		_fails += 1
+	print("  %s %s" % ["PASS" if ok else "FAIL", label])
+
+func _legacy(id: String, kind: String = "collect") -> Dictionary:
+	return {"id": id, "landmark_id": id, "giver": "委托人", "title": "容量回归",
+		"kind": kind, "item": "tea-leaf", "need": 3, "progress": 3,
+		"gold": 25, "xp": 20, "claim_at_npc": true}
+
+func _run() -> void:
+	_player = Node2D.new()
+	_player.add_to_group("player")
+	add_child(_player)
+	_npc = TestNPC.new()
+	_npc.add_to_group("npcs")
+	add_child(_npc)
+	_qm = QuestManager.new()
+	add_child(_qm)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_test_sanitize()
+	_test_inventory()
+	_test_legacy()
+	_test_camp_ledger()
+	_test_known_facts_and_choices()
+	await _test_loaded_target_positions()
+	print("=== CAMP QUEST CORE %s (%d checks, %d failures) ===" % ["PASS" if _fails == 0 else "FAIL", _checks, _fails])
+	get_tree().quit(0 if _fails == 0 else 1)
+
+func _test_sanitize() -> void:
+	for bad: Variant in [null, [], 4, "camp", {"id": "other"}]:
+		_check(Data.sanitize(bad).is_empty(), "错误顶层/链ID拒绝")
+	var q := Data.sanitize({"id": Data.ID, "stage": "garbage", "target": {"pos": [{}, 0]}, "gold": NAN})
+	_check(q["stage"] == "investigate" and q["target"].is_empty() and q["gold"] == 39, "坏阶段/坐标/NaN奖励独立恢复")
+	q = Data.sanitize({"id": Data.ID, "stage": "return", "active": true, "investigated": false})
+	_check(q["stage"] == "investigate", "未实际调查的返回阶段不能冷加载领奖")
+	q = Data.sanitize({"id": Data.ID, "stage": "return", "active": true, "investigated": true,
+		"outcome": "hunt", "target": {"pos": [INF, 1], "region_id": "test", "species": "地精矿工"}})
+	_check(q["stage"] == "investigate" and not Data.has_result(q), "非法目标加布尔调查标志不能造出领奖凭据")
+	q = Data.sanitize({"id": Data.ID, "stage": "return", "active": true, "investigated": true,
+		"outcome": "hunt", "surveys": ["test|地精矿工"], "kills": [NAN, 4.5],
+		"target": {"pos": [1, 1], "region_id": "test", "species": "地精矿工", "need": 1}})
+	_check(q["stage"] != "return" and q["kills"].is_empty() and q["target"]["need"] == 2, "无真实行动的返回状态和坏击杀ID隔离")
+	q = Data.sanitize({"id": Data.ID, "paid": true, "active": true, "stage": "return", "kills": [4, 4, -1, "x"],
+		"target": {"pos": [5, 6], "species": "地精矿工", "region_id": "test", "need": {}, "kill_start": []}})
+	_check(q["stage"] == "completed" and not q["active"] and q["paid"], "已支付凭证优先，禁止恢复为可领奖")
+	_check(q["kills"] == [4] and q["target"]["need"] == 2 and q["target"]["kill_start"] == 0, "坏数值类型隔离与击杀ID去重")
+
+	var receipt := {"id": Data.ID, "active": false, "paid": true, "last_summary": true, "investigated": true,
+		"stage": "completed", "choice": "hunt", "outcome": "hunt", "kills": [10, 11],
+		"target": {"pos": [3000, 3000], "region_id": "test", "species": "地精矿工"},
+		"surveys": ["test|地精矿工"], "history": ["已到场调查", "已返回营地交付，奖励已领取"],
+		"paid_gold": 39, "paid_xp": 44}
+	for flag: String in ["active", "paid", "last_summary", "investigated"]:
+		for bad: Variant in ["true", 1, {}]:
+			var damaged := receipt.duplicate(true)
+			damaged[flag] = bad
+			q = Data.sanitize(damaged)
+			_check(not q.is_empty() and q["paid"] and q["stage"] == "completed" and not q["active"]
+				and q["kills"] == [10, 11] and q["surveys"] == ["test|地精矿工"]
+				and q["paid_gold"] == 39 and q["paid_xp"] == 44,
+				"单个坏布尔不丢有效账本/已付收据：%s/%s" % [flag, type_string(typeof(bad))])
+	var unpaid := receipt.duplicate(true)
+	unpaid["stage"] = "act"
+	unpaid["paid"] = "true"
+	unpaid["paid_gold"] = 0
+	unpaid["paid_xp"] = 0
+	q = Data.sanitize(unpaid)
+	_check(not q["paid"] and q["stage"] == "act", "未支付阶段不把字符串true解释成支付许可")
+
+func _test_inventory() -> void:
+	GameState.inventory = {"onigiri": 99, "gold-key": 99, "tea-leaf": 3}
+	var before := GameState.inventory.duplicate(true)
+	_check(not Inventory.apply({"tea-leaf": 3}, {"gold-key": 1}), "奖励满99阻止交易")
+	_check(GameState.inventory == before, "容量失败不先扣材料")
+	_check(not Inventory.apply({}, {"onigiri": 1, "water-pot": 1}), "多奖励任一溢出则整体失败")
+	_check(GameState.count_item("water-pot") == 0, "部分可装的奖励也不提前发放")
+	_check(Inventory.apply({"gold-key": 1}, {"gold-key": 1}), "同物品先扣再奖后容量99允许")
+	_check(GameState.count_item("gold-key") == 99, "同物品净额精确")
+	_check(not Inventory.apply({"tea-leaf": 4}, {"water-pot": 1}), "成本不足不付奖励")
+
+func _test_legacy() -> void:
+	GameState.quests = {"active": [], "completed": {}, "receipts": {}, "last_receipt": ""}
+	GameState.inventory = {"gold-key": 99, "tea-leaf": 3}
+	var q := _legacy("capacity_collect")
+	GameState.quests["active"].append(q)
+	var gold := GameState.gold
+	var xp := GameState.stats.xp
+	_check(not _qm._complete(q), "旧收集奖励满时保留待结算")
+	_check(GameState.quests["active"].has(q) and GameState.count_item("tea-leaf") == 3, "收集失败保留委托与全部材料")
+	_check(GameState.gold == gold and GameState.stats.xp == xp and GameState.quests["completed"].is_empty(), "失败无金币经验/计数/收据部分提交")
+	GameState.remove_item("gold-key", 1)
+	_check(GameState.quests["active"].has(q), "手动交付任务释放空间后仍需手动确认")
+	_check(_qm._complete(q), "释放空间后整单可提交")
+	_check(GameState.count_item("tea-leaf") == 0 and GameState.count_item("gold-key") == 99, "成功交易扣料和奖励原子到账")
+	_check(GameState.gold == gold + 25 and GameState.quests["completed"]["capacity_collect"] == 1, "完成一次计数与报酬")
+	_check(not _qm._complete(q) and GameState.gold == gold + 25, "重复结算不重付")
+	var id := ""
+	for i in 100:
+		var candidate := "retry_bonus_%d" % i
+		if hash("quest-bonus|%s" % candidate) % 10 < 3:
+			id = candidate
+			break
+	q = _legacy(id, "explore")
+	q.erase("claim_at_npc")
+	var bonus: String = _qm._bonus_item(q)
+	GameState.inventory[bonus] = 99
+	GameState.quests["active"].append(q)
+	gold = GameState.gold
+	_check(not _qm._complete(q), "旧自动探索委托满仓时保持待付")
+	_check(q.get("settlement_blocked", false), "待付状态明确可呈现")
+	GameState.remove_item(bonus, 1)
+	_check(not GameState.quests["active"].has(q) and GameState.gold == gold + 25, "旧自动模式在空间恢复信号上自动重试，不要求新动作")
+	_check(GameState.count_item(bonus) == 99 and GameState.quests["completed"][id] == 1, "自动重试奖励恰好一次")
+	q = _legacy("same_item")
+	q["item"] = "gold-key"
+	q["need"] = 1
+	q["progress"] = 1
+	GameState.inventory["gold-key"] = 99
+	GameState.quests["active"].append(q)
+	_check(_qm._complete(q) and GameState.count_item("gold-key") == 99, "实际委托按扣料后容量而非错误的预扣库存判断")
+
+func _test_camp_ledger() -> void:
+	_check(_qm.offer(Data.LANDMARK, "camp_ecology", "营地巡守")["kind"] == "info", "无真实世界目标不可在桌面生成有奖空单")
+	_check(GameState.camp_quest.is_empty(), "仅打开NPC不创建调查证据")
+	var raw := {"id": Data.ID, "active": true, "stage": "act", "investigated": true, "choice": "hunt",
+		"target": {"region_id": "test", "species": "地精矿工", "pos": [3000, 3000]}, "kills": [10], "surveys": ["test|地精矿工"], "history": ["真实调查记录"]}
+	GameState.camp_quest = Data.sanitize(raw)
+	var before := GameState.camp_quest.duplicate(true)
+	_check(_qm.camp_investigate().contains("抵达"), "异地不能登记现场调查")
+	_check(GameState.camp_quest == before, "失败调查不篡改历史")
+	_qm.abandon(Data.ID)
+	_check(not GameState.camp_quest["active"] and GameState.camp_quest["kills"] == [10], "放弃仅暂停链，保留真实贡献")
+	_qm.accept({"id": Data.ID})
+	_check(GameState.camp_quest["active"] and GameState.camp_quest["stage"] == "act" and GameState.camp_quest["kills"] == [10], "重新接取复用同阶段历史")
+	_qm._on_track_requested("")
+	_qm._push_hud()
+	_check(GameState.tracked_quest_id == "__untracked__" and GameState.camp_quest["active"], "取消追踪不会自动回选或放弃")
+	GameState.camp_quest["stage"] = "return"
+	GameState.camp_quest["outcome"] = "survey"
+	GameState.inventory["onigiri"] = 99
+	var gold := GameState.gold
+	_check(_qm.claim(Data.ID).contains("99"), "营地领取整笔奖励满仓阻止")
+	_check(not GameState.camp_quest["paid"] and GameState.gold == gold, "营地容量失败不付金币或写已付")
+	GameState.remove_item("onigiri", 1)
+	_check(_qm.claim(Data.ID).contains("交付成功"), "返回真实营地NPC旁手动成功交付")
+	_check(GameState.camp_quest["paid"] and not GameState.camp_quest["active"], "成功账本写稳定已付标记")
+	gold = GameState.gold
+	GameState.remove_item("onigiri", 1)
+	var inventory_after_paid := GameState.inventory.duplicate(true)
+	_qm.claim(Data.ID)
+	_qm.accept({"id": Data.ID})
+	_check(GameState.gold == gold and GameState.inventory == inventory_after_paid and GameState.camp_quest["paid"], "已腾出奖励空间后重复领取/重接仍不重付")
+	var loaded: Dictionary = Data.sanitize(JSON.parse_string(JSON.stringify(GameState.camp_quest)))
+	_check(loaded["paid"] and loaded["stage"] == "completed" and loaded["kills"] == [10], "JSON往返保持阶段/历史/支付幂等")
+	loaded["paid"] = "false"
+	GameState.camp_quest = Data.sanitize(loaded)
+	_qm.accept({"id": Data.ID})
+	_qm.claim(Data.ID)
+	_check(GameState.camp_quest["paid"] and not GameState.camp_quest["active"] and GameState.gold == gold and GameState.inventory == inventory_after_paid,
+		"已完成收据的paid字段损坏不能通过重接/交付重复支付")
+
+
+func _test_known_facts_and_choices() -> void:
+	var home := WorldConfig.spawn_pos()
+	var region := SimRegion.new()
+	region.id = "test"
+	region.center = home
+	region.size = Vector2(1000, 1000)
+	var species: SpeciesData = load("res://data/species/goblin.tres")
+	var catalog: Array[SpeciesData] = [species]
+	var sim := EcologySim.new()
+	sim.setup([region], catalog, {region.id: {species.species_name: 3}})
+	WorldSim.sim = sim
+	for inst: MonsterInstance in sim.instances.values():
+		inst.age = 0
+		inst.is_elite = false
+		inst.spawn_pos = home
+	var key := region.id + "|" + species.species_name
+	GameState.camp_quest = Data.sanitize({"id": Data.ID, "active": true, "stage": "act", "investigated": true,
+		"choice": "hunt", "surveys": [key], "target": {"region_id": region.id, "species": species.species_name, "pos": [home.x, home.y]}})
+	_player.global_position = home + Vector2(2000, 0)
+	var objective_before: String = _qm._camp.objective()
+	_check(objective_before.contains("现状待到场确认"), "远端任务只显示历史目标和待核实现状")
+	sim.destroy_nest(region.id, species.species_name)
+	_qm._camp._on_tick({})
+	_check(_qm._camp.objective() == objective_before and _qm._camp.snapshot()["ui_objective"] == objective_before,
+		"远端巢穴变化经过生态tick也不会隔空泄露到任务目标")
+	_player.global_position = home + Vector2(60, 0)
+	_check(_qm._camp.context()["on_site"] and _qm._camp.objective().contains("现场已变化"),
+		"实际可见现场才更新目标变化提示")
+	sim.nests[key]["active"] = true
+	(sim.instances.values()[0] as MonsterInstance).is_alive = false
+	GameState.camp_quest["stage"] = "choose"
+	GameState.camp_quest["choice"] = ""
+	var options: Array = _qm._camp.choice_payload()["options"]
+	_check(not options[0]["enabled"] and options[0]["label"].contains("不可用")
+		and options[0]["disabled_reason"].contains("当前2只") and options[1]["enabled"],
+		"仅剩两只时有限狩猎明确不可用，仍保留可行捣巢选项")
+	_check(options.size() == 3 and options[2].get("utility", false) and options[2]["action"] == "find_hunt_clue",
+		"狩猎不可用时明确提供可选择的替代线索行动")
+	GameState.camp_quest["kills"] = [999]
+	options = _qm._camp.choice_payload()["options"]
+	_check(options[0]["enabled"] and options[0]["consequence"].contains("再猎杀1只"),
+		"保留一只历史贡献后正确显示只需再猎杀一只")
+	GameState.camp_quest["kills"] = []
+	_qm._camp.find_hunt_clue()
+	_check(GameState.camp_quest["stage"] == "return" and GameState.camp_quest["outcome"] == "survey"
+		and GameState.camp_quest["surveys"].has(key) and sim.nests[key]["active"],
+		"主动核对无替代后凭真实现场记录交付，不强迫捣巢且不改生态")
+	WorldSim.sim = null
+
+
+func _test_loaded_target_positions() -> void:
+	GameState.reset_all()
+	GameState.world_seed = BiomeMap.DEFAULT_SEED
+	BiomeMap.configure(GameState.world_seed)
+	ObstacleField.restore_destroyed([])
+	seed(20261004)
+	var regions: Array = []
+	for definition: Dictionary in WorldConfig.region_defs():
+		var region := SimRegion.new()
+		region.id = definition["id"]
+		region.display_name = definition["name"]
+		region.terrain = definition["terrain"]
+		region.threat = definition["threat"]
+		region.center = definition["center"]
+		region.size = definition["size"]
+		region.capacity = definition["capacity"]
+		region.neighbor_ids.assign(definition["neighbors"])
+		regions.append(region)
+	var sim := EcologySim.new()
+	sim.setup(regions, SpeciesCatalog.build_all(), WorldConfig.initial_population(), WorldConfig.boss_anchors())
+	WorldSim.sim = sim
+	_player.global_position = WorldConfig.spawn_pos()
+	var clue: String = _qm._camp._next_clue()
+	var has_direction := false
+	for direction: String in ["东", "西", "南", "北"]:
+		has_direction = has_direction or clue.contains(direction)
+	_check(clue.contains("营地") and has_direction and clue.contains("自由探索"),
+		"下一地区线索使用真实邻区的粗方向并保留自由探索")
+	var selector: CampQuestTargets = _qm._camp._targets
+	var first := await selector.select_target()
+	_check(not first.is_empty() and first["species"] == "地精矿工" and first.get("target_ids", []).size() >= 3,
+		"真实默认生态基线选中三个已核验可达矿工ID")
+	if first.is_empty():
+		WorldSim.sim = null
+		return
+	var actors: Array[Node] = []
+	var anchors := {}
+	for inst: MonsterInstance in sim.instances.values():
+		if inst.is_alive and inst.region_id == first["region_id"] and inst.species.species_name == first["species"]:
+			var body: MonsterBase = preload("res://scripts/main/game_world.gd").MONSTER_SCENES[inst.species.species_name].instantiate()
+			add_child(body)
+			body.set_physics_process(false)
+			body.setup(inst)
+			body._nav.avoidance_enabled = false
+			anchors[inst.id] = inst.spawn_pos
+			body.global_position = _player.global_position + Vector2(90 + actors.size() * 30, 0)
+			actors.append(body)
+	_qm._camp._preview = first
+	_check(not _qm._camp._preview_current(), "实际加载怪追逐离巢后出生锚点不能充当可用存量")
+	var second := await selector.select_target()
+	_qm._camp._preview = second
+	_check(not second.is_empty() and second["key"] != first["key"] and _qm._camp._preview_current(),
+		"选择器跳过离巢组并返回真实可行替代据点，不循环发失效邀约")
+	var anchors_kept := true
+	for id: int in anchors:
+		anchors_kept = anchors_kept and sim.instances[id].spawn_pos == anchors[id]
+	_check(anchors_kept, "实时位置选择不迁移或篡改生态出生锚点")
+	for body: Node in actors:
+		body.queue_free()
+	await get_tree().process_frame
+	WorldSim.sim = null
