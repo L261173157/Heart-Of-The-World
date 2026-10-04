@@ -81,8 +81,13 @@ func take_damage(_amount: float, _from_position := Vector2.INF, _heavy := false,
 	_destroyed = true
 	# 捣毁：模拟层单点权威 + 播报 + 碎裂（WorldSim 已停时的残余攻击判空防崩）
 	if WorldSim.sim != null:
+		var active_before: bool = bool(WorldSim.sim.nests.get(nest_key, {}).get("active", false))
+		GameState.begin_world_reward()
 		WorldSim.sim.destroy_nest(region_id, species_name)
-	EventBus.world_event.emit("💥 %s 的巢穴在%s被捣毁！%s群情激愤——繁衍已被遏制" % [
+		if active_before and not bool(WorldSim.sim.nests.get(nest_key, {}).get("active", false)):
+			EventBus.nest_ransacked_at.emit(species_name, region_id, global_position)
+		GameState.end_world_reward()
+	EventBus.world_event.emit("💥 %s 的巢穴在%s被捣毁！%s群情激愤——当地自然繁衍暂缓，存活族群仍会活动" % [
 		species_name, _region_display(), species_name])
 	EventBus.camera_shake_requested.emit(4.0)
 	_burst()

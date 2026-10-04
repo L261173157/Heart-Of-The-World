@@ -57,6 +57,8 @@ static func checkpoints() -> Dictionary:
 		return _checkpoints
 	_checkpoints_seed = BiomeMap.current_seed()
 	_checkpoints = {"home": {"name": "家园营地", "position": spawn_pos(), "kind": "camp"}}
+	# 目录存在不代表已解锁；首章真实救援/修复完成后才由任务账本发现此点。
+	_checkpoints[OutpostLayout.CHECKPOINT_ID] = {"name": "修复的前哨", "position": OutpostLayout.checkpoint_position(), "kind": "outpost"}
 	for lm: Dictionary in LandmarkRegistry.landmarks():
 		if LandmarkRegistry.NPC_BY_KIND.has(lm["kind"]):
 			_checkpoints["landmark:" + lm["id"]] = {"name": lm["kind"] + "营地",

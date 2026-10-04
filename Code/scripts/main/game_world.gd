@@ -130,6 +130,7 @@ var _npc_nodes := {}
 var _landmark_root: Node2D
 ## NPC 交互注入（QuestManager.try_accept(landmark_id, quest_kind, giver)）
 var _npc_interact_fn: Callable
+var _npc_status_fn: Callable
 
 
 func _enter_tree() -> void:
@@ -231,6 +232,13 @@ func _ready() -> void:
 	var quest_manager := QuestManager.new()
 	add_child(quest_manager)
 	_npc_interact_fn = quest_manager.offer
+	_npc_status_fn = quest_manager.npc_status
+	_setup_camp_quest_giver()
+	# 作者前哨独立于活体供给存在；空生态旧档仍能调查、救援与修复。
+	var outpost_world := preload("res://scripts/main/outpost_world.gd").new()
+	add_child(outpost_world)
+	if quest_manager.has_method("outpost_visual_state"):
+		outpost_world.refresh_state(quest_manager.outpost_visual_state())
 	# NA fx 全量通道（美术 v5 M-C）：事件侧只发 fx_requested，本层统一播条带
 	var fx_layer := FxLayer.new()
 	fx_layer.name = "FxLayer"
@@ -422,6 +430,21 @@ func _setup_camp() -> void:
 	_transition_layer.add_child(veil)
 	add_child(_transition_layer)
 	_veil = veil
+
+
+## 旧世界也从既有营地进入首章，不重置种子、生态或检查点。
+func _setup_camp_quest_giver() -> void:
+	var keeper := LandmarkNPC.new()
+	keeper.name = "CampEcologist"
+	keeper.position = WorldConfig.spawn_pos() + Vector2(-100, 75)
+	keeper.kind = "石环"
+	keeper.giver = "营地巡守"
+	keeper.landmark_id = "camp_ecology"
+	keeper.quest_kind = "outpost"
+	keeper.color = Color("9fd5a6")
+	keeper.interact_fn = _npc_interact_fn
+	keeper.status_fn = _npc_status_fn
+	_landmark_root.add_child(keeper)
 
 
 ## 房门有明确前方入口区，按交互才进入；站在门槛不会反复触发。
@@ -789,7 +812,7 @@ class FxLayer extends Node2D:
 ## 城塞宝箱（v7 P1 钥匙模式）：Boss 被讨伐期间（重生倒计时进行中）解封，
 ## 还需对应钥匙——银钥匙开 hill 城塞（精英怪掉落）、金钥匙开 lava 城塞
 ## （collect 任务奖励）；开箱 = 金币 + 双件物品（hash 确定性抽取）。
-## 加入 npcs 组复用玩家的最近交互路由（攻击键开箱）
+## 加入 npcs 组复用独立情境交互路由（E / 交互按钮开箱）
 class DungeonChest extends Node2D:
 	## 大宝箱（v6 TS：bake_structures 合成件 44×32 ×1.2）；箱顶悬浮所需钥匙图标提示
 	const CHEST_TEX := preload("res://assets/ts/structures_baked/chest.png")
@@ -1018,6 +1041,7 @@ func _update_landmark_markers() -> void:
 			npc.kind = lm["kind"]
 			npc.color = LandmarkRegistry.kind_color(lm["kind"])
 			npc.interact_fn = _npc_interact_fn
+			npc.status_fn = _npc_status_fn
 			_landmark_root.add_child(npc)
 			_npc_nodes[id] = npc
 		elif not near and _npc_nodes.has(id):
@@ -1098,7 +1122,7 @@ class LandmarkMarker extends Node2D:
 
 
 ## 地标 NPC：TS 蓝系角色精灵 + 头顶名牌 + 轻微踱步。
-## 交互 = 玩家贴近按攻击键（player 侧查询 npcs 组）→ 结构化委托经
+## 交互 = 玩家贴近按独立交互键（player 侧查询 npcs 组）→ 结构化委托经
 ## EventBus.npc_dialogue 由 HUD 对话气泡呈现（是/否接取）
 class LandmarkNPC extends Node2D:
 	## 地标类型 → NPC 帧库（v6 TS 蓝系友军：Archer/Pawn 镐/Monk/Pawn 金袋/
@@ -1126,6 +1150,7 @@ class LandmarkNPC extends Node2D:
 	var kind := ""
 	var color := Color.WHITE
 	var interact_fn: Callable
+	var status_fn: Callable
 	var _visual: AnimatedSprite2D
 	var _quest_marker: Label
 	var _t := 0.0
@@ -1171,7 +1196,8 @@ class LandmarkNPC extends Node2D:
 	func _refresh_quest_marker(_quests: Array = [], _tracked := "") -> void:
 		if _quest_marker == null:
 			return
-		var status: Dictionary = preload("res://scripts/ui/quest_presentation.gd").npc_status(landmark_id)
+		var status: Dictionary = status_fn.call(landmark_id, quest_kind, giver) if status_fn.is_valid() \
+				else preload("res://scripts/ui/quest_presentation.gd").npc_status(landmark_id)
 		_quest_marker.text = status["marker"]
 		_quest_marker.add_theme_color_override("font_color", status["color"])
 

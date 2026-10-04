@@ -49,6 +49,11 @@ func _target_id() -> String:
 	return str(_radar._target.get("id", ""))
 
 
+func _track(quest: Dictionary) -> void:
+	GameState.quests["active"] = [quest]
+	GameState.tracked_quest_id = str(quest["id"])
+
+
 func _run() -> void:
 	GameState.reset_all()
 	GameState.world_seed = 20260908
@@ -74,7 +79,7 @@ func _run() -> void:
 	_radar.size = Vector2(240, 120)
 	add_child(_radar)
 	_check(_target_id().is_empty(), "空世界无虚构目标")
-	_check(_radar._category.text == "附近暂无目标", "空目标有明确探索提示")
+	_check(_radar._category.text == "未跟踪委托", "未选择委托时明确提示且不擅自导航")
 	var near := _sim.spawn_instance(_goblin, region.id, 30, 0, 1.0, false,
 		_player.position + Vector2(320, 0))
 	var next := _sim.spawn_instance(_goblin, region.id, 30, 0, 1.0, false,
@@ -91,7 +96,10 @@ func _run() -> void:
 	_reveal(_sim.camp_pos(region, _goblin))
 	var fog_before := GameState.explored.duplicate()
 	var dirty_before := GameState.fog_dirty.duplicate()
-	_check(_target_id() == "monster:%d" % near.id, "最近存活敌人优先，不把被动动物当敌人")
+	_check(_target_id().is_empty() and not _radar._known_candidates().is_empty(),
+		"看见附近活体仍不擅自选中任务，地图候选保持可见")
+	_track({"id": "near_hunt", "kind": "hunt", "species": _goblin.species_name, "progress": 0, "need": 2})
+	_check(_target_id() == "monster:%d" % near.id, "明确狩猎选最近匹配活体，不把被动动物当目标")
 	_check(_radar._direction.text == "向东" and _radar._distance.text == "10格 · 直线",
 		"方向与距离使用真实32像素网格")
 	_check(GameState.explored == fog_before and GameState.fog_dirty == dirty_before,
@@ -113,7 +121,8 @@ func _run() -> void:
 	_check(_target_id() == "monster:%d" % near.id and _radar._direction.text == "向北",
 		"死亡立刻换活目标，导航追随实际追击位置")
 	_sim.report_killed(near.id)
-	_check(_target_id().is_empty(), "已知但视野外的活体和种群变化不泄露")
+	_track({"id": "miner_hunt", "kind": "hunt", "species": _miner.species_name, "progress": 0, "need": 1})
+	_check(_target_id().is_empty(), "新追踪目标在视野外时不泄露活体和种群变化")
 	_check(_radar._radar_rect().grow(-1).has_point(_radar._target_marker_position(camp.spawn_pos)),
 		"屏外已发现地标箭头可夹在雷达边框内")
 	_player.position = camp.spawn_pos - Vector2(1000, 0)
@@ -122,16 +131,16 @@ func _run() -> void:
 	display.queue_free()
 	await get_tree().process_frame
 	EventBus.bounty_target_changed.emit(_miner.species_name)
-	_check(_target_id() == "monster:%d" % camp.id and _radar._category.text == "赏金目标",
-		"结构化赏金事件正确驱动优先级")
+	_check(_target_id() == "monster:%d" % camp.id and _radar._category.text == "当前目标",
+		"赏金信号不替换玩家明确追踪的委托")
 	var quest_enemy := _sim.spawn_instance(_goblin, region.id, 30, 0, 1.0, false,
 		_player.position + Vector2(1200, 0))
 	_reveal(quest_enemy.spawn_pos)
-	GameState.quests["active"] = [{"kind": "hunt", "species": _goblin.species_name, "progress": 0, "need": 1}]
-	_check(_target_id() == "monster:%d" % quest_enemy.id and _radar._category.text == "委托 · 猎杀",
-		"活跃狩猎优先于更近赏金")
+	_track({"id": "quest_enemy", "kind": "hunt", "species": _goblin.species_name, "progress": 0, "need": 1})
+	_check(_target_id() == "monster:%d" % quest_enemy.id and _radar._category.text == "当前目标",
+		"只追踪所选狩猎，不换成更近赏金")
 	GameState.quests["active"][0]["progress"] = 1
-	_check(_target_id() == "monster:%d" % camp.id, "已完成尚未移出的委托不滞留旧目标")
+	_check(_target_id().is_empty(), "已完成尚未移出的委托不滞留旧目标或偷偷替换成赏金")
 	var original_pos := _radar._player_pos
 	_radar._player_pos = Vector2(10000, 10000)
 	var scoped: Array[Dictionary] = [
@@ -139,22 +148,24 @@ func _run() -> void:
 			"species": _goblin.species_name, "ambient": false, "streamed": true},
 		{"id": "far", "kind": "monster", "pos": Vector2(700000, 700000), "name": "远赏金",
 			"species": _miner.species_name, "ambient": false, "streamed": false}]
-	_check(_radar._select_target(scoped).get("id", "") == "close", "975807像素外旧赏金不抢走100像素外活怪")
-	GameState.quests["active"] = [{"kind": "hunt", "species": _miner.species_name, "progress": 0, "need": 1}]
-	_check(_radar._select_target(scoped).get("id", "") == "close", "已探索遥远委托也不能锁住本地游玩")
+	_reveal(Vector2(10100, 10000))
+	_track({"id": "scoped_near", "kind": "hunt", "species": _goblin.species_name, "progress": 0, "need": 1})
+	_check(_radar._select_target(scoped).get("id", "") == "close", "975807像素外旧赏金不抢走眼前所选委托目标")
+	_track({"id": "scoped_far", "kind": "hunt", "species": _miner.species_name, "progress": 0, "need": 1})
+	_check(_radar._select_target(scoped).is_empty(), "远方所选委托无当前情报时不替换成无关近怪")
 	_radar._player_pos = original_pos
-	GameState.quests["active"] = [{"kind": "collect", "item": "tea-leaf", "progress": 0, "need": 3}]
-	_check(_target_id() == "monster:%d" % camp.id and _radar._category.text == "委托 · 材料",
+	_track({"id": "material", "kind": "collect", "item": "tea-leaf", "progress": 0, "need": 3})
+	_check(_target_id() == "monster:%d" % camp.id and _radar._category.text == "当前目标",
 		"材料委托沿EconomyMath真源找仍存活的掉落来源")
 	_player.position = region.center
-	GameState.quests["active"] = [{"kind": "ransack", "progress": 0, "need": 1}]
+	_track({"id": "ransack", "kind": "ransack", "progress": 0, "need": 1})
 	_reveal(_sim.camp_pos(region, _goblin))
 	_check(_target_id().begins_with("nest:"), "捣巢委托锁定未摧毁巢穴")
 	var first_nest := str(_radar._target.get("id", "")).trim_prefix("nest:")
 	if not first_nest.is_empty():
 		_sim.destroy_nest(first_nest.get_slice("|", 0), first_nest.get_slice("|", 1))
 		_check(_target_id() != "nest:" + first_nest, "捣毁后立即跳过失活巢穴")
-	GameState.quests["active"] = [{"kind": "explore", "progress": 0, "need": 2}]
+	_track({"id": "explore", "kind": "explore", "progress": 0, "need": 2})
 	_sim.report_killed(camp.id)
 	_sim.report_killed(quest_enemy.id)
 	_check(_target_id().is_empty(), "探索任务不指向秘密地标，赏金活体耗尽后清除箭头")
@@ -165,13 +176,27 @@ func _run() -> void:
 	# 发现内容才可作为回访目的地；已到达点不持续吸住导航。
 	var landmark: Dictionary = LandmarkRegistry.landmarks()[0]
 	GameState.discovered_landmarks.assign([landmark["id"]])
-	_check(_target_id() == "landmark:" + landmark["id"], "无附近活怪时指引最近已发现地标")
+	_check(_target_id().is_empty() and _radar._known_candidates().any(func(c: Dictionary) -> bool:
+		return c["id"] == "landmark:" + landmark["id"]), "已发现地标保留地图候选，但不替换当前探索委托")
 	GameState.discovered_landmarks.clear()
 	GameState.discovered_checkpoints.assign(["home"])
-	_check(_target_id() == "checkpoint:home", "已发现营地显示并可回访")
+	_check(_target_id().is_empty() and _radar._known_candidates().any(func(c: Dictionary) -> bool:
+		return c["id"] == "checkpoint:home"), "已发现营地保留地图候选，但不擅自变成追踪目标")
 	_player.position = WorldConfig.spawn_pos()
 	_check(_target_id().is_empty(), "到达已发现营地后不留下零距离旧指引")
 	GameState.discovered_checkpoints.clear()
+	# 居民线索仅提供区域；当前视野之外不能由模拟活体真值精确定位。
+	fog_before = GameState.explored.duplicate()
+	_track({"id": "camp_clue", "kind": "camp_ecology", "camp_stage": "investigate",
+		"species": _miner.species_name, "hunt_region": region.id, "progress": 0, "need": 1,
+		"target_pos": [90000.0, 90000.0], "ui_knowledge": "npc_intel"})
+	_check(_target_id() == "quest_clue:camp_clue" and not _radar._target.get("precise", true)
+		and _radar._category.text == "情报区域" and _radar._distance.text == "大致方位",
+		"居民远方线索明确标为大致区域，不显示精确格距")
+	_check(GameState.explored == fog_before and not _radar._known_candidates().any(func(c: Dictionary) -> bool:
+		return c["id"] == "monster:%d" % hidden.id), "线索导航不揭雾、不泄露远方真实怪物")
+	GameState.tracked_quest_id = "__untracked__"
+	_check(_target_id().is_empty(), "玩家明确取消追踪后不自动换回其它任务或目标")
 	# 相同节点观察换世界，不沿用旧目标、旧营地坐标和旧迷雾。
 	var replacement := EcologySim.new()
 	replacement.setup([region], [_goblin, _miner, _sheep], {})

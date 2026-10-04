@@ -1,4 +1,4 @@
-## 攻击双通道与真实 Boss/宝箱：封印不吞刀，解封开箱仍一次扣钥匙领奖。
+## 攻击/交互分离与真实 Boss/宝箱：任何箱都不吞刀，独立交互一次扣钥匙领奖。
 extends Node2D
 
 const World := preload("res://scripts/main/game_world.gd")
@@ -40,6 +40,15 @@ func _attack(touch: bool) -> void:
 		Input.action_press("attack")
 	await _frames(1)
 	if not touch: Input.action_release("attack")
+	await _frames(23)
+
+func _interact(touch: bool) -> void:
+	if touch:
+		TouchInput.queue_interact(str(_player._current_context().get("target_id", "")))
+	else:
+		Input.action_press("interact")
+	await _frames(1)
+	if not touch: Input.action_release("interact")
 	await _frames(23)
 
 func _refresh(chest: Node) -> void:
@@ -93,22 +102,26 @@ func _run() -> void:
 			_check(_boss.current_hp < hp and _player._combo > 0,
 				"%s真实扫掠命中Boss，43px目标/50px封印箱 %s" % ["触屏" if touch else "键盘", direction])
 			_check(_claims == 0, "战斗输入不会领取封印箱")
-	# 玩家攻击前查询可即时刷新刚倒下的 Boss，无须等0.5秒世界流式节拍。
+	# 情境查询可即时刷新刚倒下的 Boss，无须等0.5秒世界流式节拍。
 	WorldSim.sim.report_killed(inst.id)
 	_player._attack_cooldown = 0
 	_chest.global_position = _player.global_position + Vector2(50, 0)
 	await _attack(true)
+	_check(not _chest.taken and _claims == 0 and _player._combo > 0,
+		"刚击败Boss普攻仍挥刀，不自动开箱")
+	await _interact(true)
 	_check(not _chest.locked and not _chest.taken and _claims == 0 and "需要" in _last_hint,
-		"刚击败Boss即进入缺钥匙交互，不挥刀也不领奖")
+		"明确交互即时刷新解封状态，缺钥匙不领奖")
 	GameState.add_item(EconomyMath.KEY_SILVER, 2)
 	var before := GameState.gold
-	await _attack(true)
+	await _interact(true)
 	_check(_claims == 1 and _chest.taken and GameState.gold > before
-		and GameState.count_item(EconomyMath.KEY_SILVER) == 1, "解封宝箱实际攻击交互一次扣钥匙领奖")
+		and GameState.count_item(EconomyMath.KEY_SILVER) == 1, "解封宝箱独立触屏交互一次扣钥匙领奖")
 	before = GameState.gold
+	await _interact(false)
 	await _attack(false)
 	_check(_claims == 1 and GameState.gold == before and GameState.count_item(EconomyMath.KEY_SILVER) == 1,
-		"重复按攻击不会再次扣钥匙/领奖")
+		"重复交互和普攻不会再次扣钥匙/领奖")
 	# 重生后旧解封表现必须立即锁回，不依赖上一帧的 locked 标记。
 	inst.is_alive = true # 只构造重生已发生而表现尚未刷新这个边界。
 	_claims = 0
@@ -117,6 +130,7 @@ func _run() -> void:
 	_chest.locked = false
 	_check(_player._nearest_npc() == null and _chest.locked, "Boss重生后的旧解封画面不抢攻击")
 	Input.action_release("attack")
+	Input.action_release("interact")
 	TouchInput.reset()
 	WorldSim.stop()
 	print("=== CHEST ATTACK PRIORITY %s (%d checks) ===" % ["PASS" if _fails == 0 else "FAIL", _checks])

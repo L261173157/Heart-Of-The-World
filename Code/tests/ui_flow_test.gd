@@ -220,19 +220,25 @@ func _test_world_death_respawn() -> void:
 	GameState.save_enabled = false
 	hud._toggle_pause()
 	_check(not get_tree().paused, "手动保存后可正常恢复游戏")
-	# --- 物品栏与快捷槽（玩法 v7）：开关/暂停口径/屏内/互斥链/零配置绑定 ---
+	# --- 物品栏与恢复预设：开关/暂停口径/屏内/嵌套返回/明确资源选择 ---
 	hud._toggle_inventory()
 	_check(hud._inv_layer.visible and get_tree().paused, "物品栏打开时暂停世界（阅读型口径）")
+	await get_tree().process_frame
+	await get_tree().process_frame
 	var inv_panel: Control = hud._inv_layer.get_child(1)
-	_check(viewport_rect.encloses(inv_panel.get_global_rect()), "物品栏弹层完整位于屏幕内")
-	_check(hud._quick_btn.disabled, "空背包时快捷槽置灰")
+	_check(viewport_rect.encloses(inv_panel.get_global_rect()),
+			"物品栏弹层完整位于屏幕内（面板%s / 视口%s）" % [inv_panel.get_global_rect(), viewport_rect])
+	GameState.set_setting("mobile_recovery", "item:medipack")
+	hud._refresh_quick_slot()
+	_check(hud._quick_id == "medipack" and hud._recovery_status.text.contains("用尽"),
+			"明确预设在空背包时保留选择并提示物品用尽")
 	GameState.add_item("medipack", 2)
-	_check(hud._quick_btn.disabled and hud._quick_id == "",
-			"满生命时拾取食物不把无效补给设为可用")
+	_check(hud._quick_id == "medipack" and hud._recovery_status.text.contains("已满"),
+			"满生命时拾取预设恢复品仍明确提示不可用")
 	player.current_hp = player.stats.max_hp() - 20.0
 	EventBus.player_hp_changed.emit(player.current_hp, player.stats.max_hp())
-	_check(not hud._quick_btn.disabled and hud._quick_badge.text == "2",
-			"生命缺口事件后快捷槽自动绑定可用恢复品（×2）")
+	_check(hud._quick_id == "medipack" and hud._quick_badge.text == "×2"
+			and hud._recovery_status.text.is_empty(), "生命缺口事件使已明确选择的恢复品可用（×2）")
 	hud._refresh_inventory()
 	_check(hud._inv_grid.get_child_count() == 1, "物品栏格子按持有点亮（1 格）")
 	hud._toggle_inventory()
@@ -242,11 +248,11 @@ func _test_world_death_respawn() -> void:
 	hud._close_top_layer_or_toggle_pause()
 	_check(not hud._inv_layer.visible and not get_tree().paused
 			and not hud.pause_layer.visible, "ESC 先收物品栏而非弹暂停菜单")
-	# 商店互斥：物品栏（暂停态）打开时按 B → 收物品栏再开商店（不暂停）
+	# 商店叠层：物品栏打开商店，阅读期间暂停，返回恢复来源页。
 	hud._toggle_inventory()
 	hud._toggle_shop()
-	_check(not hud._inv_layer.visible and not get_tree().paused
-			and hud.shop_panel.visible, "商店打开时自动收起物品栏并恢复运行")
+	_check(not hud._inv_layer.visible and get_tree().paused
+			and hud.shop_panel.visible, "商店阅读显示为最上层并保持暂停")
 	# 补给页 = ITEM_BUY 全表；收购页 = ITEM_SELL 除钥匙（2026-09-20 审计修复⑥：
 	# 城塞凭证不可卖——金钥匙仅收集委托可得，误卖整叠会锁死 lava 城塞闭环）
 	var sellable := 0
@@ -258,6 +264,9 @@ func _test_world_death_respawn() -> void:
 			"商店补给/收购商品与经济表同源（钥匙凭证不售，%d/%d）" % [
 				hud._supply_btns.size(), hud._sell_btns.size()])
 	hud._toggle_shop()
+	_check(hud._inv_layer.visible and get_tree().paused, "商店返回恢复物品栏及其暂停")
+	hud._close_inventory()
+	_check(not get_tree().paused, "最后一层阅读关闭后恢复世界")
 	GameState.inventory = {}
 
 
@@ -345,10 +354,16 @@ func _test_resume_flow() -> void:
 	_check(absf(resumed_player.current_hp - 87.0) < 1.0 \
 			and absf(resumed_player.current_mp - 23.0) < 1.0, "继续冒险恢复生命/魔法")
 	var hud := _world.get_node("HUD")
-	_check(hud.passive_layer.visible and get_tree().paused \
+	_check(not hud.passive_layer.visible and not get_tree().paused \
 			and GameState.stats.pending_passive_picks == expected_picks \
 			and GameState.stats.passive_choices == expected_choices,
-			"菜单外连升资格在继续冒险时恢复原选卡并暂停世界")
+			"继续冒险保留连升资格及原选卡，不自动打断世界")
+	await _touch_control(hud.get_node("Root/PauseBtn"))
+	await _touch_control(hud.pause_layer.find_child("MenuGrowth", true, false))
+	await _touch_control(hud._stats_overview_layer.find_child("OpenBlessing", true, false))
+	_check(hud.passive_layer.visible and get_tree().paused
+			and GameState.stats.passive_choices == expected_choices,
+			"明确菜单成长入口打开原赐福选卡并暂停阅读")
 	# 同帧重复按卡只能结算一次，之后逐张领取可正常退出暂停。
 	hud._pick_passive(0)
 	hud._pick_passive(0)
@@ -357,7 +372,12 @@ func _test_resume_flow() -> void:
 	while GameState.stats.pending_passive_picks > 0:
 		hud._pick_passive(0)
 		await get_tree().process_frame
-	_check(not hud.passive_layer.visible and not get_tree().paused, "全部领取后收卡并恢复世界")
+	_check(not hud.passive_layer.visible and hud._stats_overview_layer.visible and get_tree().paused,
+			"全部领取后只退回成长页，保留来源暂停")
+	hud._close_top_layer_or_toggle_pause()
+	_check(hud.pause_layer.visible and get_tree().paused, "成长页返回只退到菜单")
+	hud._close_top_layer_or_toggle_pause()
+	_check(not get_tree().paused, "菜单返回才恢复世界")
 	# resume_clock 在 AchievementManager 挂载前恢复夜晚；管理器需从当前相位补记，
 	# 否则读档后的这一夜活到黎明不会解锁“夜行者”。
 	GameState.achievements.erase("night_walker")
@@ -369,3 +389,20 @@ func _test_resume_flow() -> void:
 	await get_tree().create_timer(1.2).timeout
 	_check(["lava", "boss", "dungeon"].has(SfxManager._music_name),
 			"读档按恢复位置静默接回区域曲（含 Boss/城塞优先级；当前 %s）" % SfxManager._music_name)
+
+
+## 等待开窗手势结束后，真实触摸进入下一层；可在暂停阅读时继续派发。
+func _touch_control(control: Control) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var touch := InputEventScreenTouch.new()
+	touch.index = 70
+	touch.position = get_viewport().get_screen_transform() * control.get_global_rect().get_center()
+	touch.pressed = true
+	Input.parse_input_event(touch)
+	await get_tree().process_frame
+	touch = touch.duplicate()
+	touch.pressed = false
+	Input.parse_input_event(touch)
+	await get_tree().process_frame
+	await get_tree().process_frame

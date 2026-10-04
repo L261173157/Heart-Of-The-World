@@ -233,6 +233,14 @@ static func sample_cell(cell: Vector2i) -> Dictionary:
 	_ensure()
 	if _destroyed.has(cell):
 		return {}  # 玩家已摧毁（真相覆盖层优先于一切配方）
+	# 作者前哨与来路仅覆盖自己的局部地块，旧档已摧毁格仍在上方优先返回。
+	var authored := OutpostLayout.obstacle_kind(cell)
+	if authored != "":
+		var authored_info: Dictionary = KIND_INFO[authored]
+		return {"kind": authored, "r": authored_info["r"], "tall": authored_info["tall"]}
+	var sample_pos := (Vector2(cell) + Vector2(0.5, 0.5)) * CELL
+	if OutpostLayout.reserved_ground(sample_pos):
+		return {}
 	var spawn := BiomeMap.spawn_pos()
 	var center_delta := (Vector2(cell) + Vector2(0.5, 0.5)) * CELL - spawn
 	if absf(center_delta.x) < 620.0 and absf(center_delta.y) < 420.0:
@@ -450,6 +458,8 @@ static func coverage_in(rect: Rect2) -> float:
 static func liquid_kind_in(terrain: String, pos: Vector2, patch_id: String,
 		blocking := false) -> String:
 	_ensure()
+	if OutpostLayout.reserved_ground(pos):
+		return ""
 	var rule: Dictionary = LIQUID_RULES.get(terrain, {})
 	if rule.is_empty():
 		return ""

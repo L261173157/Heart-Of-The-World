@@ -34,6 +34,10 @@ jobs:
             tests: monster_growth_persistence,boss_age_balance,gameplay_tasks,ecology_feedback,gameplay_choices_ui
           - suite: interaction
             tests: chest_attack_priority,mobile_controls,combat_feedback,town_interaction,quest_clarity,quest_lifecycle,guard_controls
+          - suite: camp_pilot
+            tests: camp_quest_core,camp_pilot_contract,camp_pilot_lifecycle,six_button_hud
+          - suite: outpost_chapter
+            tests: outpost_ledger,outpost_layout,outpost_chapter_contract,outpost_chapter_lifecycle,outpost_live_targets,outpost_live_targets_lifecycle
           - suite: exploration_weapons
             tests: directional_attack,weapon_effects,terrain_coherence,exploration_map,exploration_lifecycle,knockback_response
     steps:

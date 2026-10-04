@@ -245,6 +245,7 @@ func _ready() -> void:
 	# v7 消耗品：HUD 快捷槽/物品栏发 item_use_requested，效果应用在本节点
 	# （生命/精力的权威持有者，满血满蓝拦截与治疗技能同口径）
 	EventBus.item_use_requested.connect(use_item)
+	EventBus.touch_input_reset.connect(_clear_pending_actions)
 
 
 func _guard_is_held() -> bool:
@@ -367,6 +368,12 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED \
 			or what == NOTIFICATION_PAUSED or what == NOTIFICATION_EXIT_TREE:
 		cancel_guard()
+		_clear_pending_actions()
+
+
+func _clear_pending_actions() -> void:
+	_attack_buffered = false
+	_attack_buffer_timer = 0.0
 
 
 func _tick_guard(delta: float) -> void:
@@ -624,6 +631,15 @@ func teleport_to(destination: Vector2) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	_refresh_context()
+	var interact_target := TouchInput.consume_interact()
+	if Input.is_action_just_pressed("interact") and interact_target.is_empty():
+		interact_target = "__nearest__"
+	if not interact_target.is_empty():
+		_try_interact(interact_target)
+		# 门的淡入淡出会在交互栈中禁用/移出物理体；本帧不得继续 move_and_slide。
+		if GameState.dialogue_open or get_tree().paused or process_mode == Node.PROCESS_MODE_DISABLED:
+			return
 	if not _is_dead:
 		_poll_guard_input()
 		_tick_guard(delta)
@@ -915,9 +931,7 @@ func _try_dash() -> void:
 	activity_serial += 1
 	if guard_state == "broken" or _is_dead:
 		return
-	# 对话气泡开着时冲刺键 = 关闭对话（不消耗蓝不位移）
-	if GameState.dialogue_open:
-		EventBus.dialogue_action.emit("decline")
+	if GameState.dialogue_open or get_tree().paused:
 		return
 	if _dash_timer > 0.0 or _dash_cd > 0.0:
 		return
@@ -1174,14 +1188,9 @@ func _try_attack() -> void:
 		return
 	if _is_dead:
 		return
-	# 对话气泡开着时攻击键 = 确认（接单/继续），不挥刀不消耗冷却
-	if GameState.dialogue_open:
-		EventBus.dialogue_action.emit("confirm")
-		return
-	# 世界 v5：贴着地标 NPC 时攻击键 = 对话/接任务（不消耗冷却不挥刀）
-	var npc := _nearest_npc()
-	if npc != null:
-		npc.interact()
+	# 攻击永远只负责战斗；对话只能用独立交互/确认手势。
+	if GameState.dialogue_open or get_tree().paused:
+		_clear_pending_actions()
 		return
 	if _attack_cooldown > 0.0:
 		# 冷却中按下不丢：进预输入缓冲，冷却一转好立即兑现（连击不断段）
@@ -1350,18 +1359,87 @@ func _attack_has_line_of_sight(target: Vector2) -> bool:
 	return get_world_2d().direct_space_state.intersect_ray(query).is_empty()
 
 
+## 情境交互与战斗完全分离。触点按下时锁定对象，执行时只复核该对象；
+## 对象移走/死亡/被遮挡则作废，绝不换成另一个 NPC 或下一条任务。
+var _context_payload: Dictionary = {}
+
+
+func _current_context() -> Dictionary:
+	if _is_dead or GameState.dialogue_open or get_tree().paused:
+		return {"available": false, "target_id": "", "label": "交互"}
+	var npc := _nearest_npc()
+	if npc != null:
+		var label := "交谈"
+		if npc is TownDoor:
+			label = "出门" if npc.is_exit else "进入" + npc.title
+		elif npc.get("interaction_label") != null:
+			label = str(npc.get("interaction_label"))
+		elif npc.get("landmark_id") != null:
+			var status: Dictionary = QuestPresentation.npc_status(str(npc.get("landmark_id")))
+			label = "交付" if status.get("state", "") == "claimable" else "交谈"
+		else:
+			label = "开启"
+		return {"available": true, "target_id": "npc:%d" % npc.get_instance_id(), "label": label}
+	var manager := get_tree().get_first_node_in_group("quest_manager")
+	if manager != null and manager.has_method("outpost_context"):
+		var context: Dictionary = manager.outpost_context()
+		if bool(context.get("on_site", false)) and bool(context.get("can_investigate", false)):
+			var target: Dictionary = manager.outpost_target()
+			var action := str(context.get("action", "outpost:investigate"))
+			return {"available": true, "target_id": "outpost:%s|%s|%s" % [
+				str(target.get("region_id", "")), str(target.get("species", "")), action],
+				"action": action, "label": str(context.get("label", "调查现场"))}
+	if manager != null and manager.has_method("camp_context"):
+		var context: Dictionary = manager.camp_context()
+		if bool(context.get("on_site", false)) and bool(context.get("can_investigate", false)):
+			var target: Dictionary = manager.camp_target()
+			var action := str(context.get("action", "investigate"))
+			return {"available": true, "target_id": "camp:%s|%s|%s" % [
+				str(target.get("region_id", "")), str(target.get("species", "")), action],
+				"action": action, "label": str(context.get("label", "调查"))}
+	return {"available": false, "target_id": "", "label": "交互"}
+
+
+func _refresh_context() -> void:
+	var context := _current_context()
+	if context != _context_payload:
+		_context_payload = context
+		EventBus.context_interaction_changed.emit(context.duplicate())
+
+
+func _try_interact(target_id: String = "__nearest__") -> void:
+	var context := _current_context()
+	if not bool(context.get("available", false)):
+		return
+	var current_id := str(context.get("target_id", ""))
+	if target_id != "__nearest__" and target_id != current_id:
+		EventBus.hint_requested.emit("交互对象已变化，请重新点击")
+		return
+	activity_serial += 1
+	cancel_guard()
+	TouchInput.reset()
+	if current_id.begins_with("npc:"):
+		var target := instance_from_id(current_id.trim_prefix("npc:").to_int())
+		if is_instance_valid(target) and target.has_method("interact"):
+			target.interact()
+	elif current_id.begins_with("camp:") or current_id.begins_with("outpost:"):
+		EventBus.camp_quest_action_requested.emit(str(context.get("action", "investigate")))
+	_refresh_context()
+
+
 ## 最近的可交互地标 NPC（96px 内；无则 null）
 func _nearest_npc() -> Node:
 	var best: Node = null
 	var best_d := 96.0
 	for body in get_tree().get_nodes_in_group("npcs"):
 		var npc := body as Node2D
-		if npc == null or not npc.visible:
+		if npc == null or not npc.is_visible_in_tree() or npc.is_queued_for_deletion():
 			continue
 		if npc.has_method("can_interact") and not npc.can_interact():
 			continue
 		var d: float = global_position.distance_to(npc.global_position)
-		if d < best_d:
+		# 门有真实前方入口 Area 验证；其他对象不可隔着碰撞墙交谈/开箱。
+		if d < best_d and (npc is TownDoor or _attack_has_line_of_sight(npc.global_position)):
 			best = npc
 			best_d = d
 	return best

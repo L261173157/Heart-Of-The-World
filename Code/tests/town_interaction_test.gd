@@ -54,7 +54,7 @@ func _run() -> void:
 				"屋内保存冷启动仍在原房间")
 		_player.teleport_to(center + Vector2(0, 82))
 		await _step(4)
-		TouchInput.queue_attack()
+		TouchInput.queue_interact()
 		await _settle()
 		var door: Node2D = _world._town_doors[0]
 		_check(_player.global_position.distance_to(door.global_position + Vector2(0, 90)) < 1.0,
@@ -267,28 +267,37 @@ func _test_house(idx: int) -> void:
 	await _settle()
 	_check(_player.global_position.distance_to(outside) < 1.0 and not _world._teleporting,
 			"只走上门前不会自动传送%d" % idx)
+	# 门前普攻保持战斗语义，不借用进入房间。
+	TouchInput.queue_attack()
+	await _step(2)
+	_check(_player.global_position.distance_to(outside) < 1.0 and not _world._teleporting
+			and _player._attack_cooldown > 0.0, "门前真实普攻不打开房门%d" % idx)
+	await _settle()
 	var before_mp := _player.current_mp
 	var old_fog = GameState.explored.duplicate()
 	var old_landmarks := GameState.discovered_landmarks.duplicate()
 	var old_bounty := GameState.bounty.duplicate(true)
 	_region_events.clear()
 	if idx == 0:
-		TouchInput.queue_attack()
+		TouchInput.queue_interact()
 	else:
 		var event := InputEventAction.new()
-		event.action = "attack"
+		event.action = "interact"
 		event.pressed = true
 		Input.parse_input_event(event)
 		await _step(2)
 		event = InputEventAction.new()
-		event.action = "attack"
+		event.action = "interact"
 		event.pressed = false
 		Input.parse_input_event(event)
+	await _step(1)
+	_check(_world._teleporting and _player.process_mode == Node.PROCESS_MODE_DISABLED,
+			"交互首帧进入禁用身体过渡，不能继续物理移动%d" % idx)
 	await _settle()
 	var center := ObstacleField.interior_pocket(idx)
 	await _assert_room_context(idx, old_fog, old_landmarks, old_bounty, "进屋%d" % idx)
 	_check(_player.global_position.distance_to(center + Vector2(0, 30)) < 1.0,
-			"真实攻击输入明确进入房间%d" % idx)
+			"真实情境交互输入明确进入房间%d" % idx)
 	_check(_player.current_mp == before_mp and _player._attack_timer <= 0.0,
 			"门交互不消耗法力/不残留攻击%d" % idx)
 	_check(_player.get_node("Camera2D")._follow.distance_to(_player.global_position) < 1.0,
@@ -327,7 +336,7 @@ func _test_house(idx: int) -> void:
 			"室内保留真实补给服务%d" % idx)
 	_player.teleport_to(center + Vector2(0, 82))
 	await _step(4)
-	TouchInput.queue_attack()
+	TouchInput.queue_interact()
 	await _settle()
 	var back := door.global_position + Vector2(0, 90)
 	_check(_player.global_position.distance_to(back) < 1.0, "明确出口返回对应屋外%d" % idx)
@@ -340,7 +349,7 @@ func _test_house(idx: int) -> void:
 			"出口落点不会反弹入屋%d" % idx)
 	_player.teleport_to(door.global_position + Vector2(0, -90))
 	await _step(3)
-	_check(not door.can_interact(), "房屋背面不抢占攻击交互%d" % idx)
+	_check(not door.can_interact(), "房屋背面不提供入口交互%d" % idx)
 
 
 func _test_return() -> void:

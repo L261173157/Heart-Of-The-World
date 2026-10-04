@@ -107,7 +107,7 @@ const COVER_BUDGET := 13.0
 const COVER_SETUP_MAX := 25
 # --- 世界 v5 交互段（熔岩灼烧 / 普攻破块） ---
 var _v5_timer := -1.0
-## 0=找熔岩点 1=灼烧观察 2=找可破坏岩 3=挥砍观察
+## 0=找熔岩点 1=灼烧观察 2=找可破坏岩 3=挥砍观察 4=接单入口 5=异步确认 6=完成
 var _v5_phase := 0
 var _v5_rock := Vector2(0, 0)
 var _v5_rock_cell := Vector2i.ZERO
@@ -1339,13 +1339,18 @@ func _find_cover_target(species: String) -> MonsterBase:
 			return null
 		_cover_spawn_id = candidate.id
 		_cover_spawn_pos = candidate.spawn_pos
-		_player.global_position = _cover_spawn_pos
+		# 上一段击杀的挥砍/预输入可能仍在窗口内。裸改坐标会把这刀带到
+		# 刚锁定的靶怪身边，在正常流式入场后误杀它并永久等待同一死ID。
+		# 使用真实传送入口取消出招；后续13秒绕障门槛与物理布阵保持原样。
+		_player.teleport_to(_cover_spawn_pos)
+		_check(_player._attack_timer == 0.0 and _player._attack_buffer_timer == 0.0
+				and not _player._attack_buffered, "掩体换场通过真实传送取消上一段挥砍及预输入")
 		_cover_player_reset_pending = true
 		return null  # 让物理帧清理瞬移前的接触，再等正常流式供给
 	var target := _world._nodes.get(_cover_spawn_id) as MonsterBase
 	if target == null or not is_instance_valid(target) or target.is_queued_for_deletion() \
 			or target.inst == null or not target.inst.is_alive or target.state == MonsterBase.S_CORPSE:
-		_player.global_position = _cover_spawn_pos
+		_player.teleport_to(_cover_spawn_pos)
 		return null
 	return target
 
@@ -1553,9 +1558,10 @@ func _verify_v5_interactions() -> void:
 		if npc == null:
 			return  # NPC 节点未及生成（标记 pass 下一帧补），下轮重试
 		var gold_before := GameState.gold
+		_v5_phase = 5 # 异步阅读/确认期间不从 _process 再次进入接单段。
 		npc.interact()
-		# 美术 v5 对话化：interact 只开气泡（offer），再按一次确认才接单
-		EventBus.dialogue_action.emit("confirm")
+		# 打开对话会暂停世界，确认必须来自独立的新触摸，不能复用开窗帧。
+		await _confirm_v5_dialogue()
 		if GameState.quests["active"].is_empty():
 			_check(false, "任务接取（NPC 反馈见 hint 通道）")
 			_v5_phase = 6
@@ -1576,7 +1582,7 @@ func _verify_v5_interactions() -> void:
 					EventBus.landmark_discovered.emit("lm_t%d" % i, "p_t", "测试", Vector2.ZERO)
 		if q["kind"] == "collect":
 			npc.interact()
-			EventBus.dialogue_action.emit("confirm")
+			await _confirm_v5_dialogue()
 		var completed_ok: bool = GameState.quests["active"].is_empty() \
 				and int(GameState.quests["completed"].get(q["landmark_id"], 0)) >= 1
 		var gold_ok: bool = GameState.gold >= gold_before + int(q["gold"])
@@ -1615,6 +1621,33 @@ func _verify_v5_interactions() -> void:
 		_v5_phase = 3
 		_v5_hold_hp = false
 		_v5_swings = 0
+
+
+## 场景树暂停时本测试仍可等待新帧，经真实GUI按下/松手完成接取或交付。
+func _confirm_v5_dialogue() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var hud: CanvasLayer = _world.get_node("HUD")
+	_check(hud._dialogue_panel.visible and get_tree().paused and hud._dialogue_yes.is_visible_in_tree(),
+		"任务对话以暂停阅读层等待独立确认")
+	if not hud._dialogue_panel.visible or not hud._dialogue_yes.is_visible_in_tree():
+		hud._close_dialogue()
+		return
+	var touch := InputEventScreenTouch.new()
+	touch.index = 90
+	touch.position = get_viewport().get_screen_transform() * hud._dialogue_yes.get_global_rect().get_center()
+	touch.pressed = true
+	Input.parse_input_event(touch)
+	await get_tree().process_frame
+	touch = touch.duplicate()
+	touch.pressed = false
+	Input.parse_input_event(touch)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(not hud._dialogue_panel.visible and not get_tree().paused,
+		"独立触屏确认关闭对话并恢复世界")
+	if hud._dialogue_panel.visible:
+		hud._close_dialogue() # 已记录失败，恢复后继续输出完整战斗回归结果。
 
 
 func _WorldConfigFarthestLava() -> Vector2:

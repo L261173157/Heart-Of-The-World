@@ -123,12 +123,12 @@ func _run() -> void:
 	_check(Presentation.npc_status(COLLECT_ID)["state"] == "claimable"
 			and GameState.count_item(item) == need and GameState.gold == gold_before and _completed == 0,
 			"材料达标仅变为可交付，不自动扣料或提前给奖")
-	_check(_hud.quest_label.text.contains("可交付") and _hud.quest_label.text.contains("草药师"),
+	_check(_hud.quest_label.text.contains("交付") and _hud.quest_label.text.contains("草药师"),
 			"常驻追踪明确指向领奖NPC")
 	_check(_npc._quest_marker.text.contains("可交付"), "达标时真实NPC头顶立即显示可交付")
 	await _capture("quest-claimable")
 	_hud._open_task_list()
-	var task_row: Node = _hud._task_rows.get_child(0)
+	var task_row: Node = _hud._task_rows.get_node("QuestRow_" + id)
 	_check(task_row.get_child(0).text.contains("可交付") and task_row.get_child(1).text.contains("草药师")
 			and task_row.get_child(2).text.contains("金钥匙"), "真实任务列表展示交付状态、下一步及奖励")
 	await _capture("quest-claimable-list")
@@ -172,7 +172,7 @@ func _run() -> void:
 			and GameState.count_item("gold-key") == keys_before + 1 and paid_gold == sold_gold + int(quest["gold"])
 			and _completed == 1, "真实触屏交付恰好扣一份材料、发一次金币经验金钥匙")
 	_check(_last_completion.contains("交付领奖成功") and Presentation.npc_status(COLLECT_ID)["state"] == "completed"
-			and _hud.quest_label.text.contains("已领奖"), "成功反馈与NPC已完成/常驻奖励收据同时可见")
+			and _hud.quest_label.text.contains("暂无进行中"), "成功反馈与NPC已完成清楚可见，常驻区不滞留已结单")
 	_check(_npc._quest_marker.text.contains("已完成"), "领奖后真实NPC保留已完成标记")
 	await _capture("quest-completed")
 	EventBus.quest_claim_requested.emit(id)
@@ -183,7 +183,8 @@ func _run() -> void:
 	GameState._load()
 	_qm._push_hud()
 	_check(Presentation.npc_status(COLLECT_ID)["state"] == "completed" and GameState.gold == paid_gold
-			and _hud.quest_label.text.contains("金钥匙"), "领奖后读档保留完成标记及实际奖励说明")
+			and Presentation.receipt_text(GameState.quests["receipts"].get(COLLECT_ID, {})).contains("金钥匙"),
+			"领奖后读档保留完成标记及实际奖励收据说明")
 	var next := _qm.offer(COLLECT_ID, "collect", "草药师")
 	_check(next["kind"] == "quest" and next["quest"]["id"] != id and next["text"].contains("已领奖"),
 			"完成后仍可接下一单，清楚说明上一单已领奖")
@@ -244,14 +245,14 @@ func _test_claim_navigation() -> void:
 	sim.setup([region], [miner, goblin], {})
 	WorldSim.start(sim)
 	WorldSim.set_process(false)
-	_player.position = (giver["pos"] as Vector2) - Vector2(1000, 0)
+	_place_navigation_player((giver["pos"] as Vector2) - Vector2(400, 0))
 	_npc.position = giver["pos"]
 	_npc.landmark_id = giver["id"]
 	var material_source := sim.spawn_instance(miner, region.id, 30, 0, 1.0, false,
 			_player.position + Vector2(300, 0))
 	var fallback := sim.spawn_instance(goblin, region.id, 30, 0, 1.0, false,
 			_player.position + Vector2(100, 0))
-	for position: Vector2 in [material_source.spawn_pos, fallback.spawn_pos]:
+	for position: Vector2 in [_player.position, giver["pos"], material_source.spawn_pos, fallback.spawn_pos]:
 		var cell := GameState.fog_cell_of(position)
 		GameState.fog_reveal_cell(cell.x, cell.y)
 	GameState.discovered_landmarks.assign([str(giver["id"])])
@@ -268,33 +269,42 @@ func _test_claim_navigation() -> void:
 	_check(radar._is_known_position(material_source.spawn_pos) and radar._is_known_position(fallback.spawn_pos),
 			"导航夹具的真实材料/赏金目标都在地图内且已探索")
 	_check(radar._target.get("id", "") == "monster:%d" % material_source.id
-			and radar._category.text == "委托 · 材料", "未收齐时真实雷达仍优先导航材料来源")
+			and radar._category.text == "当前目标", "未收齐时真实雷达仍优先导航材料来源")
 	GameState.add_item("tea-leaf", 2)
 	radar._refresh_navigation()
 	_check(radar._target.get("id", "") == "landmark:" + str(giver["id"])
-			and radar._category.text == "委托 · 交付" and radar._target_name.text == "草药师",
+			and radar._category.text == "交付目标" and radar._target_name.text == "草药师",
 			"材料达标后真实雷达指向已知委托人，通用地标优先级不会覆盖")
 	var fog_before := GameState.explored.duplicate()
 	GameState.discovered_landmarks.clear()
 	radar._refresh_navigation()
-	_check(radar._target.get("id", "") == "monster:%d" % fallback.id
-			and radar._category.text == "赏金目标" and GameState.explored == fog_before
+	_check(radar._target.get("id", "") != "monster:%d" % fallback.id
+			and not radar._target.get("precise", true) and GameState.explored == fog_before
 			and not radar._known_candidates().any(func(c: Dictionary) -> bool:
 				return c["id"] == "landmark:" + str(giver["id"])),
-			"未发现委托人不泄露地标或改写迷雾，回退可见赏金")
+			"失去地标记录仅保留已知粗线索，不揭雾也不替换成赏金")
 	GameState.discovered_landmarks.assign([str(giver["id"])])
-	_player.position = (giver["pos"] as Vector2) - Vector2(9000, 0)
+	_place_navigation_player((giver["pos"] as Vector2) - Vector2(9000, 0))
 	radar._refresh_navigation()
-	_check(radar._target.get("id", "") == "landmark:" + str(giver["id"])
-			and radar._category.text == "委托 · 交付", "明确追踪的交付单可指回已发现的远方NPC")
-	_player.position = _npc.position + Vector2(40, 0)
+	_check(radar._target.get("id", "") == "quest_clue:" + str(quest["id"])
+			and not radar._target.get("precise", true) and radar._category.text == "上次目击"
+			and radar._distance.text == "大致方位", "离开视野后的已知交付人降级为最后所见线索")
+	_place_navigation_player(_npc.position + Vector2(40, 0))
 	radar._refresh_navigation()
-	_check(radar._category.text == "委托 · 交付", "已经走到NPC身边仍保留交付提示直到领奖")
+	_check(radar._category.text == "交付目标", "已经走到NPC身边仍保留交付提示直到领奖")
 	_qm.claim(str(quest["id"]))
 	radar._refresh_navigation()
-	_check(GameState.quests["active"].is_empty() and radar._target.get("id", "") == "monster:%d" % fallback.id
-			and radar._category.text == "赏金目标", "真实交付移除任务后雷达恢复可见赏金而非滞留交付地标")
+	_check(GameState.quests["active"].is_empty() and radar._target.is_empty()
+			and radar._category.text == "未跟踪委托", "真实交付移除任务后清除指引，不滞留地标或擅自替换成赏金")
 	WorldSim.stop()
+
+
+func _place_navigation_player(position: Vector2) -> void:
+	_player.global_position = position
+	# 本夹具同步移动实际相机，使当前视野判定使用新位置而非上一帧画面。
+	var camera: Camera2D = _player.get_node("Camera2D")
+	camera.reset_smoothing()
+	camera.force_update_scroll()
 
 
 func _test_receipt_sanitization() -> void:
