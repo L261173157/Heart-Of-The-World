@@ -8,6 +8,17 @@ var _blocker: StaticBody2D
 var _goal: Vector2
 var _record: Node2D
 
+var _watch_start_corner := false
+var _watched_center := Vector2.ZERO
+var _watched_next := Vector2.ZERO
+var _shortcut_rejections := 0
+
+func _walk_sweep_clear(from: Vector2,to: Vector2,query: PhysicsShapeQueryParameters2D,contact_start := false) -> bool:
+	var clear := super._walk_sweep_clear(from,to,query,contact_start)
+	if _watch_start_corner and from==_player.global_position and from.distance_to(_watched_center)<12.0 and to==_watched_next and not clear:
+		_shortcut_rejections += 1
+	return clear
+
 func _fixture(offset: Vector2, shape: Shape2D) -> void:
 	_world=Node2D.new()
 	add_child(_world)
@@ -93,6 +104,48 @@ func _closed_gate_contact() -> void:
 	_check(closed and GameState.campaign_quest==ledger and _player.current_hp==hp,"真实退出未开门、改生命或制造任务证据")
 	await _tear_down()
 
+func _offset_start_corner() -> void:
+	# 与真实普通预算验收一致的240Hz；粗60Hz×4时间倍率会一步跨过12px换向反例窗口。
+	var original_physics_ticks := Engine.physics_ticks_per_second
+	Engine.physics_ticks_per_second=240
+	# 首例来自实际失败的牛卫足迹；第二例明确把夹具左移4px，覆盖12px提前换向窗口。
+	for closer in [false,true]:
+		var rectangle := RectangleShape2D.new()
+		rectangle.size=Vector2(42,38)*0.88
+		await _fixture(Vector2.ZERO,rectangle)
+		_blocker.position=Vector2(773938.9-(4.0 if closer else 0.0),698243.6)
+		_player.position=Vector2(773918.6,698287.5)
+		_player.get_node("Camera2D").reset_smoothing()
+		_player.get_node("Camera2D").force_update_scroll()
+		await _frames(3)
+		var start := _player.global_position
+		var center := Vector2(773904,698288)
+		var next := Vector2(773904,698256)
+		var query := _walk_query()
+		_check(not _walk_blocked(start,query) and not _walk_blocked(center,query) and not _walk_blocked(next,query),"偏置起点、原格心与下一格心都可容纳真实身体")
+		_check(not _walk_sweep_clear(start,next,query,true),"把原格心替换成偏置起点确实会斜切牛卫矩形角")
+		_check(_walk_sweep_clear(start,center,query,true) and _walk_sweep_clear(center,next,query),"保留原格心的两段具有连续原身体扫掠证明")
+		var path := _walk_plan(start,next,query)
+		_check(path.size()>=3 and path[0]==start and path[1]==center and path[-1]==next,"规划保留原起点格心为实际路点，不改请求终点")
+		_check(_walk_plan(start,_blocker.position,query).is_empty(),"起点连接修复仍拒绝真实受阻终点")
+		_check(_walk_plan(_blocker.position,next,query).is_empty(),"起点连接修复仍拒绝真实身体重叠起点")
+		var fixed := _blocker.global_transform
+		var hp := _player.current_hp
+		var ledger := GameState.campaign_quest.duplicate(true)
+		_watched_center=center
+		_watched_next=next
+		_shortcut_rejections=0
+		_watch_start_corner=closer
+		if closer:
+			var early := start.move_toward(center,3.0)
+			_check(early.distance_to(center)<12.0 and not _walk_sweep_clear(early,next,query),"12px旧换点范围内仍可能斜切；不能用接近代替扫掠")
+		if not path.is_empty(): await _walk_to(next,"原身体经保留的起点格心实际绕过矩形角",4)
+		_watch_start_corner=false
+		if closer: _check(_shortcut_rejections>0,"实际步行中首路点提前换向被扫掠闸门明确拒绝过")
+		_check(_player.global_position.distance_to(next)<=4 and _blocker.global_transform==fixed and _player.current_hp==hp and GameState.campaign_quest==ledger,"实际到达精确原终点，障碍、生命和任务证据均未改写")
+		await _tear_down()
+	Engine.physics_ticks_per_second=original_physics_ticks
+
 func _run() -> void:
 	Engine.time_scale=4
 	GameState.world_seed=BiomeMap.DEFAULT_SEED
@@ -169,5 +222,6 @@ func _run() -> void:
 	_check(_player.global_position==before and GameState.campaign_quest==ledger,"失败规划不传送角色、不产生任务证据")
 	await _tear_down()
 	await _closed_gate_contact()
+	await _offset_start_corner()
 	print("=== CAMPAIGN WALK GEOMETRY %s (%d checks, %d failures) ===" % ["PASS" if _fails==0 else "FAIL",_checks,_fails])
 	get_tree().quit(0 if _fails==0 else 1)

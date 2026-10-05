@@ -85,9 +85,19 @@ func _walk_plan(from: Vector2, goal: Vector2, query: PhysicsShapeQueryParameters
 		if not _walk_sweep_clear(point,goal,query): continue
 		var path := grid.get_point_path(a,portal)
 		if path.is_empty(): continue
-		path[0] = from
-		if path.size()==1 and not _walk_sweep_clear(from,goal,query,true): continue
-		if path.size()>1 and not _walk_sweep_clear(from,path[1],query,true): continue
+		if path.size()==1:
+			if not _walk_sweep_clear(from,goal,query,true): continue
+			path[0] = from
+		elif _walk_sweep_clear(from,path[1],query,true):
+			path[0] = from
+		else:
+			# 实际身体偏离格心时，直接替换首项可能斜切原演员方角。
+			# 只保留同一原格心作为真实路点，且两段均须用原身体扫掠验证。
+			var start_center := path[0]
+			if _walk_blocked(start_center,query): continue
+			if not _walk_sweep_clear(from,start_center,query,true): continue
+			if not _walk_sweep_clear(start_center,path[1],query): continue
+			path.insert(0,from)
 		path.append(goal)
 		return path
 	return PackedVector2Array()
@@ -116,7 +126,10 @@ func _walk_to(goal: Vector2, label: String, arrival := 18.0) -> bool:
 			cursor = 1 if path.size()>1 else 0
 			stuck_origin = _player.global_position
 			stuck_frames = 0
-		while cursor < path.size()-1 and _player.global_position.distance_to(path[cursor]) < 12.0: cursor += 1
+		while cursor < path.size()-1 and _player.global_position.distance_to(path[cursor]) < 12.0:
+			# 首格连接不能被12px提前换向再次斜切；继续靠近格心直到下一段真实清楚。
+			if cursor==1 and not _walk_sweep_clear(_player.global_position,path[cursor+1],query): break
+			cursor += 1
 		TouchInput.joystick_active = true
 		TouchInput.move_vector = _player.global_position.direction_to(path[cursor])
 		await get_tree().physics_frame

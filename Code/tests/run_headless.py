@@ -154,8 +154,8 @@ def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str]
         timeout = max(timeout, 1800)  # 六章实走、双路线和双结局的独立进程链。
     command = ([sys.executable, args[0], godot] if args[0].endswith(".py")
                else [godot, "--headless", "--path", str(PROJECT), *args])
-    if name == "campaign_cross_family":
-        command += ["--log-dir", str(logs / "campaign_cross_family")]
+    if name in {"campaign_cross_family", "campaign_earned_budget"}:
+        command += ["--log-dir", str(logs / name)]
     print(f"[{name}] 开始", flush=True)
     with subprocess.Popen(command, env=env, stdout=subprocess.PIPE,
                           stderr=subprocess.STDOUT, text=True,
