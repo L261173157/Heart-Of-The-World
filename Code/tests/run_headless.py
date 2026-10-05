@@ -14,13 +14,29 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "campaign_walk_geometry": (["res://tests/campaign_walk_geometry_test.tscn", "--quit-after", "30000"], "=== CAMPAIGN WALK GEOMETRY PASS"),
+    "campaign_dynamic_truth": (["res://tests/campaign_dynamic_truth_test.tscn", "--quit-after", "100000"], "CAMPAIGN_DYNAMIC_TRUTH_TEST PASS"),
     "campaign_regional_passage": (["res://tests/campaign_regional_passage_test.tscn", "--quit-after", "100000"], "=== CAMPAIGN REGIONAL PASSAGE PASS"),
+    "campaign_feedback_layout": (["res://tests/campaign_feedback_layout_test.tscn", "--quit-after", "10000"], "=== CAMPAIGN FEEDBACK LAYOUT PASS"),
     "campaign_open_room_restore": (["res://tests/campaign_open_room_restore_test.tscn", "--quit-after", "10000"], "=== CAMPAIGN OPEN ROOM RESTORE PASS"),
+    "campaign_earned_budget": ([str(PROJECT / "tests/run_campaign_earned_budget_test.py")], "=== CAMPAIGN EARNED BUDGET LIFECYCLE PASS"),
     "mobile_clipping": (["res://tests/mobile_clipping_test.tscn", "--quit-after", "10000"], "=== MOBILE CLIPPING PASS"),
     "mobile_scroll": (["res://tests/mobile_scroll_test.tscn", "--quit-after", "15000"], "=== MOBILE SCROLL PASS"),
     "campaign_resume_navigation": (["res://tests/campaign_resume_navigation_test.tscn", "--quit-after", "10000"], "=== CAMPAIGN RESUME NAVIGATION PASS"),
 
+    "campaign_dynamic_copy_guard": (["res://tests/campaign_dynamic_copy_guard_test.tscn", "--quit-after", "100000"], "CAMPAIGN_DYNAMIC_COPY_GUARD_TEST PASS"),
+    "campaign_dynamic_write_through": (["res://tests/campaign_dynamic_write_through_test.tscn", "--quit-after", "100000"], "CAMPAIGN_DYNAMIC_WRITE_THROUGH_TEST PASS"),
+    "campaign_dynamic_rock_body": (["res://tests/campaign_dynamic_rock_body_test.tscn", "--quit-after", "100000"], "CAMPAIGN_DYNAMIC_ROCK_BODY_TEST PASS"),
+    "campaign_cross_family": ([str(PROJECT / "tests/run_campaign_cross_family_test.py")], "=== CAMPAIGN CROSS FAMILY LIFECYCLE PASS"),
     "campaign_optional_adversarial": (["res://tests/campaign_optional_adversarial_test.tscn", "--quit-after", "100000"], "=== CAMPAIGN OPTIONAL ADVERSARIAL PASS"),
+    "campaign_catalog_ledger": (["-s", "tests/campaign_catalog_ledger_test.gd"], "CAMPAIGN_CATALOG_LEDGER_TEST PASS"),
+    "campaign_content_contract": (["-s", "tests/campaign_content_contract_test.gd"], "=== CAMPAIGN CONTENT CONTRACT PASS"),
+    "campaign_world_facts": (["-s", "tests/campaign_world_facts_test.gd"], "CAMPAIGN_WORLD_FACTS_TEST PASS"),
+    "campaign_dynamic_host": (["res://tests/campaign_dynamic_host_test.tscn", "--quit-after", "100000"], "CAMPAIGN_DYNAMIC_HOST_TEST PASS"),
+    "campaign_dynamic_feasibility": (["res://tests/campaign_dynamic_feasibility_test.tscn", "--quit-after", "100000"], "CAMPAIGN_DYNAMIC_FEASIBILITY_TEST PASS"),
+    "campaign_dynamic_adversarial": (["-s", "tests/campaign_dynamic_adversarial_test.gd"], "CAMPAIGN_DYNAMIC_ADVERSARIAL_TEST PASS"),
+    "campaign_dynamic_lifecycle": ([str(PROJECT / "tests/run_campaign_dynamic_lifecycle_test.py")], "=== CAMPAIGN DYNAMIC LIFECYCLE PASS"),
+    "campaign_dynamic_save_failure": ([str(PROJECT / "tests/run_campaign_dynamic_save_failure_test.py")], "=== CAMPAIGN DYNAMIC SAVE FAILURE PASS"),
     "campaign_optional_lifecycle": ([str(PROJECT / "tests/run_campaign_optional_lifecycle_test.py")], "=== CAMPAIGN OPTIONAL LIFECYCLE PASS"),
     "campaign_optional_outcomes": ([str(PROJECT / "tests/run_campaign_optional_outcomes_test.py")], "=== CAMPAIGN OPTIONAL OUTCOMES LIFECYCLE PASS"),
     "campaign_optional_geometry": (["res://tests/campaign_optional_geometry_test.tscn", "--quit-after", "100000"], "=== CAMPAIGN OPTIONAL GEOMETRY PASS"),
@@ -134,10 +150,12 @@ def unexpected_errors(case: str, output: str) -> list[str]:
 
 def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str],
              godot: str, logs: Path, timeout: int) -> bool:
-    if name in {"campaign_regional_passage", "campaign_story_lifecycle", "campaign_optional_lifecycle", "campaign_optional_outcomes"}:
+    if name in {"campaign_regional_passage", "campaign_story_lifecycle", "campaign_optional_lifecycle", "campaign_optional_outcomes", "campaign_dynamic_lifecycle", "campaign_dynamic_save_failure", "campaign_cross_family", "campaign_earned_budget"}:
         timeout = max(timeout, 1800)  # 六章实走、双路线和双结局的独立进程链。
     command = ([sys.executable, args[0], godot] if args[0].endswith(".py")
                else [godot, "--headless", "--path", str(PROJECT), *args])
+    if name in {"campaign_cross_family", "campaign_earned_budget"}:
+        command += ["--log-dir", str(logs / name)]
     print(f"[{name}] 开始", flush=True)
     with subprocess.Popen(command, env=env, stdout=subprocess.PIPE,
                           stderr=subprocess.STDOUT, text=True,

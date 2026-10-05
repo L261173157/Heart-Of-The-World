@@ -52,6 +52,8 @@ static func _proof(raw: Variant, seed_value: int) -> Dictionary:
 		if raw.get(key) is String: out[key] = Facts._text(raw[key])
 	for key: String in ["global_alive","local_alive","quota","cost_count","tick","last_checked_tick"]:
 		if raw.has(key): out[key] = Facts._integer(raw[key])
+	var site := Facts._point(raw.get("site_position"))
+	if not site.is_empty(): out["site_position"] = site
 	if raw.get("origin") is Array and raw.origin.size() == 2:
 		if typeof(raw.origin[0]) in [TYPE_INT,TYPE_FLOAT] and typeof(raw.origin[1]) in [TYPE_INT,TYPE_FLOAT] and is_finite(float(raw.origin[0])) and is_finite(float(raw.origin[1])): out["origin"] = [float(raw.origin[0]),float(raw.origin[1])]
 	out["target_ids"] = _ids(raw.get("target_ids",[]))
@@ -130,8 +132,15 @@ func configure(sim: EcologySim, seed_value: int, saved: Dictionary = {}, facts: 
 	if _facts != null: _facts.changed.connect(_on_fact_changed)
 	_capture_credit()
 
-func snapshot() -> Dictionary:
+func persistence_state() -> Dictionary:
+	# Only CampaignDynamic binds this owner-managed reference into its live ledger.
+	return _state
+
+func flush_for_save() -> void:
 	_capture_credit()
+
+func snapshot() -> Dictionary:
+	flush_for_save()
 	return _state.duplicate(true)
 
 func active() -> Dictionary:
@@ -216,11 +225,13 @@ func _eligibility(template: String, id: String, context: Dictionary) -> Dictiona
 			proof.merge(nest,true)
 		"random_migration":
 			if _facts == null or _facts.known_clue(region_id).is_empty(): return {}
-			var migration := _facts.latest_migration(region_id)
-			if migration.is_empty(): return {}
-			proof["migration"] = migration
-			proof["species"] = migration.species
+			var selected := _migration_selection(context)
+			if selected.is_empty(): return {}
+			proof["migration"] = selected.migration
+			proof["site_position"] = [selected.position.x,selected.position.y]
+			proof["species"] = selected.migration.species
 			proof["source"] = "EcologySim.instance_migrated"
+			if not _migration_site_valid(proof,objects.target,context): return {}
 		"random_camp":
 			var camp := _camp_target(context)
 			if camp.is_empty(): return {}
@@ -228,6 +239,22 @@ func _eligibility(template: String, id: String, context: Dictionary) -> Dictiona
 		"random_runes":
 			if objects.target.get("unsettled") != true or objects.record.get("readable") != true: return {}
 	return {"object_ids":object_ids,"proof":proof}
+
+func _migration_selection(context: Dictionary) -> Dictionary:
+	if _facts==null: return {}
+	var locate: Callable = context.get("migration_site",Callable())
+	if not locate.is_valid():
+		locate = func(point: Vector2) -> Vector2: return point if _position_allowed(point,context) else Vector2.INF
+	return _facts.local_migration_site(str(context.get("region_id","")),context.get("origin",Vector2.INF),locate)
+
+func _migration_site_valid(proof: Dictionary, target: Dictionary, context: Dictionary) -> bool:
+	var raw := Facts._point(proof.get("site_position"))
+	if raw.size()!=2 or target.is_empty(): return false
+	var historical := Facts.migration_position(proof.get("migration",{}),str(proof.get("region_id","")))
+	var site := Vector2(float(raw[0]),float(raw[1]))
+	var origin: Vector2 = context.get("origin",Vector2.INF)
+	return historical.is_finite() and origin.distance_to(historical)<=LOCAL_RADIUS and site.distance_to(historical)<=384 \
+		and target.get("position",Vector2.INF).distance_to(site)<=1 and _position_allowed(site,context)
 
 func _position_allowed(position: Vector2, context: Dictionary) -> bool:
 	var known: Variant = context.get("known_position")
@@ -306,7 +333,7 @@ func accept(preview: Dictionary, context: Dictionary) -> bool:
 	if fresh.is_empty(): return false
 	# A changed ecology target must be shown again, never silently substituted under an old button.
 	var old_proof: Dictionary = preview.get("proof",{})
-	for key: String in ["species","nest_key","target_ids","cost_item","cost_count","migration","region_id","origin"]:
+	for key: String in ["species","nest_key","target_ids","cost_item","cost_count","migration","site_position","region_id","origin"]:
 		if old_proof.get(key) != fresh.proof.get(key): return false
 	var row := {"id":id,"template_id":template,"seed":_seed,"ordinal":ordinal,"version":VERSION,
 		"status":"active","issued_tick":_sim.tick_count,"closed_tick":0,"object_ids":fresh.object_ids,
@@ -365,9 +392,13 @@ func refresh_active(context: Dictionary) -> Dictionary:
 				result.state = "nest_inactive"
 				result.can_survey_close = true
 		"random_migration":
+			if not _migration_site_valid(row.proof,_probe(str(row.object_ids.target),context),context):
+				result.state = "site_unavailable"
+				return result
 			var id := int(row.proof.get("migration",{}).get("instance_id",0))
 			var inst: MonsterInstance = _sim.instances.get(id)
-			result.state = "lost" if inst == null or not inst.is_alive else ("migrated" if inst.region_id != str(row.proof.region_id) else "present")
+			var site := Vector2(float(row.proof.site_position[0]),float(row.proof.site_position[1]))
+			result.state = "lost" if inst == null or not inst.is_alive else ("migrated" if inst.region_id != str(row.proof.region_id) or _current_position(inst,context).distance_to(site)>384 else "present")
 			result.can_survey_close = true
 		"random_camp":
 			var alive := 0
@@ -401,6 +432,7 @@ func record_action(role: String, action: String, context: Dictionary, choice := 
 	if row.is_empty() or not row.object_ids.has(role) or action.is_empty(): return false
 	var object := _probe(str(row.object_ids[role]),context)
 	if object.is_empty() or object.get("at_player") != true: return false
+	if row.template_id=="random_migration" and refresh_active(context).get("state","")=="site_unavailable": return false
 	# Specific action semantics and inventory confirmation remain in CampaignQuest.
 	if row.evidence.has(role): return false
 	row.evidence[role] = {"object_id":row.object_ids[role],"tick":_sim.tick_count,"action":action,"choice":choice}

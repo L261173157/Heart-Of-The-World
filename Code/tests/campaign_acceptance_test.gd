@@ -17,17 +17,90 @@ func _freeze_new_actor(node: Node) -> void:
 
 func _walk_query() -> PhysicsShapeQueryParameters2D:
 	var query := PhysicsShapeQueryParameters2D.new()
-	var shape := CircleShape2D.new()
-	shape.radius = 12.0
-	query.shape = shape
+	# 与原 Player 的实际方形身体同源；半径12的圆会漏掉20×20方形的四角。
+	query.shape = (_player.get_node("CollisionShape2D") as CollisionShape2D).shape
 	query.collision_mask = 3
 	query.exclude = [_player.get_rid()]
 	return query
 
-func _walk_blocked(at: Vector2, query: PhysicsShapeQueryParameters2D) -> bool:
-	if ObstacleField.blocks(at, 12.0): return true
-	query.transform = Transform2D(0.0, at)
+func _walk_transform(at: Vector2) -> Transform2D:
+	var transform := _player.global_transform
+	transform.origin = at
+	return transform * (_player.get_node("CollisionShape2D") as CollisionShape2D).transform
+
+func _walk_physics_blocked(at: Vector2, query: PhysicsShapeQueryParameters2D) -> bool:
+	query.motion = Vector2.ZERO
+	query.transform = _walk_transform(at)
 	return not _world.get_world_2d().direct_space_state.intersect_shape(query, 1).is_empty()
+
+func _walk_blocked(at: Vector2, query: PhysicsShapeQueryParameters2D) -> bool:
+	return ObstacleField.blocks(at, 12.0) or _walk_physics_blocked(at, query)
+
+func _walk_sweep_clear(from: Vector2, to: Vector2, query: PhysicsShapeQueryParameters2D, contact_start := false) -> bool:
+	# 真实身体贴墙时，ObstacleField的圆形半径+2px余量可覆盖一个合法站位。
+	# 仅当前身体的短首段可退出该保守余量；终点、门户和其它路段仍严格检查。
+	var may_exit_margin := contact_start and from == _player.global_position and from.distance_to(to) <= 64.0
+	if _walk_physics_blocked(from, query) or _walk_blocked(to, query): return false
+	var in_start_margin := ObstacleField.blocks(from, 12.0)
+	if in_start_margin and not may_exit_margin: return false
+	var samples := maxi(1, ceili(from.distance_to(to) / 8.0))
+	for index in range(1, samples):
+		var blocked := ObstacleField.blocks(from.lerp(to, float(index) / samples), 12.0)
+		if blocked and not in_start_margin: return false
+		if not blocked: in_start_margin = false
+	query.transform = _walk_transform(from)
+	query.motion = to - from
+	var sweep := _world.get_world_2d().direct_space_state.cast_motion(query)
+	query.motion = Vector2.ZERO
+	return sweep.size() == 2 and sweep[0] >= 1.0
+
+## 格心被占不等于原请求点不可达。只从未占用格心经真实身体扫掠接近原点，绝不把障碍格改成空格。
+func _walk_plan(from: Vector2, goal: Vector2, query: PhysicsShapeQueryParameters2D) -> PackedVector2Array:
+	if _walk_blocked(goal, query): return PackedVector2Array()
+	var a := Vector2i((from / 32.0).floor())
+	var b := Vector2i((goal / 32.0).floor())
+	var lo := Vector2i(mini(a.x,b.x)-28, mini(a.y,b.y)-28)
+	var hi := Vector2i(maxi(a.x,b.x)+29, maxi(a.y,b.y)+29)
+	var grid := AStarGrid2D.new()
+	grid.region = Rect2i(lo,hi-lo)
+	grid.cell_size = Vector2(32,32)
+	grid.offset = Vector2(16,16)
+	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
+	grid.update()
+	for y in range(lo.y,hi.y):
+		for x in range(lo.x,hi.x):
+			var cell := Vector2i(x,y)
+			grid.set_point_solid(cell,_walk_blocked((Vector2(cell)+Vector2.ONE*0.5)*32.0,query))
+	# 首项被替换成原角色当前位置，不会指挥身体走入这个可能被挤占的格心。
+	grid.set_point_solid(a,false)
+	var portals: Array[Vector2i] = []
+	for y in range(b.y-2,b.y+3):
+		for x in range(b.x-2,b.x+3):
+			var cell := Vector2i(x,y)
+			if not grid.is_point_solid(cell): portals.append(cell)
+	portals.sort_custom(func(left: Vector2i,right: Vector2i) -> bool:
+		return ((Vector2(left)+Vector2.ONE*0.5)*32.0).distance_squared_to(goal) < ((Vector2(right)+Vector2.ONE*0.5)*32.0).distance_squared_to(goal))
+	for portal: Vector2i in portals:
+		var point := (Vector2(portal)+Vector2.ONE*0.5)*32.0
+		if not _walk_sweep_clear(point,goal,query): continue
+		var path := grid.get_point_path(a,portal)
+		if path.is_empty(): continue
+		if path.size()==1:
+			if not _walk_sweep_clear(from,goal,query,true): continue
+			path[0] = from
+		elif _walk_sweep_clear(from,path[1],query,true):
+			path[0] = from
+		else:
+			# 实际身体偏离格心时，直接替换首项可能斜切原演员方角。
+			# 只保留同一原格心作为真实路点，且两段均须用原身体扫掠验证。
+			var start_center := path[0]
+			if _walk_blocked(start_center,query): continue
+			if not _walk_sweep_clear(from,start_center,query,true): continue
+			if not _walk_sweep_clear(start_center,path[1],query): continue
+			path.insert(0,from)
+		path.append(goal)
+		return path
+	return PackedVector2Array()
 
 ## 战役场景有原生态演员与原城镇/城塞实心建筑。规划也看真实物理体；不挪演员、不关碰撞。
 func _walk_to(goal: Vector2, label: String, arrival := 18.0) -> bool:
@@ -40,35 +113,23 @@ func _walk_to(goal: Vector2, label: String, arrival := 18.0) -> bool:
 	var stuck_frames := 0
 	var path := PackedVector2Array()
 	var attempts := 0
+	var walked_frames := 0
 	_player.set_physics_process(true)
 	for _frame in 7000:
+		walked_frames = _frame
 		if _player.global_position.distance_to(goal) <= arrival: break
 		if path.is_empty():
 			attempts += 1
 			if attempts > 4: break
-			var a := Vector2i((_player.global_position / 32.0).floor())
-			var b := Vector2i((goal / 32.0).floor())
-			var lo := Vector2i(mini(a.x,b.x)-28, mini(a.y,b.y)-28)
-			var hi := Vector2i(maxi(a.x,b.x)+29, maxi(a.y,b.y)+29)
-			var grid := AStarGrid2D.new()
-			grid.region = Rect2i(lo,hi-lo)
-			grid.cell_size = Vector2(32,32)
-			grid.offset = Vector2(16,16)
-			grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
-			grid.update()
-			for y in range(lo.y,hi.y):
-				for x in range(lo.x,hi.x):
-					var cell := Vector2i(x,y)
-					grid.set_point_solid(cell,_walk_blocked((Vector2(cell)+Vector2.ONE*0.5)*32.0,query))
-			grid.set_point_solid(a,false)
-			if grid.is_point_solid(b): break
-			path = grid.get_point_path(a,b)
+			path = _walk_plan(_player.global_position,goal,query)
 			if path.is_empty(): break
-			path.append(goal)
 			cursor = 1 if path.size()>1 else 0
 			stuck_origin = _player.global_position
 			stuck_frames = 0
-		while cursor < path.size()-1 and _player.global_position.distance_to(path[cursor]) < 12.0: cursor += 1
+		while cursor < path.size()-1 and _player.global_position.distance_to(path[cursor]) < 12.0:
+			# 首格连接不能被12px提前换向再次斜切；继续靠近格心直到下一段真实清楚。
+			if cursor==1 and not _walk_sweep_clear(_player.global_position,path[cursor+1],query): break
+			cursor += 1
 		TouchInput.joystick_active = true
 		TouchInput.move_vector = _player.global_position.direction_to(path[cursor])
 		await get_tree().physics_frame
@@ -88,7 +149,9 @@ func _walk_to(goal: Vector2, label: String, arrival := 18.0) -> bool:
 	_check(arrived,label+"：实际角色绕过现存物理体行走抵达")
 	if not arrived:
 		print("CAMPAIGN_WALK_BLOCKER ", JSON.stringify({"label":label,"goal":[goal.x,goal.y],
-			"actual":[_player.global_position.x,_player.global_position.y],"replans":attempts}))
+			"actual":[_player.global_position.x,_player.global_position.y],"replans":attempts,"frames":walked_frames,
+			"cursor":cursor,"waypoint":[path[cursor].x,path[cursor].y] if not path.is_empty() else [],
+			"goal_blocked":_walk_blocked(goal,query),"goal_grid_blocked":_walk_blocked((goal/32.0).floor()*32.0+Vector2(16,16),query)}))
 	return arrived
 
 func _mount(fresh := false) -> void:
@@ -336,8 +399,14 @@ func _forest_clues() -> bool:
 	prop.show()
 	await _ci("c2:herbalist", false)
 	_check(_same(before, _cq()), "只读药师对话不视为已询问")
+	var before_cancel := _cq().duplicate(true)
+	var cancel_wallet := _wallet()
+	var observed_during_cancel := {}
+	var cancel_witness: Callable = func() -> void: _witness_campaign_discoveries(before_cancel, observed_during_cancel)
+	_campaign.changed.connect(cancel_witness)
 	await _tap(_hud._dialogue_no)
-	_check(_same(before, _cq()), "取消药师确认不改变剧情证据")
+	_campaign.changed.disconnect(cancel_witness)
+	_campaign_window_preserves_ledger(before_cancel, cancel_wallet, observed_during_cancel, "取消药师确认不改变任何其他账本字段、剧情证据、收据或钱包")
 	await _ci("c2:herbalist")
 	_check(_ce(1, "herbalist") and not _ce(1, "old_pact"), "与NPC明确交谈不替代另一个现场旧约")
 	if not await _cw("c2:old_pact"): return false
@@ -356,6 +425,36 @@ func _forest_rune_partial() -> bool:
 	_check(_cq().get("puzzle_progress", {}).get(C2 + ":s2:runes", []) == ["north"], "部分机关前缀可被持久化为北，而不是只有最终完成布尔")
 	return _ce(2, "route_marks")
 
+## EN4 的行走/关闭暂停阅读可新增现场目击；只允许严格验证过的新 known_objects 行。
+## 所有既有目击、其余动态字段、任务/谜题/收据和钱包仍须逐项不变。
+func _witness_campaign_discoveries(before: Dictionary, witnessed: Dictionary) -> void:
+	var prior_known: Dictionary = before.get("dynamic_runtime", {}).get("known_objects", {})
+	var current_known: Dictionary = _cq().get("dynamic_runtime", {}).get("known_objects", {})
+	for id: String in current_known:
+		if prior_known.has(id) or witnessed.has(id): continue
+		var object := _cp(id)
+		if object == null or not object.has_method("is_observed") or not bool(object.call("is_observed", _player.global_position)): continue
+		var proof := {"position": [object.global_position.x, object.global_position.y], "tick": WorldSim.sim.tick_count}
+		if _same(current_known[id], proof): witnessed[id] = proof
+
+func _campaign_window_preserves_ledger(before: Dictionary, wallet: Dictionary, witnessed: Dictionary, label: String, extra_guard := true) -> void:
+	var after := _cq().duplicate(true)
+	var prior_known: Dictionary = before.get("dynamic_runtime", {}).get("known_objects", {})
+	var current_known: Dictionary = after.get("dynamic_runtime", {}).get("known_objects", {})
+	var observed_additions := true
+	var new_ids: Array[String] = []
+	for id: String in prior_known:
+		if not current_known.has(id) or not _same(prior_known[id], current_known[id]): observed_additions = false
+	for id: String in current_known:
+		if prior_known.has(id): continue
+		new_ids.append(id)
+		if not witnessed.has(id) or not _same(current_known[id], witnessed[id]): observed_additions = false
+	_check(observed_additions, "只允许记录当帧有真实对象/视野/位置/时刻见证的新目击，既有目击不可改写")
+	if not new_ids.is_empty(): print("CAMPAIGN_OBSERVED_ADDITIONS ", JSON.stringify({"window":label,"ids":new_ids}))
+	if after.get("dynamic_runtime", {}).has("known_objects"):
+		after["dynamic_runtime"]["known_objects"] = prior_known.duplicate(true)
+	_check(_same(before, after) and _wallet() == wallet and extra_guard, label)
+
 func _forest_runes() -> bool:
 	var gate_cells: Array = _campaign_layout.gate_cells("c2:forest_gate")
 	_check(not gate_cells.is_empty(), "林地栅门具有真实物理格")
@@ -367,14 +466,20 @@ func _forest_runes() -> bool:
 		var middle := (Vector2(gate_cells[gate_cells.size() / 2]) + Vector2.ONE * 0.5) * 32.0
 		if not await _walk_to(middle + Vector2(0, 80), "实际站到未开的栅门前", 8.0): return false
 		var before := _cq().duplicate(true)
+		var before_wallet := _wallet()
+		var observed_during_contact := {}
+		# 同步 changed 回调在发现入账当帧验视野；不能要求移动30帧后仍在屏内。
+		var witness: Callable = func() -> void: _witness_campaign_discoveries(before, observed_during_contact)
+		_campaign.changed.connect(witness)
 		_player.set_physics_process(true)
 		TouchInput.joystick_active = true
 		TouchInput.move_vector = Vector2.UP
 		await _frames(30)
+		_campaign.changed.disconnect(witness)
 		TouchInput.reset()
 		_player.set_physics_process(false)
 		_check(_player.global_position.y > middle.y + 10.0, "未解谜时实际向上移动被石门StaticBody挡住")
-		_check(_same(before, _cq()), "身体碰门不伪造机关和门后回收证据")
+		_campaign_window_preserves_ledger(before, before_wallet, observed_during_contact, "身体碰门不改变任何其他账本字段、机关/回收证据、收据或钱包", not _ce(2, "runes") and not _ce(2, "torn_record"))
 	var wallet := _wallet()
 	for id: String in ["c2:rune_west"]:
 		if not await _cw(id): return false

@@ -664,7 +664,7 @@ static func _dynamic_state(value: Variant, seed: int) -> Dictionary:
 		if not position.is_empty() and tick >= 0: out["known_objects"][id] = {"position": position, "tick": tick}
 	var bindings: Dictionary = value.get("bindings", {}) if value.get("bindings") is Dictionary else {}
 	for id: String in allowed:
-		if not id.begins_with("random_nest:") and id not in ["world_migration:route_a", "world_migration:route_b", "world_migration:observer", "world_decline:last_site", "world_decline:evidence_post", "world_decline:warning_sign"]: continue
+		if not id.begins_with("random_nest:") and not (id.begins_with("random_migration:") and id.ends_with(":target")) and id not in ["world_migration:route_a", "world_migration:route_b", "world_migration:observer", "world_decline:last_site", "world_decline:evidence_post", "world_decline:warning_sign"]: continue
 		var binding: Variant = bindings.get(id)
 		if not binding is Dictionary: continue
 		var position := _position(binding.get("position"))

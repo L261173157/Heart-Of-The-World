@@ -35,6 +35,12 @@ static func _same_seed(value: Variant, seed_value: int) -> bool:
 static func _text(value: Variant, limit := 160) -> String:
 	return value.left(limit) if value is String else ""
 
+static func _point(value: Variant) -> Array:
+	if not value is Array or value.size()!=2: return []
+	for coordinate: Variant in value:
+		if typeof(coordinate) not in [TYPE_INT,TYPE_FLOAT] or not is_finite(float(coordinate)): return []
+	return [float(value[0]),float(value[1])]
+
 static func _empty(seed_value: int) -> Dictionary:
 	return {"version":VERSION,"seed":seed_value,"sequence":0,"last_tick":-1,
 		"events":[],"migration_windows":{},"decline_runs":{},"population":{},
@@ -152,6 +158,10 @@ static func sanitize(value: Variant, seed_value: int) -> Dictionary:
 						out[key][species] = {"count":mini(DECLINE_TICKS,_integer(item.get("count"))),
 							"start_tick":_integer(item.get("start_tick")),"last_tick":_integer(item.get("last_tick")),
 							"baseline":_integer(item.get("baseline")),"region_id":_text(item.get("region_id"))}
+						var point:=_point(item.get("position"))
+						if not point.is_empty() and _integer(item.get("witness_instance_id"))>0:
+							out[key][species]["position"]=point
+							out[key][species]["witness_instance_id"]=_integer(item.get("witness_instance_id"))
 	var clues: Variant = value.get("clues",{})
 	if clues is Dictionary:
 		for key: Variant in clues:
@@ -213,8 +223,16 @@ func _physics_process(delta: float) -> void:
 func _exit_tree() -> void:
 	_disconnect()
 
-func snapshot() -> Dictionary:
+func persistence_state() -> Dictionary:
+	# Runtime-owned live reference only. General readers must use snapshot(); nobody else mutates this dictionary.
+	return _state
+
+func flush_for_save() -> void:
+	# report_killed emits death before permanent-extinction/split bookkeeping finishes.
 	_flush_extinctions(false)
+
+func snapshot() -> Dictionary:
+	flush_for_save()
 	return _state.duplicate(true)
 
 func obtain_clue(region_id: String, source_id: String) -> bool:
@@ -368,6 +386,18 @@ func _population() -> Dictionary:
 		if inst.is_alive: totals[inst.species.species_name] = int(totals.get(inst.species.species_name,0))+1
 	return totals
 
+func _decline_witness(species: String, region_id: String, since_tick: int) -> Dictionary:
+	for inst: MonsterInstance in _sim.instances.values():
+		if not inst.is_alive or inst.species.species_name!=species or (not region_id.is_empty() and inst.region_id!=region_id): continue
+		var point:=_current_known_position(inst)
+		if point.is_finite(): return {"position":[point.x,point.y],"witness_instance_id":inst.id,"region_id":inst.region_id}
+	for index in range(_state.get("events",[]).size()-1,-1,-1):
+		var event: Dictionary=_state.events[index]
+		if event.kind!="death" or event.species!=species or int(event.tick)<since_tick or (not region_id.is_empty() and event.from_region!=region_id): continue
+		var point:=_point(event.get("position"))
+		if not point.is_empty(): return {"position":point,"witness_instance_id":int(event.instance_id),"region_id":str(event.from_region)}
+	return {}
+
 func _on_tick(summary: Dictionary) -> void:
 	var tick := _integer(summary.get("tick"),-1)
 	if tick != _sim.tick_count or tick <= int(_state.last_tick): return
@@ -393,21 +423,22 @@ func _on_tick(summary: Dictionary) -> void:
 		var run: Dictionary = _state.decline_runs.get(name,{})
 		if run.is_empty() or int(run.last_tick) != tick-1 or previous_tick != tick-1:
 			run = {"count":0,"start_tick":tick,"last_tick":tick,"baseline":total,"region_id":str(first_region.get(name,""))}
+		# Pin the first genuine low-population observation, before its region can empty on ticks 2/3.
+		if _point(run.get("position")).is_empty() or int(run.get("witness_instance_id",0))<=0:
+			var witness:=_decline_witness(name,str(run.region_id),int(run.start_tick))
+			if witness.is_empty(): witness=_decline_witness(name,"",int(run.start_tick))
+			if not witness.is_empty(): run.merge(witness,true)
 		run.count = mini(DECLINE_TICKS,int(run.count)+1)
 		run.last_tick = tick
 		_state.decline_runs[name] = run
-		if int(run.count) >= DECLINE_TICKS and not _state.triggers.has("world_decline"):
+		if int(run.count) >= DECLINE_TICKS and not _state.triggers.has("world_decline") and not _point(run.get("position")).is_empty():
 			var deaths: Array = []
 			if _state.last_deaths.has(name): deaths.append(_state.last_deaths[name].duplicate(true))
 			_state.triggers.world_decline = {"kind":"world_decline","seed":_seed,"species":name,"tick":tick,
 				"start_tick":run.start_tick,"baseline":run.baseline,"region_id":run.region_id,
 				"cause":"sustained_decline","source":"EcologySim.tick_completed","events":deaths}
-			for witness: MonsterInstance in _sim.instances.values():
-				if witness.is_alive and witness.species.species_name==name and witness.region_id==run.region_id and witness.spawn_pos.is_finite():
-					var witness_position:=_current_known_position(witness)
-					_state.triggers.world_decline.position=[witness_position.x,witness_position.y]
-					_state.triggers.world_decline.witness_instance_id=witness.id
-					break
+			_state.triggers.world_decline.position=run.position.duplicate()
+			_state.triggers.world_decline.witness_instance_id=int(run.witness_instance_id)
 	_pin_migration()
 	changed.emit()
 
@@ -426,6 +457,26 @@ func latest_migration(region_id: String = "") -> Dictionary:
 		var event: Dictionary = _state.events[index]
 		if event.kind == "migration" and not event.is_boss and (region_id.is_empty() or region_id in [event.from_region,event.to_region]):
 			return event.duplicate(true)
+	return {}
+
+## Return only the event endpoint belonging to this region, never the actor's hidden live location.
+static func migration_position(event: Dictionary, region_id: String) -> Vector2:
+	var key := "from_position" if event.get("from_region","")==region_id else "position"
+	if region_id not in [event.get("from_region",""),event.get("to_region","")]: return Vector2.INF
+	var point := _point(event.get(key))
+	return Vector2(float(point[0]),float(point[1])) if point.size()==2 else Vector2.INF
+
+## Bounded raw-ring query. Only the chosen event is copied; no ledger snapshot or invented event.
+func local_migration_site(region_id: String, origin: Vector2, locate_site: Callable) -> Dictionary:
+	if not origin.is_finite() or not locate_site.is_valid(): return {}
+	for index in range(_state.get("events",[]).size()-1,-1,-1):
+		var event: Dictionary = _state.events[index]
+		if event.kind!="migration" or event.is_boss: continue
+		var historical := migration_position(event,region_id)
+		if not historical.is_finite() or origin.distance_to(historical)>6000: continue
+		var point: Variant = locate_site.call(historical)
+		if not point is Vector2 or not point.is_finite() or point.distance_to(historical)>384 or origin.distance_to(point)>6000: continue
+		return {"migration":event.duplicate(true),"position":point}
 	return {}
 
 func migration_status(proof: Dictionary = {}) -> Dictionary:

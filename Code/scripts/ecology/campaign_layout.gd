@@ -132,7 +132,9 @@ static func _ensure() -> void:
 		_build_fortress_annex(terrain)
 	_lava_pocket = Rect2(site_center("lava")+Vector2(288,-176),Vector2(192,288))
 	_build_optional_objects()
+	_build_world_objects()
 	_build_ending_shelter()
+	_build_encounter_objects()
 	_build_reservation_index()
 
 
@@ -640,6 +642,85 @@ static func _build_small_room(center: Vector2,gate_id: String,target_id: String)
 	_extra_objects[target_id]["position"] = center+Vector2(0,-224) if gate_id=="side_scholar:shortcut_gate" else center
 
 
+static func _build_world_objects() -> void:
+	var definitions := {
+		"world_migration":{"route_a":"forest","route_b":"swamp","observer":"forest","record_board":"plains"},
+		"world_decline":{"last_site":"forest","evidence_post":"forest","warning_sign":"forest","observer":"plains"},
+		"world_relief":{"need_a":"forest","need_b":"swamp","supply_a":"plains","supply_b":"plains","coordination_post":"plains"},
+		"world_watchnet":{"planning_board":"plains","node_1":"forest","node_2":"swamp","node_3":"hill","record_board":"plains"},
+	}
+	var counts: Dictionary = {}
+	for chain: String in definitions:
+		for suffix: String in definitions[chain]:
+			var terrain: String = definitions[chain][suffix]
+			var index := int(counts.get(terrain,0))
+			counts[terrain] = index+1
+			var at := site_center(terrain)+Vector2(0,1024)+Vector2((index%4-2)*192,(index/4)*192)
+			if terrain=="plains":
+				at = site_center(terrain)+Vector2(-2176,256)+Vector2((index%3)*192,(index/3)*192)
+			_extra_reserved.append(Rect2(at-Vector2(112,112),Vector2(224,224)))
+			_paths[terrain] = _paths.get(terrain,[])
+			_paths[terrain].append(PackedVector2Array([entry(terrain),Vector2(at.x,entry(terrain).y+192),at]))
+			var kind := "npc" if suffix in ["observer","need_a","need_b"] else ("cargo" if suffix.begins_with("supply") else "record")
+			_register_object(chain+":"+suffix,terrain,"守望协作 · "+{"route_a":"第一条迁徙线","route_b":"第二条迁徙线","observer":"现场观察员","record_board":"记录交接板","last_site":"最后踪迹","evidence_post":"实况记录桩","warning_sign":"族群警示牌","need_a":"林间接应员","need_b":"沼泽接应员","supply_a":"第一份专用物资","supply_b":"第二份专用物资","coordination_post":"接应协调台","planning_board":"守望网规划板","node_1":"林间灯火节点","node_2":"沼泽灯火节点","node_3":"丘陵灯火节点"}[suffix],kind,at,{"portrait":"scholar"})
+
+	for suffix: String in ["a","b"]:
+		var destination: Dictionary = _extra_objects["world_relief:need_"+suffix]
+		var supply: Dictionary = _extra_objects["world_relief:supply_"+suffix]
+		supply["position"] = destination.position+Vector2(128,0)
+		supply["terrain"] = destination.terrain
+		supply["site"] = destination.site
+		_extra_reserved.append(Rect2(supply.position-Vector2(96,96),Vector2(192,192)))
+
+
+## 三次实例使用确定性偏移的独立小场地；只有已登记的当前实例可见。
+static func _build_encounter_objects() -> void:
+	var templates := ["random_wounded","random_parcel","random_sign","random_rocks","random_medicine","random_message","random_nest","random_migration","random_camp","random_runes"]
+	var display := ["野外伤者","散落包裹","断裂路标","岩缝近道","紧缺药包","留守讯息","巢区临道","迁徙目击","据点余患","废墟符记"]
+	for i in templates.size():
+		var terrain: String = TERRAINS[i%TERRAINS.size()]
+		var at := site_center(terrain)+Vector2(1280,-1024 if i<TERRAINS.size() else 1024)
+		if terrain == "plains":
+			at = site_center(terrain)+Vector2(-2368,-768 if i<TERRAINS.size() else 1280)
+		_reserve_wing(terrain,at,Vector2(384,320))
+		for ordinal in 3:
+			var instance_id := "%s:%d:%d" % [templates[i],_seed,ordinal]
+			var instance_at := at+Vector2(0,(ordinal-1)*256)
+			if templates[i]=="random_rocks":
+				# Three disjoint sites, east of the original fortress; no shared obstacle cells or overlapping rune pads.
+				instance_at=site_center(terrain)+Vector2(2304+ordinal*1024,-1664)
+				_extra_reserved.append(Rect2(instance_at-Vector2(448,384),Vector2(896,768)))
+				_paths[terrain].append(PackedVector2Array([site_center(terrain)+Vector2(0,576),Vector2(instance_at.x-320,site_center(terrain).y+576),instance_at+Vector2(-320,224)]))
+				_paths[terrain].append(PackedVector2Array([instance_at+Vector2(-192,0),instance_at+Vector2(192,0)]))
+				_paths[terrain].append(PackedVector2Array([instance_at+Vector2(-192,0),instance_at+Vector2(-192,-288),instance_at+Vector2(192,-288),instance_at+Vector2(192,0)]))
+			_extra_reserved.append(Rect2(instance_at-Vector2(384,320),Vector2(768,640)))
+			var suffixes := ["giver","target","return","parts","record"]
+			if templates[i]=="random_runes":
+				suffixes.append_array(["rune_a","rune_b","rune_c"])
+			for n in suffixes.size():
+				var suffix: String = suffixes[n]
+				var kind := "npc" if suffix in ["giver","return"] else ("record" if suffix=="record" else "cargo")
+				if suffix.begins_with("rune_"):
+					kind = "rune"
+				elif templates[i]=="random_wounded" and suffix=="target":
+					kind = "injured"
+				elif templates[i]=="random_sign" and suffix=="target":
+					kind = "flag"
+				var offset := Vector2((n%3-1)*192,(n/3-1)*192)
+				if templates[i]=="random_rocks": offset={"giver":Vector2(-320,224),"target":Vector2(-192,0),"return":Vector2(192,0),"parts":Vector2(-320,-224),"record":Vector2(320,224)}[suffix]
+				if suffix == "target":
+					if templates[i] == "random_medicine": kind="npc"
+					elif templates[i] in ["random_rocks","random_nest","random_migration","random_camp"]: kind="survey"
+					elif templates[i] == "random_runes": kind="valve"
+				_register_object(instance_id+":"+suffix,terrain,display[i]+" · "+{"giver":"发起人","target":"现场目标","return":"接收人","parts":"专用物资","record":"现场线索","rune_a":"灯符记","rune_b":"路符记","rune_c":"人符记"}[suffix],kind,instance_at+offset,{"portrait":"watchman","instance_id":instance_id,"initial_hidden":true})
+			if templates[i]=="random_rocks":
+				var barrier: Array[Vector2i] = []
+				# A real 384px ridge separates the two reachable endpoints. Its central 96px gap contains this instance's three breakable rocks.
+				for y in range(-6,7):
+					var cell := _cell(instance_at)+Vector2i(0,y)
+					_geometry[cell] = "rock" if absi(y)<=1 else "boulder"
+					if absi(y)<=1: barrier.append(cell)
+				_barrier_cells[instance_id+":barrier"] = barrier
 
 
 static func object_definition(id: String) -> Dictionary:

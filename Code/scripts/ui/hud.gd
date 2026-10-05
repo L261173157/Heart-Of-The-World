@@ -1415,7 +1415,9 @@ func _toggle_codex() -> void:
 
 
 func _refresh_codex() -> void:
+	codex_content.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var lines: Array[String] = []
+	var investigation_notes := CampaignDynamic.completed_investigation_notes(GameState.campaign_quest)
 	# 物种清单取自运行中的模拟（= data/species/*.tres 真源）：
 	# 新增种族后图鉴自动收录，与成就判定同口径，不再手抄清单漂移
 	var species_names: Array = []
@@ -1424,12 +1426,14 @@ func _refresh_codex() -> void:
 			species_names.append(species.species_name)
 	for i in species_names.size():
 		var kills: int = int(GameState.codex.get(species_names[i], 0))
-		if kills > 0:
+		if kills > 0 or investigation_notes.has(species_names[i]):
 			var species: SpeciesData = WorldSim.sim.species_list[i]
 			var status := WorldEventDetector.species_status_text(species_names[i],
 					WorldSim.sim.alive_count_of_species(species_names[i]), WorldSim.sim.player_extinct,
 					species.is_boss, WorldSim.sim.reintroduction_enabled)
-			lines.append("✓ %s  累计猎杀 %d\n    %s" % [species_names[i], kills, status])
+			var heading := "✓ %s  累计猎杀 %d" % [species_names[i],kills] if kills>0 else "%s  调查记录（未曾猎杀）" % species_names[i]
+			lines.append("%s\n    当前状态（第%d刻）：%s" % [heading,WorldSim.sim.tick_count,status])
+			for note: String in investigation_notes.get(species_names[i],[]): lines.append(note)
 		else:
 			# 未猎杀隐藏名字（收集悬念），但给序号让玩家能感知收集进度
 			lines.append("？ #%02d 未曾猎杀" % [i + 1])
@@ -1547,7 +1551,7 @@ func _on_quest_updated(text: String) -> void:
 		quest_label.text = "%s  %d/%d\n%s" % [quest.get("title", "当前委托"), int(quest.get("progress", 0)), int(quest.get("need", 1)), objective]
 		return
 	if _task_snapshot.is_empty():
-		var campaign_summary := CampaignQuest.completed_summary(GameState.campaign_quest)
+		var campaign_summary := CampaignQuest.completed_summary(GameState.campaign_quest, true)
 		if not campaign_summary.is_empty():
 			quest_label.text = campaign_summary
 			return
@@ -2632,8 +2636,14 @@ func _layout_six_button_hud() -> void:
 	quest_label.size = Vector2(_tracked_plate.size.x - 32, 66)
 	toast_label.offset_top = 154
 	toast_label.offset_bottom = 222
-	_combat_toast.offset_top = 226
-	_combat_toast.offset_bottom = 264
+	# 当前交互居民的名字在角色上方；反馈放到下方中间的空档，不压住名字或六键。
+	var feedback_width := minf(480.0, maxf(240.0, root.size.x - 728.0))
+	_combat_toast.offset_left = -feedback_width * 0.5
+	_combat_toast.offset_right = feedback_width * 0.5
+	_combat_toast.offset_top = root.size.y - 172.0
+	_combat_toast.offset_bottom = root.size.y - 96.0
+	_combat_toast.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_combat_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_boss_layer.position.y = 98
 	_more_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_more_panel.offset_left = -minf(816, root.size.x - 232)

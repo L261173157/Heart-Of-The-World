@@ -48,8 +48,18 @@ jobs:
             tests: campaign_optional_lifecycle,campaign_regional_passage
           - suite: campaign_optional_outcomes
             tests: campaign_optional_outcomes
+          - suite: campaign_dynamic
+            tests: campaign_dynamic_truth,campaign_catalog_ledger,campaign_content_contract,campaign_world_facts,campaign_dynamic_host,campaign_dynamic_feasibility,campaign_dynamic_adversarial,campaign_dynamic_save_failure
+          - suite: campaign_dynamic_lifecycle
+            tests: campaign_dynamic_lifecycle
+          - suite: campaign_raw_persistence
+            tests: campaign_dynamic_copy_guard,campaign_dynamic_write_through,campaign_dynamic_rock_body
+          - suite: campaign_cross_family
+            tests: campaign_walk_geometry,campaign_cross_family
           - suite: campaign_resume_mobile
-            tests: campaign_resume_navigation,campaign_open_room_restore,mobile_clipping,mobile_scroll
+            tests: campaign_resume_navigation,campaign_open_room_restore,mobile_clipping,mobile_scroll,campaign_feedback_layout
+          - suite: campaign_earned_budget
+            tests: campaign_earned_budget
           - suite: exploration_weapons
             tests: directional_attack,weapon_effects,terrain_coherence,exploration_map,exploration_lifecycle,knockback_response
     steps:
