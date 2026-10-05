@@ -7,7 +7,8 @@ signal changed
 const Data := preload("res://scripts/main/campaign_quest_data.gd")
 const Catalog := preload("res://scripts/main/campaign_catalog.gd")
 const Inventory := preload("res://scripts/main/camp_quest_inventory.gd")
-const ENABLED_BATCH := 1
+const ENABLED_BATCH := 2
+var _main: CampaignMain
 var _mutating := false
 var _actions: Dictionary = {}
 var _stage_cache: Dictionary = {}
@@ -15,14 +16,17 @@ var _stage_cache: Dictionary = {}
 func _ready() -> void:
 	name = "CampaignQuest"
 	add_to_group("campaign_quest")
-	_actions = Catalog.actions()
-	for stage: Dictionary in Catalog.all_stages(): _stage_cache[stage["id"]] = stage
+	_actions = Catalog.actions(GameState.world_seed)
+	for stage: Dictionary in Catalog.all_stages(GameState.world_seed): _stage_cache[stage["id"]] = stage
 	if GameState.campaign_quest.is_empty(): GameState.campaign_quest = Data.create(GameState.world_seed)
 	Data.authorize_chapter1(ledger(), GameState.outpost_quest)
 	EventBus.campaign_interaction_requested.connect(_on_interaction)
 	EventBus.camp_quest_action_requested.connect(_on_action)
 	EventBus.campaign_travel_completed.connect(_on_travel_completed)
 	EventBus.outpost_state_changed.connect(_on_outpost_changed)
+	_main = preload("res://scripts/main/campaign_main.gd").new()
+	_main.setup(self)
+	add_child(_main)
 	_publish()
 
 func ledger() -> Dictionary:
@@ -91,19 +95,23 @@ func _available_object_actions(object_id: String) -> Array:
 	return out
 
 func object_payload(object_id: String) -> Dictionary:
+	if object_id=="side_troll:departure" and ENABLED_BATCH>=3: return departure_payload(object_id,_object_title(object_id))
 	if not _at_object(object_id): return _info("请走到物件身旁，确认没有墙体遮挡后再交互")
 	var object_chapter := _chapter_for_object(object_id)
 	if not object_chapter.is_empty() and _paused(str(object_chapter["id"])):
 		return _action_payload("此前证据、机关和支付收据都保留，确认继续这一章？", "继续远征", "campaign|resume|" + str(object_chapter["id"]), object_id)
 	for a: Dictionary in _actions.values():
 		if a.get("kind", "") != "puzzle" or not object_id in a.get("puzzle_objects", []): continue
-		if _proof_exists(a["id"]): return _info("符标与石门的开启记录已保存")
-		if _paused(str(a["chain"])) or not Data.can_record(ledger(), a["stage"], a["id"]): return _info("先核对路标上的次序，再逐个操作符标")
+		if _proof_exists(a["id"]): return _info("这组机关的完成记录已保存，已发生的改变不会重置")
+		if _paused(str(a["chain"])) or not Data.can_record(ledger(), a["stage"], a["id"]): return _info("先取得本段操作记录，再逐个操作现场机关")
 		return _action_payload("按下这枚符标。错误次序只清除尚未完成的序列；已经取得的证据不会丢失。", "触碰符标", "campaign|rune|" + object_id, object_id)
 	var available := _available_object_actions(object_id)
 	if not available.is_empty():
 		var a: Dictionary = available[0]
-		if a["kind"] == "puzzle": return _info("按刻痕提示依次触碰北、东、西三枚符标，再到门后的档案处取回残页")
+		if _main != null:
+			var special: Dictionary = _main.payload(a)
+			if not special.is_empty(): return special
+		if a["kind"] == "puzzle": return _info("请依操作记录逐个触碰现场回路：" + _order_text(a) + "。每一步需要到达对应物件旁确认。")
 		return _action_payload(str(a["text"]), str(a["verb"]), "campaign|act|" + str(a["id"]), object_id)
 	for stage_id: String in ledger().get("quests", {}):
 		if not _stage_cache.has(stage_id) or not Data.ready(ledger(), stage_id) or Data.paid(ledger(), stage_id): continue
@@ -133,6 +141,10 @@ func perform_action(action_id: String, choice: String = "") -> String:
 	if _paused(str(a["chain"])) or not Data.can_record(ledger(), str(a["stage"]), action_id): return "先完成当前的线索与前置行动"
 	if a["kind"] == "puzzle": return "请依次操作现场符标，不能在记录页直接解开机关"
 	var proof := _position_proof(str(a["object"]))
+	if _main != null:
+		var checked: Dictionary = _main.proof(a,choice)
+		if checked.has("error"): return str(checked["error"])
+		proof = checked.get("proof",proof)
 	if a["kind"] == "choice": proof["choice"] = choice
 	_mutating = true
 	GameState.begin_world_reward()
@@ -144,14 +156,17 @@ func perform_action(action_id: String, choice: String = "") -> String:
 	_save()
 	GameState.end_world_reward()
 	_mutating = false
+	if a.get("ending",false) and Data.ready(ledger(),"watch_c6_lava:s4"):
+		EventBus.npc_dialogue.emit(epilogue_payload())
 	return str(a["text"])
 
 func _rune(object_id: String) -> String:
 	if not _at_object(object_id): return "请走到对应符标旁再操作"
 	for a: Dictionary in _actions.values():
 		var objects: Array = a.get("puzzle_objects", [])
+		if str(a.get("chapter", "")).is_empty(): continue
 		if not object_id in objects: continue
-		if _proof_exists(a["id"]): return "石门已经打开"
+		if _proof_exists(a["id"]): return "这组机关已经完成"
 		if _paused(str(a["chain"])) or not Data.can_record(ledger(), a["stage"], a["id"]): return "先继续远征并核对现场刻痕的次序"
 		if not ledger().has("puzzle_progress"): ledger()["puzzle_progress"] = {}
 		var progress: Array = ledger()["puzzle_progress"].get(a["id"], []).duplicate()
@@ -160,7 +175,7 @@ func _rune(object_id: String) -> String:
 		if progress.size() >= order.size() or symbol != str(order[progress.size()]):
 			ledger()["puzzle_progress"][a["id"]] = []
 			_save()
-			return "次序不合，符光熄灭。按北、东、西重新操作，已有记录保留"
+			return "次序不合，符光熄灭。请按" + _order_text(a) + "重新操作，已有记录保留"
 		progress.append(symbol)
 		ledger()["puzzle_progress"][a["id"]] = progress
 		if progress == order:
@@ -171,11 +186,11 @@ func _rune(object_id: String) -> String:
 			Data.record(ledger(), a["stage"], a["id"], proof)
 			_settle_ready()
 		_save()
-		return "三枚符标亮起，档案石门已打开。请亲自走进去取回残页" if progress == order else "符标响应（%d/%d），继续前往下一枚" % [progress.size(), order.size()]
+		return str(a["text"]) if progress == order else "符标响应（%d/%d），继续前往下一枚" % [progress.size(), order.size()]
 	return "这不是当前机关的符标"
 
 func _position_proof(object_id: String) -> Dictionary:
-	var pos := CampaignLayout.object_position(object_id)
+	var pos := _world_position(object_id)
 	return {"position": [pos.x, pos.y], "tick": WorldSim.sim.tick_count if WorldSim.sim != null else 0}
 
 func _settle_ready() -> void:
@@ -202,7 +217,8 @@ func claim(stage_id: String) -> String:
 	if _mutating or not owns(stage_id) or not Data.ready(ledger(), stage_id): return "尚未完成这段行动"
 	var stage: Dictionary = _stage_cache[stage_id]
 	var last: Dictionary = stage["actions"][-1]
-	if not _at_object(str(last["object"])): return "请到这一段的交付物件或联络员身旁领取"
+	var claim_object := str(last["object"])
+	if not _at_object(claim_object): return "请到这一段的交付物件或联络员身旁领取"
 	_mutating = true
 	GameState.begin_world_reward()
 	var paid := _pay(stage_id)
@@ -228,7 +244,17 @@ func snapshot(stage_id: String) -> Dictionary:
 		var progress: Array = ledger().get("puzzle_progress", {}).get(next["id"], [])
 		var objects: Array = next.get("puzzle_objects", [])
 		if not objects.is_empty(): object_id = objects[mini(progress.size(), objects.size()-1)]
-	var pos := CampaignLayout.object_position(object_id)
+	var pos := _world_position(object_id)
+	var target_title := _object_title(object_id)
+	if next["kind"] == "route" and str(next.get("chapter","")) == "watch_c3_swamp" and not ready:
+		var route := str(ledger().get("quests",{}).get(stage_id,{}).get("choice",""))
+		var points: Array = CampaignLayout.route_waypoints(route)
+		var route_state: Dictionary = ledger().get("main_routes",{}).get(next["id"],{})
+		var cursor: int = route_state.get("visited",[]).size()
+		if route_state.get("needs_anchor",false): cursor=maxi(0,cursor-1)
+		if cursor < points.size():
+			pos = points[cursor]
+			target_title = ("返回已确认的" if route_state.get("needs_anchor",false) else "") + ("浅滩近路" if route=="near" else "枯木外缘") + "路标 %d/%d"%[cursor+1,points.size()]
 	var progress_count := 0
 	for id: String in stage["required"]:
 		if _proof_exists(id): progress_count += 1
@@ -236,19 +262,21 @@ func snapshot(stage_id: String) -> Dictionary:
 	return {"id": stage_id, "kind": "campaign", "title": str(stage["title"]), "giver": _object_title(object_id),
 		"need": stage["required"].size(), "progress": progress_count, "claim_at_npc": true,
 		"chapter_stage": "claim" if ready else "act", "ui_state": "claimable" if ready else "in_progress",
-		"ui_status": "奖励待领取" if ready else "远征记录", "ui_objective": ("腾出补给空间后，到%s领取整笔奖励" % _object_title(object_id)) if ready else (str(next["verb"]) + " · " + _object_title(object_id)),
+		"ui_status": "奖励待领取" if ready else "远征记录", "ui_objective": ("腾出补给空间后，到%s领取整笔奖励" % _object_title(object_id)) if ready else (str(next["verb"]) + " · " + target_title),
 		"ui_reward": "+%d金币 +%d经验%s；每段一次，接章时冻结基础预算" % [reward.get("gold",0), reward.get("xp",0), " +"+ItemCatalog.name_of(str(reward["bonus"])) if not str(reward.get("bonus", "")).is_empty() else ""],
 		"gold":reward.get("gold",0),"xp":reward.get("xp",0),"bonus":reward.get("bonus",""),
-		"target_object_id":object_id,"target_name":_object_title(object_id),"target_pos":[pos.x,pos.y] if pos.is_finite() else [],"ui_guide_mode":"object","ui_knowledge":"npc_intel", "history":str(stage["objective"])}
+		"target_object_id":object_id,"target_name":target_title,"target_pos":[pos.x,pos.y] if pos.is_finite() else [],"ui_guide_mode":"object","ui_knowledge":"npc_intel", "history":str(stage["objective"])}
 
 static func open_gates_from(q: Dictionary) -> Array[String]:
 	var result: Array[String] = []
 	if q.get("quests", {}).get("watch_c2_forest:s2", {}).get("evidence", {}).has("watch_c2_forest:s2:runes"):
 		result.append("c2:forest_gate")
+	if q.get("quests",{}).get("watch_c4_hill:s2",{}).get("evidence",{}).has("watch_c4_hill:s2:winch"): result.append("c4:archive_gate")
+	if q.get("quests",{}).get("watch_c6_lava:s2",{}).get("evidence",{}).has("watch_c6_lava:s2:passage"): result.append("c6:core_gate")
 	return result
 
 func visual_state() -> Dictionary:
-	var state := {"open_gates":open_gates_from(ledger()),"evidence":{},"rescued":{},"repaired":{},"taken":{},"placements":{},"services":{},"active_runes":[]}
+	var state := {"enabled_batch":ENABLED_BATCH,"open_gates":open_gates_from(ledger()),"evidence":{},"rescued":{},"repaired":{},"taken":{},"placements":{},"services":{},"active_runes":[]}
 	for a: Dictionary in _actions.values():
 		if not _proof_exists(a["id"]): continue
 		state["evidence"][a["id"]] = true
@@ -262,7 +290,13 @@ func visual_state() -> Dictionary:
 		if a.is_empty(): continue
 		for symbol: String in ledger()["puzzle_progress"][key]:
 			var index: int = a["puzzle_order"].find(symbol)
-			if index >= 0: state["active_runes"].append(a["puzzle_objects"][index])
+			if index >= 0 and index < a.get("puzzle_objects", []).size(): state["active_runes"].append(a["puzzle_objects"][index])
+	if _main != null:
+		var extra: Dictionary = _main.state()
+		state["open_gates"].append_array(extra["open_gates"])
+		state["rescued"].merge(extra["rescued"],true)
+		state["placements"].merge(extra["placements"],true)
+		state["ending"] = extra["ending"]
 	return state
 
 func _station_origins() -> Array:
@@ -272,6 +306,10 @@ func _station_origins() -> Array:
 			for a: Dictionary in chapter["steps"][3]["actions"]:
 				if a["kind"] == "repair": result.append(a["object"])
 			if chapter["id"] == "watch_c2_forest": result.append("c2:liaison")
+	if ENABLED_BATCH >= 3 and Data.ready(ledger(),"watch_c2_forest:s4"):
+		result.append_array(["side_troll:departure","side_troll:giver"])
+	if Data.ready(ledger(),"watch_c6_lava:s4"):
+		result.append_array(["c3:survivor","c4:map_keeper","c5:leader","ending:shelter"])
 	return result
 
 func _departure_origin() -> String:
@@ -288,6 +326,8 @@ func _at_origin(id: String) -> bool:
 
 func travel_options() -> Array:
 	var options: Array = []
+	if Data.ready(ledger(),"watch_c6_lava:s4") and str(ledger()["quests"]["watch_c6_lava:s4"].get("choice",""))=="centralized":
+		options.append({"terrain":"shelter","chapter":"","title":"集中安置的避难所","repaired":true})
 	for chapter: Dictionary in Catalog.main_chapters():
 		if _chapter_available(chapter):
 			options.append({"terrain":chapter["terrain"],"chapter":chapter["id"],"title":chapter["title"],"repaired":Data.ready(ledger(),str(chapter["id"])+":s4")})
@@ -296,21 +336,27 @@ func travel_options() -> Array:
 func departure_payload(origin_id: String, giver: String = "远征联络员") -> Dictionary:
 	if not _at_origin(origin_id): return _info("请到远征联络员身旁确认路线")
 	var options: Array = []
+	if origin_id == "side_troll:departure":
+		options.append({"label":"沿旧旗线索前往遗迹","action":"campaign|depart|side_troll|"+origin_id,"enabled":true,
+			"consequence":"前往实际巨魔王遗迹的安全接近点，不把Boss移到林地联络站","risk":"旧旗是历史路线线索，远方现状仍待亲自核实"})
 	for destination: Dictionary in travel_options():
 		options.append({"label":"前往" + str(destination["title"]),"action":"campaign|depart|"+str(destination["terrain"])+"|"+origin_id,"enabled":true,
-			"consequence":"确认接取本章并前往安全接应入口；当前生命、精力、冷却与生态时刻连续保留","risk":"旧路书只提供历史位置，到场后才核实真实状态"})
+			"consequence":"确认接取本章并前往安全接应入口；当前生命、精力、冷却与生态时刻连续保留","risk":"建议Lv6或等效构筑，先强化并备足补给；活体龟王必须挑战" if destination["terrain"]=="lava" else "旧路书只提供历史位置，到场后才核实真实状态"})
 	if origin_id != "home:patrol":
 		options.append({"label":"返回家园营地","action":"campaign|depart|home|"+origin_id,"enabled":true,"consequence":"沿已修复的远征线路返回","risk":"不会回复生命或精力"})
-		options.append({"label":"联络站补给","action":"campaign|shop|"+origin_id,"enabled":true,"consequence":"使用既有商店价格在此购买补给","risk":"仅在这座真实联络站提供服务"})
+		if _service_available(origin_id): options.append({"label":"联络站补给","action":"campaign|shop|"+origin_id,"enabled":true,"consequence":"使用既有商店价格在此购买补给","risk":"仅在这座真实联络站提供服务"})
+	if Data.ready(ledger(),"watch_c6_lava:s4"):
+		options.append({"label":"阅读结局后记","action":"campaign|epilogue_menu","enabled":true,"utility":true,"consequence":"按当前存档回顾真实结果","risk":"未完成或未发生的事件不会编入结局"})
 	if origin_id == "home:patrol" and OutpostQuestData.valid_legacy(GameState.camp_quest):
 		options.append({"label":"原营地调查 / 交付","action":"outpost:legacy","enabled":true,
 			"consequence":"继续或领取原有营地合同，金额、目标与贡献不变","risk":"旧奖励仍按原条件只支付一次"})
 	options.append({"label":"前哨任务 / 原记录","action":"outpost:menu","enabled":true,"consequence":"保留原前哨记录与奖励收据","risk":"不会重新发奖"})
-	return {"kind":"camp_choice","giver":giver,"origin":_origin_pos(origin_id),"text":"《断开的守望》远征线路\n前哨抄录的林间旧约指向古树联络点。你可以明确选择出发，到达后只揭示脚下附近区域。修复联络站后可往返。", "options":options}
+	return {"kind":"camp_choice","giver":giver,"origin":_origin_pos(origin_id),"text":(completed_summary(ledger()) + "\n可以阅读分项后记，或选择已确认的远征线路。") if Data.ready(ledger(),"watch_c6_lava:s4") else "《断开的守望》远征线路\n已获得的旧路线坐标可以引导你前往各章接应点。远方现状需要到场核实，抵达后只揭示附近区域。修复联络站后可往返。", "options":options}
 
 func can_travel(terrain: String, origin_id: String) -> bool:
 	if not _at_origin(origin_id): return false
 	if terrain == "home": return origin_id != "home:patrol"
+	if terrain == "side_troll": return ENABLED_BATCH>=3 and origin_id=="side_troll:departure" and Data.ready(ledger(),"watch_c2_forest:s4")
 	for option: Dictionary in travel_options():
 		if str(option["terrain"]) == terrain: return true
 	return false
@@ -338,13 +384,21 @@ func action(action_id: String) -> String:
 	var parts := action_id.split("|")
 	if parts.size() < 2 or parts[0] != "campaign": return perform_action(action_id)
 	match str(parts[1]):
+		"epilogue_menu":
+			if Data.ready(ledger(),"watch_c6_lava:s4"): EventBus.npc_dialogue.emit(epilogue_payload())
+		"epilogue":
+			if parts.size()>2 and Data.ready(ledger(),"watch_c6_lava:s4"):
+				var pages: Array[String] = epilogue_pages()
+				var index := int(parts[2])
+				if index>=0 and index<pages.size(): EventBus.npc_dialogue.emit({"kind":"info","giver":"《断开的守望》后记","text":pages[index],"back_action":"campaign|epilogue_menu"})
 		"act": return perform_action(str(parts[2]), str(parts[3]) if parts.size()>3 else "") if parts.size()>2 else ""
+		"sequence": return _main.sequence(str(parts[2]),str(parts[3])) if parts.size()>3 and _main!=null else ""
 		"claim": return claim(str(parts[2])) if parts.size()>2 else ""
 		"resume": return accept_chapter(str(parts[2])) if parts.size()>2 else ""
 		"rune": return _rune(str(parts[2])) if parts.size()>2 else ""
 		"depart": return request_travel(str(parts[2]),str(parts[3])) if parts.size()>3 else ""
 		"shop":
-			if parts.size()>2 and _at_origin(str(parts[2])) and str(parts[2]) != "home:patrol":
+			if parts.size()>2 and _at_origin(str(parts[2])) and str(parts[2]) != "home:patrol" and _service_available(str(parts[2])):
 				EventBus.npc_dialogue.emit({"kind":"shop","giver":_object_title(str(parts[2])),"text":"联络站已经恢复补给接待。价格与家园商店一致，购买仍由你确认。"})
 	return ""
 
@@ -376,7 +430,7 @@ func _origin_pos(origin_id: String) -> Vector2:
 	if origin_id=="home:patrol":
 		var patrol := _home_patrol()
 		return patrol.global_position if patrol!=null else Vector2.INF
-	return CampaignLayout.object_position(origin_id)
+	return _world_position(origin_id)
 
 func _at_object(object_id: String) -> bool:
 	for node: Node in get_tree().get_nodes_in_group("campaign_objects"):
@@ -414,7 +468,30 @@ static func completed_summary(q: Dictionary) -> String:
 	for chapter: Dictionary in Catalog.main_chapters():
 		if Data.chapter_complete(q, str(chapter["id"])): latest = chapter
 	if latest.is_empty(): return ""
+	if str(latest["id"])=="watch_c6_lava":
+		var ending := str(q.get("quests",{}).get("watch_c6_lava:s4",{}).get("choice",""))
+		return "《断开的守望》已通关 · %s\n%s"%["集中安置" if ending=="centralized" else "分散派驻", "在联络站选择前往避难所，探望四位新增居民" if ending=="centralized" else "四位远征队员留守林地、沼泽、丘陵、雪原，继续提供补给"]
 	return "%s · 已完成\n联络站已恢复，可在站点确认远征或返回家园" % str(latest["title"])
+
+
+func _world_position(object_id: String) -> Vector2:
+	for node: Node in get_tree().get_nodes_in_group("campaign_objects"):
+		if node is Node2D and str(node.get("campaign_id")) == object_id: return (node as Node2D).global_position
+	return CampaignLayout.object_position(object_id)
+
+
+func _order_text(action_data: Dictionary) -> String:
+	var words: Array[String] = []
+	for symbol: String in action_data.get("puzzle_order",[]):
+		words.append(str({"north":"北","east":"东","west":"西","center":"中","split":"分队","withdrawal":"撤守","lost":"失联"}.get(symbol,symbol)))
+	return "→".join(words)
+
+
+func _service_available(origin_id: String) -> bool:
+	if not Data.ready(ledger(),"watch_c6_lava:s4"): return origin_id not in ["side_troll:departure","side_troll:giver"]
+	var ending := str(ledger().get("quests",{}).get("watch_c6_lava:s4",{}).get("choice",""))
+	if ending == "centralized": return origin_id in ["ending:shelter","c2:liaison","c3:survivor","c4:map_keeper","c5:leader"]
+	return origin_id not in ["side_troll:departure","side_troll:giver"]
 
 
 ## 落点按种子目录的稳定次序选择，实时避让当前敌人；绝不挪怪或清空生态。
@@ -425,7 +502,8 @@ func travel_destination(terrain: String) -> Vector2:
 	for node: Node in get_tree().get_nodes_in_group("monsters"):
 		if node is MonsterBase and (node as MonsterBase).inst != null and (node as MonsterBase).inst.is_alive:
 			positions[(node as MonsterBase).inst.id] = (node as Node2D).global_position
-	for point: Vector2 in CampaignLayout.entry_candidates(terrain):
+	var candidates: Array = CampaignLayout.entry_candidates(terrain)
+	for point: Vector2 in candidates:
 		if not point.is_finite() or ObstacleField.blocks(point,16.0) or not ObstacleField.liquid_kind_at(point).is_empty(): continue
 		var safe := true
 		for inst: MonsterInstance in WorldSim.sim.instances.values():
@@ -436,6 +514,43 @@ func travel_destination(terrain: String) -> Vector2:
 				break
 		if safe: return point
 	return Vector2.INF
+
+
+## 后记只消费此存档实际完成的行动；未发生的生态事件不虚构，也不催促补齐。
+func epilogue() -> String:
+	if not Data.ready(ledger(),"watch_c6_lava:s4"): return "世界之心的最终派驻尚未确认"
+	var ending := str(ledger()["quests"]["watch_c6_lava:s4"].get("choice",""))
+	var lines: Array[String] = ["《断开的守望》· 此后的道路", "沿途原件已经核实：先分队，再有意撤守，最后联络失效。世界之心恢复的是通信，没有复活或清空野外族群。"]
+	if ending=="centralized":
+		lines.append("集中安置：林地联络员、沼泽幸存者、地图保管员和远征队长都迁入平原新增避难所，并在此接待补给。可在这份线路菜单选择「集中安置的避难所」。")
+	else:
+		lines.append("分散派驻：林地联络员、沼泽幸存者、地图保管员、远征队长分别留守林地、沼泽、丘陵和雪原，四处均可当面补给。")
+	for chapter: String in ["watch_c4_hill","watch_c6_lava"]:
+		var stage := chapter+(":s3" if chapter=="watch_c4_hill" else ":s2")
+		var outcome := str(ledger().get("quests",{}).get(stage,{}).get("evidence",{}).get(stage+":passage",{}).get("outcome",""))
+		lines.append(("丘陵城塞：" if chapter=="watch_c4_hill" else "熔岩城塞：")+str({"defeated":"有本人的实名讨伐记录","absent":"如实完成空城调查，没有冒记击杀","bypass":"完成西翼环境绕行，未冒记讨伐"}.get(outcome,"保留已核实记录")))
+	var sides := 0
+	var regions := 0
+	for chain: Dictionary in Catalog.side_chains():
+		if Data.ready(ledger(),str(chain["id"])+":s2"): sides+=1
+	for chain: Dictionary in Catalog.regional_arcs():
+		if Data.ready(ledger(),str(chain["id"])+":s3"): regions+=1
+	lines.append("六章联络已经重建。你仍可沿已修复的线路探望队员，在原世界继续探索。")
+	lines.append("旧前哨巡逻员继续守在原处，既有检查点和回城仍保留。生态继续运行，已完成的故事与奖励不会倒退。")
+	return "\n".join(lines)
+
+
+func epilogue_pages() -> Array[String]:
+	var lines := epilogue().split("\n")
+	if lines.size()<7: return [epilogue()]
+	return [str(lines[1]),str(lines[2]),str(lines[3])+"\n"+str(lines[4]),str(lines[5])+"\n"+str(lines[6])]
+
+func epilogue_payload() -> Dictionary:
+	var options: Array = []
+	var titles := ["远征失联的真相","四位队员的去向","两座城塞的实际经过","留下的改变"]
+	for i in titles.size():
+		options.append({"label":titles[i],"action":"campaign|epilogue|"+str(i),"enabled":true,"utility":true,"consequence":"读取实际完成记录","risk":"不会改写选择或重新支付"})
+	return {"kind":"camp_choice","giver":"《断开的守望》· 后记","text":completed_summary(ledger()),"options":options}
 
 
 ## 出发交谈核验实际营地巡守，不能用原始摆放坐标替代已经避障/移动的居民。

@@ -40,6 +40,10 @@ jobs:
             tests: outpost_ledger,outpost_layout,outpost_chapter_contract,outpost_chapter_lifecycle,outpost_live_targets,outpost_live_targets_lifecycle
           - suite: campaign
             tests: campaign_reward_contract,campaign_ledger,campaign_layout,campaign_acceptance,campaign_lifecycle
+          - suite: campaign_story
+            tests: campaign_story_lifecycle
+          - suite: campaign_resume_mobile
+            tests: campaign_resume_navigation,mobile_clipping,mobile_scroll
           - suite: exploration_weapons
             tests: directional_attack,weapon_effects,terrain_coherence,exploration_map,exploration_lifecycle,knockback_response
     steps:

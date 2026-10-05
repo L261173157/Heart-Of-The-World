@@ -64,6 +64,7 @@ class CampaignObject extends Node2D:
 	}
 	const BAG := preload("res://assets/ts/icons/bag.png")
 	const TOOLS := preload("res://assets/ts/icons/knock_axe.png")
+	const SHELTER := preload("res://assets/ts/structures_baked/ts_house1.png")
 	const BED := preload("res://assets/ts/structures_baked/bed.png")
 	var campaign_id := ""
 	var definition: Dictionary = {}
@@ -123,9 +124,19 @@ class CampaignObject extends Node2D:
 				position = Vector2(float(point[0]),float(point[1]))
 			service = str(placement.get("service",""))
 			title = str(placement.get("title",title))
-		visible = not bool(placement.get("hidden",false))
+		var hidden := bool(definition.get("initial_hidden",false)) and placement.is_empty()
+		if campaign_id == "ending:shelter":
+			hidden = str(snapshot.get("ending","")) != "centralized" and placement.is_empty()
+		if definition.has("instance_id"):
+			hidden = str(snapshot.get("active_encounter", "")) != str(definition.instance_id)
+		visible = not bool(placement.get("hidden",hidden))
+		# 分批交付时隐藏尚未启用的作者任务，不能展示只有占位回复的居民。
+		var batch := int(snapshot.get("enabled_batch",4))
+		if (campaign_id.begins_with("side_") or campaign_id.begins_with("region_")) and batch<3: visible=false
+		if (campaign_id.begins_with("random_") or campaign_id.begins_with("world_")) and batch<4: visible=false
+		if batch<2 and campaign_id.begins_with("c") and not campaign_id.begins_with("c2:"): visible=false
 		if kind == "injured" and rescued:
-			title = title.trim_prefix("受伤的")
+			title = title.trim_prefix("受伤的").trim_prefix("负伤的")
 			interaction_label = "交谈"
 		if _actor != null:
 			var wounded := kind == "injured" and not rescued
@@ -149,6 +160,8 @@ class CampaignObject extends Node2D:
 		queue_redraw()
 
 	func _process(delta: float) -> void:
+		if not visible:
+			return
 		_poll += delta
 		if _poll < 0.16:
 			return
@@ -202,6 +215,8 @@ class CampaignObject extends Node2D:
 		match kind:
 			"record":
 				draw_rect(Rect2(-16,-13,30,18),Color("795c43"))
+				if taken:
+					return
 				draw_rect(Rect2(-12,-19,24,24),Color("e6d6a6"))
 				for y in [-14,-9,-4]:
 					draw_rect(Rect2(-8,y,15,2),Color("967958"))
@@ -218,6 +233,12 @@ class CampaignObject extends Node2D:
 				draw_rect(Rect2(-23,-24,46,25),Color("787e70"))
 				draw_rect(Rect2(-18,-21,36,3),Color("b2b9a0"))
 				draw_circle(Vector2(0,-10),5,Color("81d3b8") if gate_open else Color("766552"))
+			"shelter":
+				draw_texture_rect(SHELTER,Rect2(-80,-176,160,160),false)
+				draw_rect(Rect2(-30,-10,60,18),Color("87936e"))
+			"flag":
+				draw_rect(Rect2(-3,-58,6,62),Color("89623f"))
+				draw_colored_polygon(PackedVector2Array([Vector2(3,-56),Vector2(31,-50),Vector2(23,-33),Vector2(3,-39)]),Color("5fab92") if repaired else Color("b89b66"))
 			"beacon":
 				_draw_beacon()
 			"survey", "valve", "brazier":
@@ -247,8 +268,24 @@ class CampaignObject extends Node2D:
 		var color := Color("78d5c3") if activated else Color("9eb1a1")
 		draw_colored_polygon(PackedVector2Array([Vector2(-21,5),Vector2(-17,-31),Vector2(0,-43),Vector2(18,-28),Vector2(22,6)]),Color("687869"))
 		draw_line(Vector2(-15,-27),Vector2(0,-38),Color("a4b09b"),3)
-		var direction := Vector2.UP if campaign_id.ends_with("north") else (Vector2.RIGHT if campaign_id.ends_with("east") else Vector2.LEFT)
 		var origin := Vector2(0,-17)
+		if campaign_id.ends_with("center"):
+			draw_arc(origin,8,0,TAU,12,color,3)
+			draw_circle(origin,3,color)
+			return
+		if campaign_id.ends_with("leaf"):
+			draw_colored_polygon(PackedVector2Array([origin+Vector2(-9,5),origin+Vector2(-5,-7),origin+Vector2(8,-9),origin+Vector2(5,4)]),color)
+			draw_line(origin+Vector2(-8,9),origin+Vector2(4,-5),Color("577560"),2)
+			return
+		if campaign_id.ends_with("stone"):
+			draw_polyline(PackedVector2Array([origin+Vector2(0,-10),origin+Vector2(10,0),origin+Vector2(0,9),origin+Vector2(-10,0),origin+Vector2(0,-10)]),color,3)
+			return
+		if campaign_id.ends_with("lamp"):
+			draw_rect(Rect2(origin+Vector2(-8,0),Vector2(16,4)),color)
+			draw_line(origin+Vector2(0,-11),origin+Vector2(0,-2),color,4)
+			draw_line(origin+Vector2(0,3),origin+Vector2(0,10),color,3)
+			return
+		var direction := Vector2.UP if campaign_id.ends_with("north") else (Vector2.RIGHT if campaign_id.ends_with("east") else Vector2.LEFT)
 		draw_line(origin-direction*8,origin+direction*9,color,3)
 		draw_line(origin+direction*9,origin+direction*3+direction.orthogonal()*5,color,3)
 		draw_line(origin+direction*9,origin+direction*3-direction.orthogonal()*5,color,3)
@@ -274,7 +311,7 @@ class CampaignGround extends Node2D:
 	var ending := ""
 
 	func refresh_state(snapshot: Dictionary) -> void:
-		restored = bool(snapshot.get("repaired",{}).get("c%d:beacon" % (CampaignLayout.TERRAINS.find(terrain)+1),false))
+		restored = bool(snapshot.get("repaired",{}).get("c%d:beacon" % ({"forest":2,"swamp":3,"hill":4,"snow":5,"lava":6}.get(terrain,1)),false))
 		ending = str(snapshot.get("ending",""))
 		queue_redraw()
 

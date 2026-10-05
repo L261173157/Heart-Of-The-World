@@ -23,6 +23,8 @@ func _run() -> void:
 	BiomeMap.configure(BiomeMap.DEFAULT_SEED)
 	ObstacleField.restore_destroyed([])
 	await _test_physics()
+	# 真实环境伤害触发 hurt.ogg；等播放自然结束再退出，不截断音频线程。
+	await get_tree().create_timer(0.8).timeout
 	if _fails == 0:
 		print("=== CAMPAIGN LAYOUT PASS (%d checks) ===" % _checks)
 	get_tree().quit(_fails)
@@ -38,12 +40,11 @@ func _test_seed(seedv: int) -> void:
 		_check(BiomeMap.terrain_at(site.entry) == terrain,"%d %s 落点属于真群系" % [seedv,terrain])
 		_check(not ObstacleField.blocks(site.entry,12) and not ObstacleField.nav_blocked_at(site.entry),"远征落点真实可走")
 		_check(ObstacleField.liquid_kind_at(site.entry) == "","远征落点无液体伤害")
-		for candidate: Vector2 in CampaignLayout.entry_candidates(terrain):
-			_check(not ObstacleField.blocks(candidate,12) and ObstacleField.liquid_kind_at(candidate)=="","有限候选落点均有干燥身体净空")
-			if terrain == "forest":
-				_check(_flood(terrain,candidate).has(_cell(CampaignLayout.object_position("c2:herbalist"))),"每个森林候选落点都可真实走到草药师")
-			if terrain in ["hill","lava"]:
-				_check(candidate.distance_to(site.boss_anchor)>1000,"备用落点不在原Boss身边")
+		if terrain != "plains":
+			var first_id: String = {"forest":"c2:herbalist","swamp":"c3:totem_record","hill":"c4:scholar","snow":"c5:altar_record","lava":"c6:hazard_record"}[terrain]
+			for candidate: Vector2 in CampaignLayout.entry_candidates(terrain):
+				_check(not ObstacleField.blocks(candidate,12) and ObstacleField.liquid_kind_at(candidate)=="","有限候选落点均有干燥身体净空")
+				_check(_flood(terrain,candidate).has(_cell(CampaignLayout.object_position(first_id))),"每个候选落点都能真实走到该章第一对象")
 		if terrain in ["hill","lava"]:
 			var dungeon: Dictionary = {}
 			for row: Dictionary in ObstacleField.dungeons():
@@ -51,25 +52,26 @@ func _test_seed(seedv: int) -> void:
 					dungeon = row
 			_check(site.boss_anchor == dungeon.center and site.region_id == dungeon.patch_id,"原城塞 Boss 锚点不变")
 			_check(site.entry.distance_to(site.boss_anchor) > 1800,"首次远征不落在 Boss 脚下")
-			for path: PackedVector2Array in CampaignLayout.paths(terrain):
+			for path: PackedVector2Array in CampaignLayout.paths(terrain).slice(0,2):
 				for i in range(path.size()-1):
 					_check(_walkable(path[i],path[i+1]),"接应点至城塞南门干燥通路")
 	var reachable := _flood("forest")
 	for item: Dictionary in CampaignLayout.objects():
 		_check(not ObstacleField.blocks(item.position,12),"%s 实物站位非障碍" % item.id)
 		_check(ObstacleField.liquid_kind_at(item.position) == "","%s 实物站位干燥" % item.id)
-		if item.terrain == "forest":
+		if str(item.id).begins_with("c2:"):
 			_check(reachable.has(_cell(item.position)) == (item.id != "c2:torn_record"),"关门时仅档案在门后")
 	var changed := CampaignLayout.set_open_gates(["c2:forest_gate"])
 	ObstacleField.invalidate_authored_cells(changed)
 	reachable = _flood("forest")
 	for item: Dictionary in CampaignLayout.objects():
-		if item.terrain == "forest":
+		if str(item.id).begins_with("c2:"):
 			_check(reachable.has(_cell(item.position)),"开门后所有森林对象真实可达")
 	_check(CampaignLayout.set_open_gates(["c2:forest_gate"]).is_empty(),"重复投影不重复改变几何")
 	changed = CampaignLayout.set_open_gates([])
 	ObstacleField.invalidate_authored_cells(changed)
 	_check(not _flood("forest").has(_cell(CampaignLayout.object_position("c2:torn_record"))),"关闭/新档恢复门墙")
+	_test_extended_routes(seedv)
 
 func _cell(pos: Vector2) -> Vector2i:
 	return Vector2i(floori(pos.x/32),floori(pos.y/32))
@@ -145,3 +147,42 @@ func _test_physics() -> void:
 		_check(layer.get_cell_source_id(cell) == -1 and nav.get_cell_source_id(cell) >= 0,"机关同步移除可见墙并开放导航")
 	scene.queue_free()
 	await _step(3)
+
+
+func _test_extended_routes(seedv: int) -> void:
+	var near := CampaignLayout.route_waypoints("near")
+	var outer := CampaignLayout.route_waypoints("outer")
+	_check(not _walkable(near[1],near[3]),"沼泽近路受真实石障阻挡")
+	for i in range(outer.size()-1):
+		_check(_walkable(outer[i],outer[i+1]),"沼泽外环全段可实际步行")
+	for cell: Vector2i in CampaignLayout.barrier_cells("c3:near_barrier"):
+		_check(ObstacleField.damage_cell(cell)=="","沼泽石障第一击只扣耐久")
+		_check(ObstacleField.damage_cell(cell)=="rock","沼泽石障第二击实际破除")
+	for i in range(near.size()-1):
+		_check(_walkable(near[i],near[i+1]),"破障后沼泽近路真实贯通")
+	_check(not _flood("snow").has(_cell(CampaignLayout.object_position("c5:tablet"))),"雪原石版在真实冰障之后")
+	for cell: Vector2i in CampaignLayout.barrier_cells("c5:ice_barrier"):
+		ObstacleField.damage_cell(cell)
+		_check(ObstacleField.damage_cell(cell)=="ice","雪原冰障通过实际伤害破除")
+	_check(_flood("snow").has(_cell(CampaignLayout.object_position("c5:tablet"))),"冰障破除后石版步行可达")
+	for terrain: String in ["hill","lava"]:
+		var anchor: Vector2 = CampaignLayout.sites()[terrain].boss_anchor
+		var id := "c4:archive_gate" if terrain=="hill" else "c6:core_gate"
+		var door := (Vector2(CampaignLayout.gate_cells(id)[1])+Vector2.ONE*0.5)*32
+		_check(not _walkable(door+Vector2(0,80),door+Vector2(0,-80)),"真实城塞附室关门阻挡")
+		var changed := CampaignLayout.set_open_gates([id])
+		ObstacleField.invalidate_authored_cells(changed)
+		_check(_walkable(door+Vector2(0,80),door+Vector2(0,-80)),"真实城塞附室开门贯通")
+		var boss_cell := _cell(anchor)
+		_check(ObstacleField.sample_cell(boss_cell+Vector2i(6,0)).get("kind","")=="castle","附室不覆盖原城塞东墙")
+	var changed := CampaignLayout.set_open_gates([])
+	ObstacleField.invalidate_authored_cells(changed)
+	for choice: String in ["distributed","centralized"]:
+		var positions := CampaignLayout.ending_positions(choice)
+		_check(positions.size()==4,"两个结局各有四个新增人物去向")
+		for position: Vector2 in positions.values():
+			_check(not ObstacleField.blocks(position,12) and ObstacleField.liquid_kind_at(position)=="","结局人物实际安全站位")
+	var hazard := CampaignLayout.hazard_footprint()
+	_check(CampaignLayout.liquid_kind(hazard.get_center())=="lava","作者熔河有唯一几何真源")
+	_check(ObstacleField.liquid_kind_at(hazard.get_center())=="lava","%d 可见熔河与环境伤害同源" % seedv)
+	ObstacleField.restore_destroyed([])

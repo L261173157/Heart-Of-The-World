@@ -464,6 +464,8 @@ static func coverage_in(rect: Rect2) -> float:
 static func liquid_kind_in(terrain: String, pos: Vector2, patch_id: String,
 		blocking := false) -> String:
 	_ensure()
+	var campaign_liquid := CampaignLayout.liquid_kind(pos)
+	if not campaign_liquid.is_empty(): return campaign_liquid
 	if OutpostLayout.reserved_ground(pos) or CampaignLayout.reserved_ground(pos):
 		return ""
 	var rule: Dictionary = LIQUID_RULES.get(terrain, {})

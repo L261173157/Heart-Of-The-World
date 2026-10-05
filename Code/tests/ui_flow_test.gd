@@ -135,6 +135,10 @@ func _test_menu_fresh() -> void:
 
 ## 进世界 → 玩家死亡 → 自动重生
 func _test_world_death_respawn() -> void:
+	GameState.world_seed = int(OS.get_environment("HOTW_UI_FLOW_SEED")) if OS.has_environment("HOTW_UI_FLOW_SEED") else BiomeMap.DEFAULT_SEED
+	var rng_seed := int(OS.get_environment("HOTW_UI_FLOW_RNG_SEED")) if OS.has_environment("HOTW_UI_FLOW_RNG_SEED") else GameState.world_seed
+	seed(rng_seed)
+	print("UI_FLOW_SEED=%d RNG_SEED=%d" % [GameState.world_seed, rng_seed])
 	_world = MAIN_SCENE.instantiate()
 	add_child(_world)
 	await get_tree().process_frame
@@ -274,14 +278,9 @@ func _test_world_death_respawn() -> void:
 func _test_resume_flow() -> void:
 	# 离开前停在熔岩区且带伤/耗蓝；继续后应原地恢复，不能免费传回出生点回满。
 	# v4 大世界：熔岩 = 距出生角最远的熔岩斑块中心（确定性坐标）。
-	# 存档点取斑块中心 +300px，须同时满足两个约束：
-	#   1) 避开盘踞斑块中心的 Boss 身体（ guardian 场景 42×38 × boss_size_scale
-	#      2.2 + 生成 ±26px 抖动，身体最多延伸到中心外 ~90px）
-	#   2) 严格落在障碍抑制区（PATCH_CLEAR 600px）内——偏移 600 会恰好压在
-	#      边界上，部分种子下该格不受抑制且判为障碍，恢复路径的
-	#      ObstacleField.nudge_free 会把玩家推移 ≥40px，位置断言偶发挂
-	#      （300 个种子实测 +600 命中 24 次、+300 恒 0）；300px 两个约束都满足
-	var lava_center: Vector2 = _WorldConfig.farthest_terrain_center("lava") + Vector2(300.0, 0.0)
+	# 原+300px东方坐标现被新增的中枢附室围住，不再是普通可达存档点。
+	# 此处取原城塞敞开南门外，锁门内旧坐标由campaign_resume_navigation另测。
+	var lava_center: Vector2 = _WorldConfig.farthest_terrain_center("lava") + Vector2(0.0, 300.0)
 	var old_player: Player = get_tree().get_first_node_in_group("player") as Player
 	old_player.global_position = lava_center
 	old_player.current_hp = 87.0
