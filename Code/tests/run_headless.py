@@ -14,6 +14,11 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "campaign_reward_contract": (["-s", "tests/campaign_reward_contract_test.gd"], "CAMPAIGN_REWARD_CONTRACT_TEST PASS"),
+    "campaign_ledger": (["-s", "tests/campaign_ledger_test.gd"], "CAMPAIGN_LEDGER_TEST PASS"),
+    "campaign_layout": (["res://tests/campaign_layout_test.tscn", "--quit-after", "100000"], "=== CAMPAIGN LAYOUT PASS"),
+    "campaign_acceptance": (["res://tests/campaign_acceptance_test.tscn", "--quit-after", "100000"], "=== CAMPAIGN ACCEPTANCE PASS"),
+    "campaign_lifecycle": ([str(PROJECT / "tests/run_campaign_lifecycle_test.py")], "=== CAMPAIGN LIFECYCLE PASS"),
     "outpost_live_targets": (["res://tests/outpost_live_targets_test.tscn", "--quit-after", "100000"], "=== OUTPOST LIVE TARGETS PASS"),
     "outpost_live_targets_lifecycle": ([str(PROJECT / "tests/run_outpost_live_targets_lifecycle_test.py")], "=== OUTPOST LIVE TARGETS LIFECYCLE PASS"),
     "outpost_ledger": (["res://tests/outpost_ledger_test.tscn", "--quit-after", "10000"], "=== OUTPOST LEDGER PASS"),
@@ -116,7 +121,7 @@ def unexpected_errors(case: str, output: str) -> list[str]:
 
 def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str],
              godot: str, logs: Path, timeout: int) -> bool:
-    command = ([sys.executable, args[0], godot] if name in {"save_lifecycle", "quest_lifecycle", "exploration_lifecycle", "camp_pilot_lifecycle", "outpost_chapter_lifecycle", "outpost_live_targets_lifecycle"}
+    command = ([sys.executable, args[0], godot] if name in {"save_lifecycle", "quest_lifecycle", "exploration_lifecycle", "camp_pilot_lifecycle", "outpost_chapter_lifecycle", "outpost_live_targets_lifecycle", "campaign_lifecycle"}
                else [godot, "--headless", "--path", str(PROJECT), *args])
     print(f"[{name}] 开始", flush=True)
     with subprocess.Popen(command, env=env, stdout=subprocess.PIPE,

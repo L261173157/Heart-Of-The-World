@@ -137,6 +137,7 @@ func _enter_tree() -> void:
 	# 父节点先入树、子节点先 ready：必须在 Player 恢复坐标并 nudge_free 之前
 	# 配好种子和摧毁覆盖层，否则会按上一世界的墙把合法存档位置挤走。
 	BiomeMap.configure(GameState.world_seed)
+	CampaignLayout.set_open_gates(CampaignQuest.open_gates_from(GameState.campaign_quest))
 	ObstacleField.restore_destroyed(GameState.destroyed_cells)
 
 
@@ -146,6 +147,7 @@ func _ready() -> void:
 	_hit_stop = HIT_STOP_CONTROLLER.new()
 	add_child(_hit_stop)
 	EventBus.return_to_town_requested.connect(_on_return_to_town_requested)
+	EventBus.campaign_travel_requested.connect(_on_campaign_travel_requested)
 	EventBus.player_died.connect(_cancel_town_return)
 	stream_all = OS.get_environment("HOTW_TEST_STREAM_ALL") == "1"
 	_sim = EcologySim.new()
@@ -239,6 +241,9 @@ func _ready() -> void:
 	add_child(outpost_world)
 	if quest_manager.has_method("outpost_visual_state"):
 		outpost_world.refresh_state(quest_manager.outpost_visual_state())
+	var campaign_world := preload("res://scripts/main/campaign_world.gd").new()
+	add_child(campaign_world)
+	campaign_world.refresh_state(quest_manager.campaign_visual_state())
 	# NA fx 全量通道（美术 v5 M-C）：事件侧只发 fx_requested，本层统一播条带
 	var fx_layer := FxLayer.new()
 	fx_layer.name = "FxLayer"
@@ -461,11 +466,12 @@ func _add_house_door(pos: Vector2, pocket_idx: int) -> void:
 
 ## 淡入后原子迁移身体、阴影、相机、流式窗和位置快照。过场锁住输入，
 ## 落点与出口区分离，不靠任意远方检查点，也不恢复资源或返还技能冷却。
-func _fade_teleport(player: Node2D, target: Vector2) -> void:
+func _fade_teleport(player: Node2D, target: Vector2, campaign_arrival: String = "") -> void:
 	if _teleporting or not is_instance_valid(player) or player.get("_is_dead"):
 		return
 	_cancel_town_return()
 	_teleporting = true
+	var departure_hp: float = float(player.get("current_hp"))
 	var previous_mode := player.process_mode
 	player.process_mode = Node.PROCESS_MODE_DISABLED
 	TouchInput.reset()
@@ -474,7 +480,17 @@ func _fade_teleport(player: Node2D, target: Vector2) -> void:
 	tween.tween_callback(func() -> void:
 		if not is_instance_valid(player) or player.get("_is_dead"):
 			return
-		player.teleport_to(target)
+		var arrival_target := target
+		if not campaign_arrival.is_empty():
+			var manager := get_tree().get_first_node_in_group("quest_manager") as QuestManager
+			if float(player.get("current_hp")) < departure_hp or _campaign_hostiles_near(player):
+				EventBus.hint_requested.emit("出发受到攻击，远征已取消；线索和接取记录保留")
+				return
+			arrival_target = manager._campaign.travel_destination(campaign_arrival) if manager != null else Vector2.INF
+			if not arrival_target.is_finite():
+				EventBus.hint_requested.emit("接应点附近出现敌人，远征已取消；请稍后重新核对")
+				return
+		player.teleport_to(arrival_target)
 		var streamer := get_node_or_null("ChunkStreamer") as ChunkStreamer
 		if streamer != null:
 			streamer._refresh_window()
@@ -486,11 +502,13 @@ func _fade_teleport(player: Node2D, target: Vector2) -> void:
 		_fog_last_cell = Vector2i(-1, -1)
 		_reveal_fog()
 		_region_candidate_id = ""
-		var region: SimRegion = _sim.region_of_point(target)
+		var region: SimRegion = _sim.region_of_point(arrival_target)
 		if region != null:
 			_commit_region(region.id)
 		GameState.player_snapshot = player.save_snapshot()
 		GameState._queue_save()
+		if not campaign_arrival.is_empty():
+			EventBus.campaign_travel_completed.emit(campaign_arrival)
 		if target == WorldConfig.spawn_pos():
 			EventBus.hint_requested.emit("已返回营地"))
 	tween.tween_interval(0.08)
@@ -1794,3 +1812,30 @@ func _make_dmg_style(font_size: int, color: Color) -> LabelSettings:
 	style.outline_size = 6
 	style.outline_color = Color(0, 0, 0, 0.6)
 	return style
+
+
+## 远征线路只接受任务层已获线索；既有同步传送不补血、不重置生态或冷却。
+func _on_campaign_travel_requested(terrain: String, origin_id: String) -> void:
+	var manager := get_tree().get_first_node_in_group("quest_manager") as QuestManager
+	var player := get_tree().get_first_node_in_group("player") as Player
+	if manager == null or player == null or _teleporting or get_tree().paused: return
+	if not manager._campaign.can_travel(terrain, origin_id):
+		EventBus.hint_requested.emit("路线或出发位置已变化，请回到联络员身边确认")
+		return
+	if not player.can_begin_town_return() or _campaign_hostiles_near(player):
+		EventBus.hint_requested.emit("附近仍在交战，请脱离战斗并停下后再出发")
+		return
+	var destination := manager._campaign.travel_destination(terrain)
+	if not destination.is_finite() or ObstacleField.blocks(destination, 16.0) or not ObstacleField.liquid_kind_at(destination).is_empty():
+		EventBus.hint_requested.emit("接应位置目前不可安全到达，路线记录保留")
+		return
+	_fade_teleport(player, destination, terrain)
+
+func _campaign_hostiles_near(player: Node2D) -> bool:
+	for node: Node in get_tree().get_nodes_in_group("monsters"):
+		if not node is MonsterBase: continue
+		var monster := node as MonsterBase
+		if monster.state == MonsterBase.S_CORPSE or not monster.is_visible_in_tree(): continue
+		if monster.global_position.distance_to(player.global_position) < 420.0 and monster.state in [MonsterBase.S_CHASE, MonsterBase.S_ATTACK]:
+			return true
+	return false

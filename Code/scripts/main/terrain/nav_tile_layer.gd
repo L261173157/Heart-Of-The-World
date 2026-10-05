@@ -42,6 +42,7 @@ func _init() -> void:
 func _ready() -> void:
 	# 障碍被摧毁：立即补可走格（导航网格更新后怪物的旧路径会在下次重铺时修正）
 	EventBus.obstacle_destroyed.connect(_on_obstacle_destroyed)
+	EventBus.campaign_geometry_changed.connect(_on_campaign_geometry_changed)
 
 
 func _on_obstacle_destroyed(cell: Vector2i, _pos: Vector2, _kind: String) -> void:
@@ -121,3 +122,8 @@ func _chunk_dist2(a: Vector2i, b: Vector2i) -> int:
 	var dx := a.x - b.x
 	var dy := a.y - b.y
 	return dx * dx + dy * dy
+
+
+func _on_campaign_geometry_changed(cells: Array) -> void:
+	for cell: Vector2i in cells:
+		_on_obstacle_destroyed(cell, Vector2.ZERO, "")
