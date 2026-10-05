@@ -15,6 +15,82 @@ func _freeze_new_actor(node: Node) -> void:
 		if node.is_node_ready(): node.set_physics_process(false)
 		else: node.ready.connect(func() -> void: node.set_physics_process(false), CONNECT_ONE_SHOT)
 
+func _walk_query() -> PhysicsShapeQueryParameters2D:
+	var query := PhysicsShapeQueryParameters2D.new()
+	var shape := CircleShape2D.new()
+	shape.radius = 12.0
+	query.shape = shape
+	query.collision_mask = 3
+	query.exclude = [_player.get_rid()]
+	return query
+
+func _walk_blocked(at: Vector2, query: PhysicsShapeQueryParameters2D) -> bool:
+	if ObstacleField.blocks(at, 12.0): return true
+	query.transform = Transform2D(0.0, at)
+	return not _world.get_world_2d().direct_space_state.intersect_shape(query, 1).is_empty()
+
+## 战役场景有原生态演员与原城镇/城塞实心建筑。规划也看真实物理体；不挪演员、不关碰撞。
+func _walk_to(goal: Vector2, label: String, arrival := 18.0) -> bool:
+	_hud._close_dialogue()
+	TouchInput.reset()
+	var query := _walk_query()
+	var previous := _player.global_position
+	var stuck_origin := previous
+	var cursor := 0
+	var stuck_frames := 0
+	var path := PackedVector2Array()
+	var attempts := 0
+	_player.set_physics_process(true)
+	for _frame in 7000:
+		if _player.global_position.distance_to(goal) <= arrival: break
+		if path.is_empty():
+			attempts += 1
+			if attempts > 4: break
+			var a := Vector2i((_player.global_position / 32.0).floor())
+			var b := Vector2i((goal / 32.0).floor())
+			var lo := Vector2i(mini(a.x,b.x)-28, mini(a.y,b.y)-28)
+			var hi := Vector2i(maxi(a.x,b.x)+29, maxi(a.y,b.y)+29)
+			var grid := AStarGrid2D.new()
+			grid.region = Rect2i(lo,hi-lo)
+			grid.cell_size = Vector2(32,32)
+			grid.offset = Vector2(16,16)
+			grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
+			grid.update()
+			for y in range(lo.y,hi.y):
+				for x in range(lo.x,hi.x):
+					var cell := Vector2i(x,y)
+					grid.set_point_solid(cell,_walk_blocked((Vector2(cell)+Vector2.ONE*0.5)*32.0,query))
+			grid.set_point_solid(a,false)
+			if grid.is_point_solid(b): break
+			path = grid.get_point_path(a,b)
+			if path.is_empty(): break
+			path.append(goal)
+			cursor = 1 if path.size()>1 else 0
+			stuck_origin = _player.global_position
+			stuck_frames = 0
+		while cursor < path.size()-1 and _player.global_position.distance_to(path[cursor]) < 12.0: cursor += 1
+		TouchInput.joystick_active = true
+		TouchInput.move_vector = _player.global_position.direction_to(path[cursor])
+		await get_tree().physics_frame
+		_freeze_monsters()
+		var moved := _player.global_position.distance_to(previous)
+		if moved >= 32.0: _check(false,label+"出现非步行单帧跳跃")
+		_walked += moved
+		previous = _player.global_position
+		stuck_frames += 1
+		if stuck_frames >= 90:
+			if _player.global_position.distance_to(stuck_origin) < 4.0: path.clear()
+			stuck_origin = _player.global_position
+			stuck_frames = 0
+	TouchInput.reset()
+	_player.set_physics_process(false)
+	var arrived := _player.global_position.distance_to(goal) <= arrival
+	_check(arrived,label+"：实际角色绕过现存物理体行走抵达")
+	if not arrived:
+		print("CAMPAIGN_WALK_BLOCKER ", JSON.stringify({"label":label,"goal":[goal.x,goal.y],
+			"actual":[_player.global_position.x,_player.global_position.y],"replans":attempts}))
+	return arrived
+
 func _mount(fresh := false) -> void:
 	await super._mount(fresh)
 	_player.set_process(false)
@@ -147,8 +223,14 @@ func _walk_home_context(use_recall := false) -> bool:
 
 func _depart_forest() -> bool:
 	if not await _walk_home_context(): return false
+	_check(_campaign._origin_pos("home:patrol") == _keeper().global_position, "远征发起点跟随真正巡守演员，不能使用已过时的出生坐标")
 	_keeper().interact()
 	await _frames()
+	if _hud._dialogue_kind != "camp_choice":
+		print("CAMPAIGN_DEPART_DEBUG ", JSON.stringify({"kind":_hud._dialogue_kind,"text":_hud._dialogue_text.text,
+			"player":[_player.global_position.x,_player.global_position.y],"npc":[_keeper().global_position.x,_keeper().global_position.y],
+			"static_origin":[WorldConfig.spawn_pos().x-100,WorldConfig.spawn_pos().y+75],"has_clue":_campaign.has_first_clue(),
+			"at_origin":_campaign._at_origin("home:patrol"),"visible":_player.visible,"paused":get_tree().paused}))
 	_check(_hud._dialogue_kind == "camp_choice", "巡守提供明确战役远征选择")
 	var button := _option("campaign|depart|forest|home:patrol")
 	_check(button != null and not button.disabled, "林地线索解锁真实远征按钮")

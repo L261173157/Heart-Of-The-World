@@ -281,8 +281,9 @@ func _departure_origin() -> String:
 
 func _at_origin(id: String) -> bool:
 	if id == "home:patrol":
-		var player := _player()
-		return player != null and player.is_visible_in_tree() and player.global_position.distance_to(WorldConfig.spawn_pos() + Vector2(-100,75)) <= 110.0
+		var patrol := _home_patrol()
+		var player := _player() as Player
+		return patrol != null and not patrol.is_queued_for_deletion() and patrol.is_visible_in_tree() and player != null and player.is_visible_in_tree() and not player._is_dead and player.global_position.distance_to(patrol.global_position) < 96.0 and player._attack_has_line_of_sight(patrol.global_position)
 	return id in _station_origins() and _at_object(id)
 
 func travel_options() -> Array:
@@ -372,7 +373,10 @@ func _chapter_for_object(object_id: String) -> Dictionary:
 	return {}
 
 func _origin_pos(origin_id: String) -> Vector2:
-	return WorldConfig.spawn_pos()+Vector2(-100,75) if origin_id == "home:patrol" else CampaignLayout.object_position(origin_id)
+	if origin_id=="home:patrol":
+		var patrol := _home_patrol()
+		return patrol.global_position if patrol!=null else Vector2.INF
+	return CampaignLayout.object_position(origin_id)
 
 func _at_object(object_id: String) -> bool:
 	for node: Node in get_tree().get_nodes_in_group("campaign_objects"):
@@ -432,3 +436,11 @@ func travel_destination(terrain: String) -> Vector2:
 				break
 		if safe: return point
 	return Vector2.INF
+
+
+## 出发交谈核验实际营地巡守，不能用原始摆放坐标替代已经避障/移动的居民。
+func _home_patrol() -> Node2D:
+	for node: Node in get_tree().get_nodes_in_group("npcs"):
+		if node is Node2D and node.get("landmark_id")=="camp_ecology" and node.get("quest_kind")=="outpost":
+			return node as Node2D
+	return null
