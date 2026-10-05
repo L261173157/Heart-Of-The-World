@@ -17,6 +17,7 @@ const Outpost := preload("res://scripts/main/outpost_quest.gd")
 const Inventory := preload("res://scripts/main/camp_quest_inventory.gd")
 var _camp: CampQuest
 var _outpost: OutpostQuest
+var _campaign: CampaignQuest
 var _retrying_rewards := false
 
 ## 库存信号同步发出，交付会再次触发本管理器；守卫避免重复扣料/重复奖励。
@@ -50,6 +51,9 @@ func _ready() -> void:
 	_outpost.changed.connect(_push_hud)
 	add_child(_outpost)
 	_camp.changed.connect(_outpost.sync_legacy_contract)
+	_campaign = preload("res://scripts/main/campaign_quest.gd").new()
+	_campaign.changed.connect(_push_hud)
+	add_child(_campaign)
 	EventBus.inventory_changed.connect(_retry_pending_rewards)
 	_reconcile_hunts()
 	_reconcile_collect()
@@ -67,6 +71,8 @@ func _on_dialogue_confirmed(quest: Dictionary) -> void:
 ## 返回 {"kind":"quest","quest":{...},"text":...} 或 {"kind":"info","text":...}
 func offer(landmark_id: String, quest_kind: String, giver: String) -> Dictionary:
 	if quest_kind == "outpost":
+		if _campaign != null and _campaign.has_first_clue():
+			return _campaign.departure_payload("home:patrol", giver)
 		return _outpost.offer(giver)
 	if landmark_id == Camp.Data.LANDMARK:
 		return _camp.offer(giver)
@@ -97,6 +103,8 @@ func offer(landmark_id: String, quest_kind: String, giver: String) -> Dictionary
 
 ## 确认接取（对话按"是"后调用）：offer 与 accept 分离保证生成确定性不漂移
 func accept(quest: Dictionary) -> String:
+	if quest.get("kind", "") == "campaign":
+		return _campaign.accept_chapter(str(quest.get("chapter", "")))
 	if quest.get("id", "") == Outpost.Data.ID:
 		return _outpost.accept()
 	if quest.get("id", "") == Camp.Data.ID:
@@ -390,6 +398,11 @@ func _on_track_requested(quest_id: String) -> void:
 		GameState._queue_save()
 		_push_hud()
 		return
+	if _campaign != null and _campaign.owns(quest_id):
+		GameState.tracked_quest_id = quest_id
+		GameState._queue_save()
+		_push_hud()
+		return
 	if quest_id == Outpost.Data.ID and _outpost.is_active():
 		GameState.tracked_quest_id = quest_id
 		GameState._queue_save()
@@ -416,6 +429,7 @@ func _on_claim_requested(quest_id: String) -> void:
 
 ## 只从真实活动单结算，忽略气泡里的旧奖励/库存快照；重复点击不会认领下一单。
 func claim(quest_id: String) -> String:
+	if _campaign != null and _campaign.owns(quest_id): return _campaign.claim(quest_id)
 	if quest_id == Outpost.Data.ID:
 		return _outpost.claim()
 	if quest_id == Camp.Data.ID:
@@ -453,6 +467,7 @@ func _on_abandon_requested(quest_id: String) -> void:
 
 
 func abandon(quest_id: String) -> String:
+	if _campaign != null and _campaign.owns(quest_id): return _campaign.abandon(quest_id)
 	if quest_id == Outpost.Data.ID:
 		return _outpost.abandon()
 	if quest_id == Camp.Data.ID:
@@ -590,6 +605,8 @@ func _push_hud() -> void:
 		active.append(_camp.snapshot())
 	if _outpost != null and _outpost.is_active():
 		active.append(_outpost.snapshot())
+	if _campaign != null:
+		active.append_array(_campaign.snapshots())
 	var selected: Dictionary = {}
 	for quest: Dictionary in active:
 		if str(quest["id"]) == GameState.tracked_quest_id:
@@ -608,6 +625,10 @@ func _push_hud() -> void:
 	if selected.is_empty():
 		if not active.is_empty():
 			EventBus.quest_updated.emit("委托未追踪 · 点击查看已有任务")
+			return
+		var campaign_summary := CampaignQuest.completed_summary(GameState.campaign_quest)
+		if not campaign_summary.is_empty():
+			EventBus.quest_updated.emit(campaign_summary)
 			return
 		if _outpost != null and GameState.outpost_quest.get("stage", "") == "completed" and GameState.outpost_quest.get("last_summary", false):
 			EventBus.quest_updated.emit(_outpost.receipt_text())
@@ -662,3 +683,10 @@ func legacy_camp_offer(giver: String = "营地巡守") -> Dictionary:
 	var payload := _camp.offer(giver)
 	payload["back_action"] = "outpost:menu"
 	return payload
+
+
+func campaign_visual_state() -> Dictionary:
+	return _campaign.visual_state() if _campaign != null else {}
+
+func campaign_action(id: String) -> String:
+	return _campaign.action(id)

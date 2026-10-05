@@ -67,6 +67,7 @@ func _ready() -> void:
 		streamer.chunk_ready.connect(_on_chunk_ready)
 		streamer.chunk_freed.connect(_on_chunk_freed)
 	EventBus.obstacle_destroyed.connect(_on_obstacle_destroyed)
+	EventBus.campaign_geometry_changed.connect(_on_campaign_geometry_changed)
 
 
 func _exit_tree() -> void:
@@ -209,3 +210,29 @@ func _on_chunk_ready(origin: Vector2i) -> void:
 		var art: Dictionary = VISUAL_RULES.appearance(c["cell"], c["kind"])
 		_lay_queue.append({"origin": origin, "cell": c["cell"], "source": art["source"],
 			"atlas": art["atlas"], "alternative": art["alternative"], "r": c["r"]})
+
+
+## 开门是机关结果，不是玩家破坏事件；同步清理排队格与实际碰撞。
+func _on_campaign_geometry_changed(cells: Array) -> void:
+	for cell: Vector2i in cells:
+		if not ObstacleField.sample_cell(cell).is_empty(): continue
+		erase_cell(cell)
+		for registry: Dictionary in [_bodies, _laying]:
+			for entry: Dictionary in registry.values():
+				var shapes: Dictionary = entry["shapes"]
+				if shapes.has(cell):
+					(shapes[cell] as CollisionShape2D).set_deferred("disabled", true)
+					(shapes[cell] as Node).queue_free()
+					shapes.erase(cell)
+		# 铺设队列可能还未生成这块的碰撞，扣除对应剩余数避免永远不提交。
+		for i in range(_lay_queue.size() - 1, -1, -1):
+			if _lay_queue[i]["cell"] != cell: continue
+			var origin: Vector2i = _lay_queue[i]["origin"]
+			_lay_queue.remove_at(i)
+			if _laying.has(origin):
+				_laying[origin]["remaining"] = int(_laying[origin]["remaining"]) - 1
+				if int(_laying[origin]["remaining"]) == 0:
+					var entry: Dictionary = _laying[origin]
+					add_child(entry["body"])
+					_bodies[origin] = {"body": entry["body"], "shapes": entry["shapes"]}
+					_laying.erase(origin)

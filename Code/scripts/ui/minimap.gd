@@ -278,7 +278,7 @@ func _select_target(candidates: Array[Dictionary]) -> Dictionary:
 		var position := Vector2(float(clue[0]), float(clue[1]))
 		var visible := _is_visible_position(position)
 		var remembered := str(quest.get("ui_knowledge", "npc_intel")) == "last_seen" or _seen_targets.has(id)
-		var label := str(quest.get("target_name", "前哨线索")) if kind == "outpost" else ("返回营地" if returning or stage == "return" else "调查据点")
+		var label := str(quest.get("target_name", "前哨线索")) if kind in ["outpost", "campaign"] else ("返回营地" if returning or stage == "return" else "调查据点")
 		return {"id": "quest_clue:" + id, "kind": "clue", "name": label,
 			"category": "当前视野 · 委托" if visible else ("最后所见 · 线索" if remembered else "居民情报 · 区域"),
 			"pos": position, "distance_px": _player_pos.distance_to(position), "precise": visible,

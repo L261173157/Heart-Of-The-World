@@ -238,7 +238,13 @@ static func sample_cell(cell: Vector2i) -> Dictionary:
 	if authored != "":
 		var authored_info: Dictionary = KIND_INFO[authored]
 		return {"kind": authored, "r": authored_info["r"], "tall": authored_info["tall"]}
+	var campaign_kind := CampaignLayout.obstacle_kind(cell)
+	if campaign_kind != "":
+		var info: Dictionary = KIND_INFO[campaign_kind]
+		return {"kind": campaign_kind, "r": info["r"], "tall": info["tall"]}
 	var sample_pos := (Vector2(cell) + Vector2(0.5, 0.5)) * CELL
+	if CampaignLayout.reserved_ground(sample_pos) and dungeon_sample(cell) not in ["wall", "inner"]:
+		return {}
 	if OutpostLayout.reserved_ground(sample_pos):
 		return {}
 	var spawn := BiomeMap.spawn_pos()
@@ -458,7 +464,7 @@ static func coverage_in(rect: Rect2) -> float:
 static func liquid_kind_in(terrain: String, pos: Vector2, patch_id: String,
 		blocking := false) -> String:
 	_ensure()
-	if OutpostLayout.reserved_ground(pos):
+	if OutpostLayout.reserved_ground(pos) or CampaignLayout.reserved_ground(pos):
 		return ""
 	var rule: Dictionary = LIQUID_RULES.get(terrain, {})
 	if rule.is_empty():
@@ -538,3 +544,15 @@ static func restore_destroyed(list: Array) -> void:
 		var y := parts[1].to_int()
 		if str(x) == parts[0] and str(y) == parts[1]:
 			_destroyed[Vector2i(x, y)] = true
+
+
+## 作者机关只失效地形缓存，不伪造障碍摧毁、金币或生态事件。
+static func invalidate_authored_cells(cells: Array) -> void:
+	for value: Variant in cells:
+		if not value is Vector2i: continue
+		var cell: Vector2i = value
+		_cells_chunk_cache.erase(Vector2i(cell.x >> 4, cell.y >> 4))
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				var neighbor := cell + Vector2i(dx, dy)
+				_nav_chunk_cache.erase(Vector2i(neighbor.x >> 4, neighbor.y >> 4))

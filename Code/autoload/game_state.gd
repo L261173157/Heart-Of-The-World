@@ -18,7 +18,8 @@ const SAVE_DEBOUNCE := 2.0
 ## v11 保留战斗计时剩余值；菜单/暂停/离线冻结，不恢复半招或架盾手势。
 ## v12 新营地生态链独立账本；旧委托字段和结算方式不迁改。
 ## v13 失联前哨独立章节证据与分段支付；v12营地委托保持原账本。
-const SAVE_VERSION := 13
+## v14 新战役、远征旅行与有限作者内容独立账本。
+const SAVE_VERSION := 14
 
 ## 世界种子（世界 v5）：「新的冒险」重掷，游戏内 BiomeMap.configure 消费；
 ## v3 旧档无此键 → DEFAULT_SEED（旧世界与旧 ecology 存档严丝合缝）
@@ -47,6 +48,10 @@ var quests := {"active": [], "completed": {}, "receipts": {}, "last_receipt": ""
 ## 一次性生态链：放弃只停追踪，已核实行动和已付凭证永久保留。
 var camp_quest: Dictionary = {}
 var outpost_quest: Dictionary = {}
+var campaign_quest: Dictionary = {}
+## 防止回到较早批次时把尚不认识的新章节收据覆盖掉；不改变旧档迁移。
+var _future_campaign_min_reader := 0
+var _future_campaign_warned := false
 ## 物品栏（玩法 v7，存档 v6）：id -> 数量（钳 ITEM_MAX）。合法 id 真源是
 ## EconomyMath 的价格表（纯逻辑层，随迁服务端）；表现元数据在 ItemCatalog
 var inventory: Dictionary = {}
@@ -578,6 +583,9 @@ func reset_all() -> void:
 	quests = {"active": [], "completed": {}, "receipts": {}, "last_receipt": ""}
 	camp_quest = {}
 	outpost_quest = {}
+	campaign_quest = {}
+	_future_campaign_min_reader = 0
+	_future_campaign_warned = false
 	inventory = {}
 	equipment_locks = {}
 	pending_equipment = {}
@@ -673,6 +681,12 @@ func end_world_reward() -> void:
 ## 降频序列化，跳过时复用缓存——文件仍带（可能早至 6s 的）ecology 键
 ## 返回 true 只表示临时档写入/flush/原子替换全部成功；测试禁用写盘也返回 false。
 func save_now(include_ecology := true) -> bool:
+	if _future_campaign_min_reader > SAVE_VERSION:
+		_save_timer = 0.0
+		if not _future_campaign_warned:
+			_future_campaign_warned = true
+			EventBus.hint_requested.emit("此存档包含更新版本的远征进度，当前版本只读，不会覆盖原存档；请使用较新的战役版本继续")
+		return false
 	if _world_reward_depth > 0:
 		_world_reward_save_requested = true
 		_world_reward_save_full = _world_reward_save_full or include_ecology
@@ -712,6 +726,8 @@ func save_now(include_ecology := true) -> bool:
 		"tracked_quest_id": tracked_quest_id,
 		"camp_quest": camp_quest.duplicate(true),
 		"outpost_quest": outpost_quest.duplicate(true),
+		"campaign_quest": campaign_quest.duplicate(true),
+		"campaign_min_reader": SAVE_VERSION if not campaign_quest.is_empty() else 13,
 		"age_days": stats.age_days,
 		"lifespan_days": stats.lifespan_days,
 		"codex": codex,
@@ -939,6 +955,8 @@ func _load() -> void:
 		push_warning("存档损坏，已忽略")
 		return
 	var data: Dictionary = parsed
+	_future_campaign_min_reader = _safe_int(data.get("campaign_min_reader", 0), 0)
+	_future_campaign_warned = false
 	var version := _safe_int(data.get("version", 1), 1)
 	if version > SAVE_VERSION:
 		push_warning("存档版本 %d 高于当前支持的 %d（可能来自更新版本客户端），按兼容模式尝试读取" % [
@@ -1128,6 +1146,7 @@ func _load() -> void:
 				destroyed_cells.append(entry)
 	camp_quest = preload("res://scripts/main/camp_quest_data.gd").sanitize(data.get("camp_quest", {}))
 	outpost_quest = preload("res://scripts/main/outpost_quest_data.gd").sanitize(data.get("outpost_quest", {}), camp_quest)
+	campaign_quest = preload("res://scripts/main/campaign_quest_data.gd").sanitize(data.get("campaign_quest", {}), world_seed)
 	# 章节携带独立原合同备份；恢复缺失合同或不可逆已付证明，保留正常最新进度。
 	if preload("res://scripts/main/outpost_quest_data.gd").valid_legacy(outpost_quest.get("legacy_contract", {})) and (not preload("res://scripts/main/outpost_quest_data.gd").valid_legacy(camp_quest) \
 			or (outpost_quest["legacy_contract"].get("paid", false) and not camp_quest.get("paid", false))):

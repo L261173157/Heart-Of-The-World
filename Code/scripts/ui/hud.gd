@@ -1546,6 +1546,11 @@ func _on_quest_updated(text: String) -> void:
 			objective = objective.get_slice(" · ", 0)
 		quest_label.text = "%s  %d/%d\n%s" % [quest.get("title", "当前委托"), int(quest.get("progress", 0)), int(quest.get("need", 1)), objective]
 		return
+	if _task_snapshot.is_empty():
+		var campaign_summary := CampaignQuest.completed_summary(GameState.campaign_quest)
+		if not campaign_summary.is_empty():
+			quest_label.text = campaign_summary
+			return
 	if _task_snapshot.is_empty() and GameState.outpost_quest.get("stage", "") == "completed" and GameState.outpost_quest.get("last_summary", false):
 		# 修复后仍给出明确的自愿交接，避免通用空任务文案吞掉常驻巡守的后续线索。
 		quest_label.text = "失联的前哨  3/3\n" + ("前哨已恢复 · 与留守巡守交流后续线索" if not GameState.outpost_quest.get("evidence", {}).get("next_clue_received", false) else "区域线索已记录 · 可以自由探索")
@@ -2352,7 +2357,7 @@ func _refresh_task_list() -> void:
 		abandon.pressed.connect(_request_quest_action.bind(id, true))
 		actions.add_child(abandon)
 		if id == _pending_abandon_id:
-			row.add_child(_readable_label("暂停此调查？已发生的世界变化、任务物件和已支付记录仍会保留，可向巡守继续。" if quest.get("kind", "") in ["camp_ecology", "outpost"] else "放弃后当前进度不会保留，确定放弃？", 16))
+			row.add_child(_readable_label("暂停此调查？已发生的世界变化、任务物件和已支付记录仍会保留，可向巡守继续。" if quest.get("kind", "") in ["camp_ecology", "outpost", "campaign"] else "放弃后当前进度不会保留，确定放弃？", 16))
 			var confirm := Button.new()
 			confirm.name = "ConfirmAbandon_" + id
 			confirm.text = "确认放弃此委托"

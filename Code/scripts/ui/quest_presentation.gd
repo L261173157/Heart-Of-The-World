@@ -10,7 +10,7 @@ const COMPLETED_COLOR := Color("bfebcb")
 
 
 static func requires_claim(quest: Dictionary) -> bool:
-	return quest.get("kind", "") in ["collect", "camp_ecology", "outpost"] and quest.get("claim_at_npc", false) == true
+	return quest.get("kind", "") in ["collect", "camp_ecology", "outpost", "campaign"] and quest.get("claim_at_npc", false) == true
 
 
 static func state(quest: Dictionary) -> String:
@@ -20,7 +20,7 @@ static func state(quest: Dictionary) -> String:
 
 
 static func objective(quest: Dictionary) -> String:
-	if quest.get("kind", "") in ["camp_ecology", "outpost"]:
+	if quest.get("kind", "") in ["camp_ecology", "outpost", "campaign"]:
 		return str(quest.get("ui_objective", "与营地巡守交谈"))
 	if quest.get("settlement_blocked", false):
 		return "奖励待发：请腾出%s空间，材料与奖励保留" % ItemCatalog.name_of(str(quest.get("blocked_item", "")))
@@ -50,7 +50,7 @@ static func reward(quest: Dictionary) -> String:
 
 
 static func snapshot(quest: Dictionary) -> Dictionary:
-	if quest.get("kind", "") in ["camp_ecology", "outpost"]:
+	if quest.get("kind", "") in ["camp_ecology", "outpost", "campaign"]:
 		return quest.duplicate(true)
 	var view := quest.duplicate(true)
 	view["ui_state"] = state(quest)
@@ -85,7 +85,7 @@ static func receipt_text(receipt: Dictionary) -> String:
 
 ## 展示与实际交易共用确定性物品奖励，满仓提示不能猜测另一件补给。
 static func bonus_item(quest: Dictionary) -> String:
-	if quest.get("kind", "") in ["camp_ecology", "outpost"]:
+	if quest.get("kind", "") in ["camp_ecology", "outpost", "campaign"]:
 		return str(quest.get("bonus", ""))
 	if quest.get("kind", "") == "collect":
 		return EconomyMath.KEY_GOLD

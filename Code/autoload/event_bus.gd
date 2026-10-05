@@ -92,6 +92,12 @@ signal camp_quest_action_requested(action: String)
 signal outpost_interaction_requested(object_id: String)
 ## 已保存的物件/救援/修复表现态，不携带场景节点或偷偷修改生态。
 signal outpost_state_changed(state: Dictionary)
+## 远征战役：只传稳定对象/地点 ID；旅行由世界层再次验证。
+signal campaign_interaction_requested(object_id: String)
+signal campaign_state_changed(state: Dictionary)
+signal campaign_geometry_changed(cells: Array)
+signal campaign_travel_requested(terrain: String, origin_id: String)
+signal campaign_travel_completed(terrain: String)
 ## 固定情境按钮只消费当前候选；按下时锁定 target_id，不能自动改成邻近对象。
 signal context_interaction_changed(payload: Dictionary)
 signal quest_abandon_requested(quest_id: String)
