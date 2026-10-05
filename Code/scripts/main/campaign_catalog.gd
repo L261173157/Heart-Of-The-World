@@ -250,14 +250,104 @@ static func random_templates() -> Array:
 	return _groups["random_templates"]
 
 static func _random_templates() -> Array:
-	return []
+	return [
+
+		_chain("random_wounded", "野外伤者", "local", "random", 1, [
+			_step("野外伤者", "确认登记伤者的需求，取专用急救物资后返回身旁救助。", [
+				_action("request", "random_wounded:giver", "伤者留下的呼救记号", "read", "辨读呼救记号", "记号指向附近登记的伤者与封存急救物资。确认两者仍在且可达，才接下这次救助。"),
+				_action("aid", "random_wounded:parts", "封存急救物资", "recover", "取急救物资", "你取出只供这名伤者使用的专用急救包。它不会进入可出售的背包。", ["request"], {"quest_item": "random_wounded:aid"}),
+				_action("rescue", "random_wounded:target", "野外伤者", "rescue", "完成现场救助", "你在伤者身旁完成救助。这名有限剧情人物留下获救记录，不会因重载再受一次同样的伤。", ["aid"])])]),
+		_chain("random_parcel", "散落包裹", "local", "random", 2, [
+			_step("散落包裹", "核对包裹封签，实地回收，再亲手还给登记收件人。", [
+				_action("request", "random_parcel:giver", "包裹认领告示", "read", "读认领告示", "告示给出包裹封签与当地收件人。包裹必须尚未回收，收件人也必须真实可达。"),
+				_action("parcel", "random_parcel:target", "散落的封签包裹", "recover", "回收包裹", "封签与告示一致，你收起这份独立编号的包裹。", ["request"], {"quest_item": "random_parcel:parcel"}),
+				_action("return", "random_parcel:return", "包裹收件人", "deliver", "亲手交还包裹", "收件人核对封签后签收。包裹到此结案，离线时间不会再生一只同编号包裹。", ["parcel"], {"consumes": "random_parcel:parcel"})])]),
+		_chain("random_sign", "断裂路标", "local", "random", 3, [
+			_step("断裂路标", "读断裂说明，取本路标的专用部件，到原处修复。", [
+				_action("request", "random_sign:giver", "路标维修留言", "read", "读维修留言", "留言登记了这根已经断裂的路标与一包备件。没有待修实体就不会发布这次遭遇。"),
+				_action("parts", "random_sign:parts", "路标专用备件", "recover", "取路标备件", "你找到刻着同一编号的支脚与横梁。它们不能拿去反复交给另一根路标。", ["request"], {"quest_item": "random_sign:parts"}),
+				_action("repair", "random_sign:target", "断裂的路标", "repair", "立起路标", "支脚固定、横梁归位，路标重新指向真实来路。修的是路标，不是周围所有危险。", ["parts"])])]),
+		_chain("random_rocks", "岩缝近道", "local", "random", 4, [
+			_step("岩缝近道", "核对近道两端，打碎登记碎岩，再亲自穿过缺口。", [
+				_action("request", "random_rocks:giver", "岩缝近道草图", "read", "核对近道草图", "草图指向可破坏碎岩与真实可达的两端。不可破坏的山体不会被当成这次任务目标。"),
+				_action("break", "random_rocks:target", "登记的近道碎岩", "obstacle", "核验碎岩已破", "登记碎岩被实际击碎，缺口记录与这次有限遭遇绑定。", ["request"], {"barrier_id": "random_rocks:barrier"}),
+				_action("cross", "random_rocks:return", "近道另一端", "route", "穿过新开缺口", "你走到近道另一端，确认通路真实可用。只打碎远处别的石头不能完成这段验收。", ["break"], {"routes": ["passage"], "route_waypoints": ["random_rocks:target", "random_rocks:return"]})])]),
+		_chain("random_medicine", "紧缺药包", "local", "random", 5, [
+			_step("紧缺药包", "当面核实药包需求，取已知专用物资并确认唯一交付。", [
+				_action("request", "random_medicine:giver", "药包求助人", "talk", "核实药包需求", "求助人指出一处已知可达的专用物资。此次使用那份物资，不会偷偷扣除你的恢复快捷预设。"),
+				_action("medicine", "random_medicine:parts", "登记药包物资", "recover", "取登记药包", "你取走带编号的任务药包，封签与这次求助相符。", ["request"], {"quest_item": "random_medicine:medicine"}),
+				_action("deliver", "random_medicine:target", "等待药包的巡守", "deliver", "确认交付药包", "巡守在你面前收下药包，登记需求已经解除。这份药包不能再交给别人。", ["medicine"], {"consumes": "random_medicine:medicine"})])]),
+		_chain("random_message", "留守讯息", "local", "random", 6, [
+			_step("留守讯息", "接受当地已知留守人的讯息，核对封签并送到另一名接收者。", [
+				_action("request", "random_message:giver", "留守传信人", "talk", "听留守讯息", "传信人只请你把当前当地情况带给另一位已知接应人，不要求跨越未探索的半个世界。"),
+				_action("message", "random_message:target", "留守讯息封套", "recover", "取讯息封套", "封套有这次交接的独立编号，文字说明的是过去目击，没有把它伪装成现在的活体位置。", ["request"], {"quest_item": "random_message:message"}),
+				_action("deliver", "random_message:return", "当地接应人", "deliver", "交付留守讯息", "接应人当面确认收到讯息。记录的时间与来源一并保留，未来变化不会重开同一张收据。", ["message"], {"consumes": "random_message:message"})])]),
+		_chain("random_nest", "巢区临道", "local", "random", 7, [
+			_step("巢区临道", "核对真实临路巢穴，暂时捣巢或现场确认绕行，再提交结果。", [
+				_action("request", "random_nest:giver", "临道巢区告示", "read", "核对巢区线索", "告示只在真实活动巢穴靠近当前路线时成立。接取与行动都必须重新核对巢穴。"),
+				_action("result", "random_nest:target", "实际临路巢区", "ecology", "确认巢区处置", "你留下实际暂时捣巢或到场核对绕行的结果。历史捣毁不代表今天仍没有巢穴。", ["request"], {"ecology_mode": "nest_resolution"}),
+				_action("report", "random_nest:return", "临道记录牌", "deliver", "写下当前路线说明", "路线牌记录这次处理的时间与方式。捣巢的抑制会结束，已经支付的调查奖励不会因此再发。", ["result"])])]),
+		_chain("random_migration", "迁徙目击", "local", "random", 8, [
+			_step("迁徙目击", "读取有真实来源的迁移线索，到场核对，再记录当前结果。", [
+				_action("request", "random_migration:giver", "迁移目击记录", "read", "读真实迁移线索", "记录绑定已经发生的迁移个体、区域与时间。读档重新生成场景不算又一次迁移。"),
+				_action("site", "random_migration:target", "迁移线索现场", "observe", "核对迁移现场", "你到已获知的现场核对留痕与现在的活动。目标若已离开，就记录离开，不强迫等待下一次迁移。", ["request"], {"ecology_mode": "migration_state"}),
+				_action("report", "random_migration:return", "目击回执点", "deliver", "提交目击核对", "回执保留事件来源与本次现场观察。两者的时间不同，不会混成一个一直跟踪隐藏目标的位置。", ["site"])])]),
+		_chain("random_camp", "据点余患", "local", "random", 9, [
+			_step("据点余患", "核对健康当地族群与能力范围，有限处理或在目标变化后勘察结案。", [
+				_action("request", "random_camp:giver", "当地据点委托牌", "read", "核对当地委托", "只有实际可达、能力相符且有余量的健康族群才会发布这项委托。全球不足六只时不发布狩猎单。"),
+				_action("result", "random_camp:target", "登记的当地据点", "ecology", "提交真实处理证据", "有限处理只计真实玩家贡献并留下当地余量。若目标迁出或自然消失，保留贡献并亲自勘察事实。", ["request"], {"ecology_mode": "camp_resolution"}),
+				_action("report", "random_camp:return", "当地委托回执点", "deliver", "确认据点结案", "你按实际处理或目标变化提交结案，没有补刷怪物凑数，也没有把自然死亡当成猎杀。", ["result"])])]),
+		_chain("random_runes", "废墟符记", "local", "random", 10, [
+			_step("废墟符记", "读取独立遗迹线索，按灯、路、人操作三枚现场符记。", [
+				_action("request", "random_runes:giver", "废墟外的留字", "read", "读遗迹留字", "这处机关有自己的有限编号。它没有结算过，才会成为新的遭遇线索。"),
+				_action("record", "random_runes:record", "三行符记说明", "read", "读机关顺序", "第一行点灯，第二行辨路，第三行等人。正确次序是灯、路、人。按错只会重置当前输入。", ["request"]),
+				_action("runes", "random_runes:target", "废墟符记机关", "puzzle", "完成符记次序", "灯、路、人依次回应，机关留下本次完成记录。这处遗迹不会在读档或新的一天再次发满额奖励。", ["record"], {"puzzle_order": ["lamp", "road", "person"], "puzzle_objects": ["random_runes:rune_a", "random_runes:rune_b", "random_runes:rune_c"]})])]),
+	]
 
 static func world_arcs() -> Array:
 	if not _groups.has("world_arcs"): _groups["world_arcs"] = _seal(_world_arcs())
 	return _groups["world_arcs"]
 
 static func _world_arcs() -> Array:
-	return []
+	return [
+
+		_chain("world_migration", "迁徙的长路", "world", "world", 1, [
+			_step("沿线的两个地点", "依据已获知的真实迁移线索，分别到两处沿线地点调查。", [
+				_action("route_a", "world_migration:route_a", "迁徙来路观察点", "observe", "调查迁徙来路", "你核对已获知的迁入迁出记录。个体、起止区域和发生时间属于同一条真实事实链。", [], {"ecology_mode": "world_migration_origin"}),
+				_action("route_b", "world_migration:route_b", "迁徙去路观察点", "observe", "调查迁徙去路", "你抵达第二处沿线地点。曾经迁过这条边界不代表今天仍在此处。", [], {"ecology_mode": "world_migration_destination"})]),
+			_step("现在走到哪里", "向观察员核对当前状态，区分仍继续、已停止与失去踪迹。", [
+				_action("status", "world_migration:observer", "沿线观察员", "observe", "核对当前迁徙状态", "观察员只接受有来源的当前状态：仍在继续、已经停止或失去踪迹。结案不要求世界再发生一次迁移。", [], {"ecology_mode": "world_migration_status"})]),
+			_step("把长路留下", "在记录板提交两地调查与当前状态，完成这一次世界调查。", [
+				_action("archive", "world_migration:record_board", "迁徙路线记录板", "deliver", "提交迁徙路线记录", "这次迁徙调查被收入世界档案。后来出现的新变化可以补记事实，不会重开这张调查收据。")])]),
+		_chain("world_decline", "最后的足迹", "world", "world", 2, [
+			_step("已经获知的足迹", "依有来源的濒危或永久灭绝线索，亲自调查已知地点。", [
+				_action("site", "world_decline:last_site", "最后已知活动地", "observe", "调查已知足迹", "这项调查由真实持续濒危或有来源的永久灭绝事件触发。奖励调查，不奖励把物种杀到最后一只。", [], {"ecology_mode": "world_decline_site"})]),
+			_step("减少的原因", "在证据柱核对仍存、迁出、自然死亡与玩家造成的永久灭绝。", [
+				_action("cause", "world_decline:evidence_post", "衰退证据柱", "observe", "核对真实原因", "你把仍濒危、已经回升、自然消失或玩家永久灭绝分别记明。没有证据就不把空场改写成讨伐。", [], {"ecology_mode": "world_decline_status"})]),
+			_step("留给来者的警示", "亲自立下警示，再把这次有限调查交给观察员。", [
+				_action("warning", "world_decline:warning_sign", "足迹警示牌", "repair", "立下真实状态警示", "警示牌标明调查时间与真实原因，不向后来的巡守保证物种一定会恢复。"),
+				_action("archive", "world_decline:observer", "物种记录观察员", "deliver", "提交足迹调查", "观察员收下调查并补入图鉴附注。今后的自然复苏可留下新事实，这次结案不会反复支付。", ["warning"])])]),
+		_chain("world_relief", "彼此的接应", "world", "world", 3, [
+			_step("两地正在等什么", "在已到访三种地形后，分别确认两处新增接应点的实际待办。", [
+				_action("need_a", "world_relief:need_a", "第一处接应需求", "talk", "确认第一处需求", "这里需要的是新增剧情站点已经登记的救援或补给事项，并非凭空模拟出的市场短缺。"),
+				_action("need_b", "world_relief:need_b", "第二处接应需求", "talk", "确认第二处需求", "另一处也明确说明所缺物资。你亲自核实两地需求后，才能分配各自编号的任务供应。")]),
+			_step("各有去向的物资", "将两份不同编号的专用物资交到各自接应处。", [
+				_action("supply_a", "world_relief:supply_a", "第一份接应物资", "deliver", "交付第一份物资", "第一份专用物资交到登记接应处。它的唯一去向写入账本，不能再给第二处。", [], {"supply_id": "world_relief:parcel_a"}),
+				_action("supply_b", "world_relief:supply_b", "第二份接应物资", "deliver", "交付第二份物资", "第二份物资有自己的编号与目的地。两处收到的是两份实际独立的供应。", [], {"supply_id": "world_relief:parcel_b"})]),
+			_step("接应之后", "回访两处接应点，在协调台确认新增居民与服务的实际变化。", [
+				_action("return_a", "world_relief:need_a", "第一处接应居民", "talk", "回访第一处接应", "居民当面确认收到的物资和已经改变的服务，不需要你长距离护送一个不存在的队伍。"),
+				_action("return_b", "world_relief:need_b", "第二处接应居民", "talk", "回访第二处接应", "第二处也给出自己的接收回执。两张回执对应两份不同物资。"),
+				_action("settle", "world_relief:coordination_post", "接应协调台", "repair", "确认两地接应", "协调台保存两地真实去向与回访结果，新增联合补给服务生效，这条世界事项有限完结。", ["return_a", "return_b"], {"service": "world_relief_station"})])]),
+		_chain("world_watchnet", "灯火相望", "world", "world", 4, [
+			_step("选择三处灯火", "主线完成且至少三条区域工程完工后，选择三个真实可用节点。", [
+				_action("plan", "world_watchnet:planning_board", "守望网络配置板", "configure", "选择三个守望节点", "选中的必须是已经实际完成的区域站点。最终配置不会替你补做未完成的工程。", [], {"node_count": 3})]),
+			_step("让节点彼此识别", "亲自安装三套各有编号的守望标识。", [
+				_action("node_1", "world_watchnet:node_1", "第一套守望装置", "repair", "安装第一套标识", "第一套专用装置落在选定的真实节点上，没有复制另一处已经用过的部件。", [], {"node_index": 0}),
+				_action("node_2", "world_watchnet:node_2", "第二套守望装置", "repair", "安装第二套标识", "第二套装置记下自己的节点身份，让这处灯火在新网络中可辨认。", [], {"node_index": 1}),
+				_action("node_3", "world_watchnet:node_3", "第三套守望装置", "repair", "安装第三套标识", "第三套装置安装完成，三个节点都已留下现场证据。", [], {"node_index": 2})]),
+			_step("灯火相望", "确认三个节点真正可用，提交最终线路配置与世界档案。", [
+				_action("archive", "world_watchnet:record_board", "最终守望档案", "deliver", "提交整体配置", "三处实际可用的节点收入最终档案。以后种群迁移、Boss复生或道路风险改变，都不会抹去这项已完成的工程。", [], {"service": "world_watchnet_station"})])]),
+	]
 
 static func chapter(id: String) -> Dictionary:
 	for entry: Dictionary in main_chapters():

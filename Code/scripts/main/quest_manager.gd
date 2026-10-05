@@ -626,7 +626,7 @@ func _push_hud() -> void:
 		if not active.is_empty():
 			EventBus.quest_updated.emit("委托未追踪 · 点击查看已有任务")
 			return
-		var campaign_summary := CampaignQuest.completed_summary(GameState.campaign_quest)
+		var campaign_summary := CampaignQuest.completed_summary(GameState.campaign_quest, true)
 		if not campaign_summary.is_empty():
 			EventBus.quest_updated.emit(campaign_summary)
 			return

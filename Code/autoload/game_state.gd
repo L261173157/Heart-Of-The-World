@@ -21,7 +21,7 @@ const SAVE_DEBOUNCE := 2.0
 ## v14 新战役、远征旅行与有限作者内容独立账本。
 ## v15 增加三至六章；旧批次凭最小读取版本保护后续收据。
 ## v16 启用人物与区域故事；较早批次不能覆盖这些新增收据。
-const SAVE_VERSION := 16
+const SAVE_VERSION := 17
 
 ## 世界种子（世界 v5）：「新的冒险」重掷，游戏内 BiomeMap.configure 消费；
 ## v3 旧档无此键 → DEFAULT_SEED（旧世界与旧 ecology 存档严丝合缝）
@@ -700,6 +700,10 @@ func save_now(include_ecology := true) -> bool:
 	var live_player := get_tree().get_first_node_in_group("player")
 	if live_player != null and live_player.has_method("save_snapshot"):
 		player_snapshot = live_player.save_snapshot()
+	# 战役事实保持逐事件真源；只在真实保存边界配对选用的生态快照。
+	var campaign_runtime := get_tree().get_first_node_in_group("campaign_dynamic")
+	if campaign_runtime != null and campaign_runtime.has_method("flush_for_save"):
+		campaign_runtime.call("flush_for_save")
 	var saved_at := Time.get_unix_time_from_system()
 	var data := {
 		"version": SAVE_VERSION,
@@ -748,13 +752,19 @@ func save_now(include_ecology := true) -> bool:
 	# 复用上次序列化结果（文件仍带 ecology，内容早至 6s——生态 tick=1s，
 	# 极端丢档上限 ≈5 tick 的演化，可忽略）
 	var ecology: Variant = null
+	var ecology_refreshed := false
+	var campaign_cache_compatible := true
+	if campaign_runtime != null and campaign_runtime.has_method("can_reuse_ecology_cache"):
+		var cached_tick := int((_ecology_cache as Dictionary).get("tick", -1)) if _ecology_cache is Dictionary else -1
+		campaign_cache_compatible = bool(campaign_runtime.call("can_reuse_ecology_cache", cached_tick))
 	if WorldSim.sim != null:
 		var now := Time.get_unix_time_from_system()
-		if not include_ecology and _ecology_cache != null \
+		if not include_ecology and _ecology_cache != null and campaign_cache_compatible \
 				and now - _ecology_saved_at < ECOLOGY_SAVE_INTERVAL:
 			ecology = _ecology_cache
 		else:
 			ecology = WorldSim.sim.to_dict()
+			ecology_refreshed = true
 			# 世界时钟随快照入档（昼夜相位/游戏天数）：生态连续而昼夜断裂的话，
 			# "读档回清晨"等于时间回溯（寿命按游戏天推进，可反复读档免老化）
 			(ecology as Dictionary)["day_time"] = WorldSim.day_time
@@ -765,6 +775,8 @@ func save_now(include_ecology := true) -> bool:
 		ecology = ecology_snapshot
 	if ecology != null:
 		data["ecology"] = ecology
+		if campaign_runtime != null and campaign_runtime.has_method("campaign_for_save") and ecology is Dictionary:
+			data["campaign_quest"] = campaign_runtime.call("campaign_for_save", data["campaign_quest"], int(ecology.get("tick", -1)), ecology_refreshed)
 	# 探索进度（世界 v5）：迷雾位图（base64 存 PackedByteArray）+ 已发现地标
 	if not explored.is_empty():
 		data["explored"] = Marshalls.raw_to_base64(explored)

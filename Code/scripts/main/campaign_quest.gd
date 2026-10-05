@@ -7,8 +7,9 @@ signal changed
 const Data := preload("res://scripts/main/campaign_quest_data.gd")
 const Catalog := preload("res://scripts/main/campaign_catalog.gd")
 const Inventory := preload("res://scripts/main/camp_quest_inventory.gd")
-const ENABLED_BATCH := 3
+const ENABLED_BATCH := 4
 var _optional: CampaignOptional
+var _dynamic: CampaignDynamic
 var _main: CampaignMain
 var _mutating := false
 var _actions: Dictionary = {}
@@ -31,6 +32,10 @@ func _ready() -> void:
 	_optional = preload("res://scripts/main/campaign_optional.gd").new()
 	_optional.setup(self)
 	add_child(_optional)
+	_dynamic = preload("res://scripts/main/campaign_dynamic.gd").new()
+	_dynamic.setup(self)
+	add_child(_dynamic)
+	_dynamic.configure_after_restore.call_deferred()
 	_publish()
 
 func ledger() -> Dictionary:
@@ -103,6 +108,7 @@ func object_payload(object_id: String) -> Dictionary:
 	if _optional != null and _optional.handles_object(object_id):
 		var payload: Dictionary = _optional.object_payload(object_id)
 		return _troll_departure_menu(payload) if object_id=="side_troll:giver" and _at_origin(object_id) else payload
+	if _dynamic != null and _dynamic.handles_object(object_id): return _dynamic.object_payload(object_id)
 	if not _at_object(object_id): return _info("请走到物件身旁，确认没有墙体遮挡后再交互")
 	var object_chapter := _chapter_for_object(object_id)
 	if not object_chapter.is_empty() and _paused(str(object_chapter["id"])):
@@ -141,6 +147,7 @@ func object_action(object_id: String, choice: String = "") -> String:
 
 func perform_action(action_id: String, choice: String = "") -> String:
 	if _optional != null and _optional.handles_action(action_id): return _optional.perform_action(action_id,choice)
+	if _dynamic != null and _dynamic.handles_action(action_id): return _dynamic.perform_action(action_id,choice)
 	if _mutating: return ""
 	var a: Dictionary = _actions.get(action_id, {})
 	if a.is_empty(): return "未识别的战役行动"
@@ -270,6 +277,12 @@ func snapshot(stage_id: String) -> Dictionary:
 			object_id=str(navigation.get("object_id",object_id))
 			pos=navigation.get("position",pos)
 			target_title=str(navigation.get("label",target_title))
+	if _dynamic != null and _dynamic.handles_action(str(next["id"])) and not ready:
+		var navigation: Dictionary = _dynamic.next_target(next)
+		if not navigation.is_empty():
+			object_id=str(navigation.get("object_id",object_id))
+			pos=navigation.get("position",pos)
+			target_title=str(navigation.get("label",target_title))
 	var progress_count := 0
 	for id: String in stage["required"]:
 		if _proof_exists(id): progress_count += 1
@@ -330,7 +343,7 @@ func visual_state() -> Dictionary:
 		state["rescued"].merge(extra["rescued"],true)
 		state["placements"].merge(extra["placements"],true)
 		state["ending"] = extra["ending"]
-	for helper: Node in [_optional]:
+	for helper: Node in [_optional,_dynamic]:
 		if helper == null: continue
 		var patch: Dictionary = helper.visual_state()
 		for key: String in patch:
@@ -367,6 +380,7 @@ func _at_origin(id: String) -> bool:
 		var patrol := _home_patrol()
 		var player := _player() as Player
 		return patrol != null and not patrol.is_queued_for_deletion() and patrol.is_visible_in_tree() and player != null and player.is_visible_in_tree() and not player._is_dead and player.global_position.distance_to(patrol.global_position) < 96.0 and player._attack_has_line_of_sight(patrol.global_position)
+	if _dynamic != null and (_dynamic.is_service_origin(id) or _dynamic.is_expedition_origin(id)): return _at_object(id)
 	return id in _station_origins() and _at_object(id)
 
 func travel_options() -> Array:
@@ -381,6 +395,7 @@ func travel_options() -> Array:
 func departure_payload(origin_id: String, giver: String = "远征联络员") -> Dictionary:
 	if not _at_origin(origin_id): return _info("请到远征联络员身旁确认路线")
 	var options: Array = []
+	if _dynamic != null: options.append_array(_dynamic.expedition_options(origin_id))
 	if origin_id == "side_troll:departure":
 		options.append({"label":"沿旧旗线索前往遗迹","action":"campaign|depart|side_troll|"+origin_id,"enabled":true,
 			"consequence":"前往实际巨魔王遗迹的安全接近点，不把Boss移到林地联络站","risk":"旧旗是历史路线线索，远方现状仍待亲自核实"})
@@ -400,6 +415,8 @@ func departure_payload(origin_id: String, giver: String = "远征联络员") -> 
 
 func can_travel(terrain: String, origin_id: String) -> bool:
 	if not _at_origin(origin_id): return false
+	if terrain.begins_with("worldsite:"): return _dynamic != null and _dynamic.can_travel_site(origin_id,terrain.trim_prefix("worldsite:"))
+	if terrain.begins_with("watchnet:"): return _dynamic != null and _dynamic.can_travel_node(origin_id,terrain.trim_prefix("watchnet:"))
 	if terrain == "home": return origin_id != "home:patrol"
 	if terrain == "side_troll": return ENABLED_BATCH>=3 and origin_id=="side_troll:departure" and Data.ready(ledger(),"watch_c2_forest:s4")
 	for option: Dictionary in travel_options():
@@ -441,6 +458,7 @@ func action(action_id: String) -> String:
 				var index := int(parts[2])
 				if index>=0 and index<pages.size(): EventBus.npc_dialogue.emit({"kind":"info","giver":"《断开的守望》后记","text":pages[index],"back_action":"campaign|epilogue_menu"})
 		"optional": return _optional.action(parts) if _optional!=null else ""
+		"dynamic": return _dynamic.action(parts) if _dynamic!=null else ""
 		"act": return perform_action(str(parts[2]), str(parts[3]) if parts.size()>3 else "") if parts.size()>2 else ""
 		"sequence": return _main.sequence(str(parts[2]),str(parts[3])) if parts.size()>3 and _main!=null else ""
 		"claim": return claim(str(parts[2])) if parts.size()>2 else ""
@@ -513,15 +531,17 @@ func _at_chapter_npc(chapter_id: String) -> bool:
 	return false
 
 
-static func completed_summary(q: Dictionary) -> String:
+static func completed_summary(q: Dictionary, compact := false) -> String:
 	var latest: Dictionary = {}
 	for chapter: Dictionary in Catalog.main_chapters():
 		if Data.chapter_complete(q, str(chapter["id"])): latest = chapter
 	if latest.is_empty(): return ""
 	if str(latest["id"])=="watch_c6_lava":
 		var ending := str(q.get("quests",{}).get("watch_c6_lava:s4",{}).get("choice",""))
-		return "《断开的守望》已通关 · %s\n%s"%["集中安置" if ending=="centralized" else "分散派驻", "在联络站选择前往避难所，探望四位新增居民" if ending=="centralized" else "四位远征队员留守林地、沼泽、丘陵、雪原，继续提供补给"]
-	return "%s · 已完成\n联络站已恢复，可在站点确认远征或返回家园" % str(latest["title"])
+		var detail := "在联络站选择前往避难所，探望四位新增居民" if ending=="centralized" else "四位远征队员留守林地、沼泽、丘陵、雪原，继续提供补给"
+		if compact: detail = "沿联络站线路探望避难所队员" if ending=="centralized" else "四地驻站提供补给，详见后记"
+		return "《断开的守望》已通关 · %s\n%s"%["集中安置" if ending=="centralized" else "分散派驻", detail]
+	return "%s · 已完成\n%s" % [str(latest["title"]), "联络站可远征或返回家园" if compact else "联络站已恢复，可在站点确认远征或返回家园"]
 
 
 func _world_position(object_id: String) -> Vector2:
@@ -553,6 +573,10 @@ func travel_destination(terrain: String) -> Vector2:
 		if node is MonsterBase and (node as MonsterBase).inst != null and (node as MonsterBase).inst.is_alive:
 			positions[(node as MonsterBase).inst.id] = (node as Node2D).global_position
 	var candidates: Array = CampaignLayout.entry_candidates(terrain)
+	if terrain.begins_with("worldsite:") and _dynamic!=null:
+		candidates=_dynamic.expedition_candidates(terrain.trim_prefix("worldsite:"))
+	elif terrain.begins_with("watchnet:") and _dynamic!=null:
+		candidates=[_dynamic.node_destination(terrain.trim_prefix("watchnet:"))]
 	for point: Vector2 in candidates:
 		if not point.is_finite() or ObstacleField.blocks(point,16.0) or not ObstacleField.liquid_kind_at(point).is_empty(): continue
 		var safe := true

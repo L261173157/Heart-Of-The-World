@@ -336,8 +336,14 @@ func _forest_clues() -> bool:
 	prop.show()
 	await _ci("c2:herbalist", false)
 	_check(_same(before, _cq()), "只读药师对话不视为已询问")
+	var before_cancel := _cq().duplicate(true)
+	var cancel_wallet := _wallet()
+	var observed_during_cancel := {}
+	var cancel_witness: Callable = func() -> void: _witness_campaign_discoveries(before_cancel, observed_during_cancel)
+	_campaign.changed.connect(cancel_witness)
 	await _tap(_hud._dialogue_no)
-	_check(_same(before, _cq()), "取消药师确认不改变剧情证据")
+	_campaign.changed.disconnect(cancel_witness)
+	_campaign_window_preserves_ledger(before_cancel, cancel_wallet, observed_during_cancel, "取消药师确认不改变任何其他账本字段、剧情证据、收据或钱包")
 	await _ci("c2:herbalist")
 	_check(_ce(1, "herbalist") and not _ce(1, "old_pact"), "与NPC明确交谈不替代另一个现场旧约")
 	if not await _cw("c2:old_pact"): return false
@@ -356,6 +362,36 @@ func _forest_rune_partial() -> bool:
 	_check(_cq().get("puzzle_progress", {}).get(C2 + ":s2:runes", []) == ["north"], "部分机关前缀可被持久化为北，而不是只有最终完成布尔")
 	return _ce(2, "route_marks")
 
+## EN4 的行走/关闭暂停阅读可新增现场目击；只允许严格验证过的新 known_objects 行。
+## 所有既有目击、其余动态字段、任务/谜题/收据和钱包仍须逐项不变。
+func _witness_campaign_discoveries(before: Dictionary, witnessed: Dictionary) -> void:
+	var prior_known: Dictionary = before.get("dynamic_runtime", {}).get("known_objects", {})
+	var current_known: Dictionary = _cq().get("dynamic_runtime", {}).get("known_objects", {})
+	for id: String in current_known:
+		if prior_known.has(id) or witnessed.has(id): continue
+		var object := _cp(id)
+		if object == null or not object.has_method("is_observed") or not bool(object.call("is_observed", _player.global_position)): continue
+		var proof := {"position": [object.global_position.x, object.global_position.y], "tick": WorldSim.sim.tick_count}
+		if _same(current_known[id], proof): witnessed[id] = proof
+
+func _campaign_window_preserves_ledger(before: Dictionary, wallet: Dictionary, witnessed: Dictionary, label: String, extra_guard := true) -> void:
+	var after := _cq().duplicate(true)
+	var prior_known: Dictionary = before.get("dynamic_runtime", {}).get("known_objects", {})
+	var current_known: Dictionary = after.get("dynamic_runtime", {}).get("known_objects", {})
+	var observed_additions := true
+	var new_ids: Array[String] = []
+	for id: String in prior_known:
+		if not current_known.has(id) or not _same(prior_known[id], current_known[id]): observed_additions = false
+	for id: String in current_known:
+		if prior_known.has(id): continue
+		new_ids.append(id)
+		if not witnessed.has(id) or not _same(current_known[id], witnessed[id]): observed_additions = false
+	_check(observed_additions, "只允许记录当帧有真实对象/视野/位置/时刻见证的新目击，既有目击不可改写")
+	if not new_ids.is_empty(): print("CAMPAIGN_OBSERVED_ADDITIONS ", JSON.stringify({"window":label,"ids":new_ids}))
+	if after.get("dynamic_runtime", {}).has("known_objects"):
+		after["dynamic_runtime"]["known_objects"] = prior_known.duplicate(true)
+	_check(_same(before, after) and _wallet() == wallet and extra_guard, label)
+
 func _forest_runes() -> bool:
 	var gate_cells: Array = _campaign_layout.gate_cells("c2:forest_gate")
 	_check(not gate_cells.is_empty(), "林地栅门具有真实物理格")
@@ -367,14 +403,20 @@ func _forest_runes() -> bool:
 		var middle := (Vector2(gate_cells[gate_cells.size() / 2]) + Vector2.ONE * 0.5) * 32.0
 		if not await _walk_to(middle + Vector2(0, 80), "实际站到未开的栅门前", 8.0): return false
 		var before := _cq().duplicate(true)
+		var before_wallet := _wallet()
+		var observed_during_contact := {}
+		# 同步 changed 回调在发现入账当帧验视野；不能要求移动30帧后仍在屏内。
+		var witness: Callable = func() -> void: _witness_campaign_discoveries(before, observed_during_contact)
+		_campaign.changed.connect(witness)
 		_player.set_physics_process(true)
 		TouchInput.joystick_active = true
 		TouchInput.move_vector = Vector2.UP
 		await _frames(30)
+		_campaign.changed.disconnect(witness)
 		TouchInput.reset()
 		_player.set_physics_process(false)
 		_check(_player.global_position.y > middle.y + 10.0, "未解谜时实际向上移动被石门StaticBody挡住")
-		_check(_same(before, _cq()), "身体碰门不伪造机关和门后回收证据")
+		_campaign_window_preserves_ledger(before, before_wallet, observed_during_contact, "身体碰门不改变任何其他账本字段、机关/回收证据、收据或钱包", not _ce(2, "runes") and not _ce(2, "torn_record"))
 	var wallet := _wallet()
 	for id: String in ["c2:rune_west"]:
 		if not await _cw(id): return false
