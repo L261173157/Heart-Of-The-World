@@ -42,8 +42,14 @@ jobs:
             tests: campaign_reward_contract,campaign_ledger,campaign_layout,campaign_acceptance,campaign_lifecycle
           - suite: campaign_story
             tests: campaign_story_lifecycle
+          - suite: campaign_optional
+            tests: campaign_optional_geometry,campaign_optional_placements,campaign_service_receipts,campaign_optional_adversarial
+          - suite: campaign_optional_lifecycle
+            tests: campaign_optional_lifecycle,campaign_regional_passage
+          - suite: campaign_optional_outcomes
+            tests: campaign_optional_outcomes
           - suite: campaign_resume_mobile
-            tests: campaign_resume_navigation,mobile_clipping,mobile_scroll
+            tests: campaign_resume_navigation,campaign_open_room_restore,mobile_clipping,mobile_scroll
           - suite: exploration_weapons
             tests: directional_attack,weapon_effects,terrain_coherence,exploration_map,exploration_lifecycle,knockback_response
     steps:

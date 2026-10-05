@@ -150,6 +150,7 @@ const ATTACK_BUFFER_TIME := 0.12
 var _last_hit_stop := -9999.0
 ## 传送吟唱读取的单调活动序号：两套输入/真实伤害统一递增。
 var activity_serial := 0
+var teleport_serial := 0
 ## 受击白闪 tween（新的受击到来先杀旧的，避免旧 tween 把颜色拉错）
 var _hurt_tween: Tween
 var _death_tween: Tween
@@ -588,6 +589,7 @@ func can_begin_town_return() -> bool:
 
 ## 安全传送：只清移动/动作残留，不返还资源、冷却或增益；世界负责目的地校验和保存。
 func teleport_to(destination: Vector2) -> void:
+	teleport_serial += 1
 	activity_serial += 1
 	cancel_guard(true, true)
 	TouchInput.reset()

@@ -20,7 +20,8 @@ const SAVE_DEBOUNCE := 2.0
 ## v13 失联前哨独立章节证据与分段支付；v12营地委托保持原账本。
 ## v14 新战役、远征旅行与有限作者内容独立账本。
 ## v15 增加三至六章；旧批次凭最小读取版本保护后续收据。
-const SAVE_VERSION := 15
+## v16 启用人物与区域故事；较早批次不能覆盖这些新增收据。
+const SAVE_VERSION := 16
 
 ## 世界种子（世界 v5）：「新的冒险」重掷，游戏内 BiomeMap.configure 消费；
 ## v3 旧档无此键 → DEFAULT_SEED（旧世界与旧 ecology 存档严丝合缝）

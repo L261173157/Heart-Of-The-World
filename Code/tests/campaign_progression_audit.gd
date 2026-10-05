@@ -62,7 +62,7 @@ func _init() -> void:
 		var reward := Data.reward_budget_v1(3,stats.level)
 		gold += int(reward["gold"])
 		stats.add_xp(int(reward["xp"]))
-	print("CAMPAIGN_BUILD_AUDIT ", JSON.stringify(_row("planned_batch3_main_plus_34_finite_side_regional_pre_boss",stats,gold,5,5)))
+	print("CAMPAIGN_BUILD_AUDIT ", JSON.stringify(_row("main_plus_34_finite_side_regional_pre_boss",stats,gold,5,5)))
 	var reference := CharacterStats.new()
 	reference.level = 10
 	reference.strength = 14
