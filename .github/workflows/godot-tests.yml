@@ -45,7 +45,7 @@ jobs:
           - suite: campaign_optional
             tests: campaign_optional_geometry,campaign_optional_placements,campaign_service_receipts,campaign_optional_adversarial
           - suite: campaign_optional_lifecycle
-            tests: campaign_optional_lifecycle
+            tests: campaign_optional_lifecycle,campaign_regional_passage
           - suite: campaign_optional_outcomes
             tests: campaign_optional_outcomes
           - suite: campaign_resume_mobile

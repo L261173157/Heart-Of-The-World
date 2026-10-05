@@ -14,6 +14,7 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "campaign_regional_passage": (["res://tests/campaign_regional_passage_test.tscn", "--quit-after", "100000"], "=== CAMPAIGN REGIONAL PASSAGE PASS"),
     "campaign_open_room_restore": (["res://tests/campaign_open_room_restore_test.tscn", "--quit-after", "10000"], "=== CAMPAIGN OPEN ROOM RESTORE PASS"),
     "mobile_clipping": (["res://tests/mobile_clipping_test.tscn", "--quit-after", "10000"], "=== MOBILE CLIPPING PASS"),
     "mobile_scroll": (["res://tests/mobile_scroll_test.tscn", "--quit-after", "15000"], "=== MOBILE SCROLL PASS"),
@@ -133,7 +134,7 @@ def unexpected_errors(case: str, output: str) -> list[str]:
 
 def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str],
              godot: str, logs: Path, timeout: int) -> bool:
-    if name in {"campaign_story_lifecycle", "campaign_optional_lifecycle", "campaign_optional_outcomes"}:
+    if name in {"campaign_regional_passage", "campaign_story_lifecycle", "campaign_optional_lifecycle", "campaign_optional_outcomes"}:
         timeout = max(timeout, 1800)  # 六章实走、双路线和双结局的独立进程链。
     command = ([sys.executable, args[0], godot] if args[0].endswith(".py")
                else [godot, "--headless", "--path", str(PROJECT), *args])

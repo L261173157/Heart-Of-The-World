@@ -89,7 +89,7 @@ static func _main_chapters() -> Array:
 				_action("approach", "c6:route_approach", "城塞接近石脊", "observe", "确认抵达石脊", "你亲自到达城塞外的石脊，把眼前可走的边缘写入记录。坐标没有把你直接送到龟王身边。", ["hazard"])]),
 			_step("龟王盘踞之地", "核对熔岩龟王的真实状态，战胜在场龟王或核实空场后取得核心记录。", [
 				_action("fortress", "c6:fortress_record", "中枢外围记录", "read", "核对龟王现状", "熔岩龟王仍属于原城塞。核心记录另存于新增接近区，不要求金钥匙，也不要求等待Boss复生。"),
-				_action("passage", "c6:bypass_control", "中枢外围绕行机关", "encounter", "确认中枢通路", "你记录了真实战斗或核实后的空场调查。只有亲自造成的Boss死亡才计为讨伐；通路的完成不会消灭未来的复生。", ["fortress"], {"boss_species": "熔岩龟王", "choices": ["defeated", "absent"], "opens": "c6:core_gate"}),
+				_action("passage", "c6:bypass_control", "中枢安全锁", "encounter", "确认中枢通路", "你记录了真实战斗或核实后的空场调查。只有亲自造成的Boss死亡才计为讨伐；通路的完成不会消灭未来的复生。", ["fortress"], {"boss_species": "熔岩龟王", "choices": ["defeated", "absent"], "opens": "c6:core_gate"}),
 				_action("core_record", "c6:core_record", "世界之心操作记录", "recover", "取核心记录", "操作图重申：先西侧撤守，再东侧接应，最后中央信号。沿途实物记录已经解释了这个次序。", ["passage"], {"quest_item": "c6:core_record"})]),
 			_step("世界之心", "按西、东、中顺序操作中枢，再亲自启动联络装置。", [
 				_action("core_order", "c6:heart", "世界之心中枢", "puzzle", "核对中枢次序", "西侧的撤守铭牌亮起，东侧接应纹路接通，最后是中央信号。中枢获得了启动条件，还需要你明确启动。", [], {"puzzle_order": ["west", "east", "center"], "puzzle_objects": ["c6:core_west", "c6:core_east", "c6:core_center"]}),

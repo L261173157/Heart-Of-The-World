@@ -18,6 +18,7 @@ var _deaths: Dictionary = {}
 var _death_instances: Dictionary = {}
 var _poll := 0.0
 var _last_player_position := Vector2.INF
+var _last_teleport_serial := -1
 var _action_cache: Array = []
 var _action_map: Dictionary = {}
 var _chain_cache: Dictionary = {}
@@ -291,6 +292,7 @@ func _verify(a: Dictionary, proof: Dictionary) -> String:
 			if id not in visited: return "请实走选定路线的各个标记点，再到站点验收"
 		var geometry := route_geometry(a)
 		if int(_q().get("optional_route_steps", {}).get(a["id"], 0)) < geometry.size(): return "请沿实地标出的转折走完选定通路，不能只到两个端点"
+		if not _passage(a).is_empty() and not _passage_proven(a): return "请亲自穿过本次修开的登记缺口或机关门；外侧绕行不能代替验收"
 		proof["visit_ids"] = visited.duplicate()
 		proof["route"] = _choice(a)
 		proof["traversed"] = true
@@ -348,7 +350,10 @@ func _track_routes(elapsed := 1.0 / 60.0) -> void:
 	var current := player.global_position
 	var previous := _last_player_position
 	var movement := _last_player_position.distance_to(current) if _last_player_position.is_finite() else 0.0
-	var discontinuous := _last_player_position.is_finite() and (movement > maxf(48.0, 1400.0 * minf(elapsed, 0.25)) or not _clear_route_segment(_last_player_position, current))
+	var teleported: bool = player is Player and _last_teleport_serial >= 0 and player.teleport_serial != _last_teleport_serial
+	var dead: bool = player is Player and player._is_dead
+	if player is Player: _last_teleport_serial = player.teleport_serial
+	var discontinuous: bool = dead or teleported or _last_player_position.is_finite() and (movement > maxf(48.0, 1400.0 * minf(elapsed, 0.25)) or not _clear_route_segment(_last_player_position, current))
 	_last_player_position = current
 	for a: Dictionary in _actions():
 		if a.get("kind", "") != "route" or not _can(a): continue
@@ -364,11 +369,16 @@ func _track_routes(elapsed := 1.0 / 60.0) -> void:
 				_q()["optional_route_reanchor"][a["id"]] = true
 				_host.call("_save")
 			continue
+		if discontinuous: continue
 		if _q().get("optional_route_reanchor", {}).get(a["id"], false):
 			if movement > 0.1 and _segment_near(previous, current, _route_anchor(a), 90.0):
 				_q()["optional_route_reanchor"].erase(a["id"])
 				_host.call("_save")
 			continue
+		if not visits.is_empty() and not _passage_proven(a) and _crossed_passage(a, previous, current):
+			if not _q().has("optional_route_passages"): _q()["optional_route_passages"] = {}
+			_q()["optional_route_passages"][a["id"]] = {"seed":GameState.world_seed,"route":_choice(a),"passage":_passage(a)["id"],"from":[previous.x,previous.y],"to":[current.x,current.y]}
+			_host.call("_save")
 		if step < geometry.size() and not visits.is_empty() and _segment_near(previous, current, geometry[step], 90.0):
 			step += 1
 			_set_route_step(a["id"], step)
@@ -381,6 +391,31 @@ func _track_routes(elapsed := 1.0 / 60.0) -> void:
 		if not _q().has("optional_routes"): _q()["optional_routes"] = {}
 		_q()["optional_routes"][a["id"]] = visits
 		_host.call("_save")
+
+func _passage(a: Dictionary) -> Dictionary:
+	var chain: Dictionary = _chain_cache.get(str(a.get("chain", "")), {})
+	return Layout.regional_passage(str(chain.get("terrain", "")), _choice(a)) if a.get("kind", "") == "route" else {}
+
+func _passage_proven(a: Dictionary) -> bool:
+	var passage := _passage(a)
+	if passage.is_empty(): return true
+	return not Data.regional_passage_proof(_q().get("optional_route_passages", {}).get(a["id"]), a, _choice(a), GameState.world_seed).is_empty()
+
+func _crossed_passage(a: Dictionary, previous: Vector2, current: Vector2) -> bool:
+	var passage := _passage(a)
+	if passage.is_empty() or not previous.is_finite() or not current.is_finite(): return false
+	if passage.kind == "barrier":
+		if not _barrier_destroyed(passage.id): return false
+	else:
+		if passage.id not in visual_state().get("open_gates", []): return false
+		for cell: Vector2i in Layout.gate_cells(passage.id):
+			if not Layout.obstacle_kind(cell).is_empty(): return false
+	var candidate := {"seed":GameState.world_seed,"route":_choice(a),"passage":passage.id,"from":[previous.x,previous.y],"to":[current.x,current.y]}
+	if Data.regional_passage_proof(candidate, a, _choice(a), GameState.world_seed).is_empty(): return false
+	var count := maxi(1,ceili(previous.distance_to(current)/8.0))
+	for index in range(count+1):
+		if ObstacleField.blocks(previous.lerp(current,float(index)/count),10.0): return false
+	return _clear_route_segment(previous,current)
 
 func _route_anchor(a: Dictionary) -> Vector2:
 	var points := _route_points(a)
@@ -776,6 +811,14 @@ func next_target(a: Dictionary) -> Dictionary:
 	var step := int(_q().get("optional_route_steps", {}).get(a.get("id", ""), 0))
 	if step < geometry.size():
 		return {"object_id": "", "position": geometry[step], "label": "沿实地路线到第%d/%d处转折" % [step + 1, geometry.size()]}
+	if not _passage_proven(a):
+		var passage := _passage(a)
+		var approach: Vector2 = passage.center - passage.direction * 96.0
+		# Near repairs share a wall with the independent, possibly closed hill gate.
+		if passage.kind == "barrier": approach.y -= 32.0
+		var player := get_tree().get_first_node_in_group("player") as Node2D
+		var at_start := player != null and player.global_position.distance_to(approach) <= 48.0
+		return {"object_id":"","position":approach + passage.direction * 192.0 if at_start else approach,"label":"亲自穿过已修开的缺口或机关门；外侧绕行不计验收"}
 	return {"object_id": id, "position": _position(id), "label": "抵达接应站并确认验收"}
 
 func _segment_near(from: Vector2, to: Vector2, point: Vector2, radius: float) -> bool:

@@ -20,7 +20,7 @@ const REWARD_V1 := {"gold_base": 12, "gold_target": 6, "gold_level": 3, "xp_base
 static func create(seed: int) -> Dictionary:
 	return {"id": ID, "version": VERSION, "seed": seed, "chapter1_proof": {}, "chapters": {},
 		"quests": {}, "random_used": {}, "active_random": "", "history": [], "paused_chains": [],
-		"puzzle_progress": {}, "main_routes": {}, "main_kills": {}, "optional_routes": {}, "optional_route_steps": {}, "optional_route_reanchor": {}, "optional_targets": {}, "optional_bindings": {},
+		"puzzle_progress": {}, "main_routes": {}, "main_kills": {}, "optional_routes": {}, "optional_route_steps": {}, "optional_route_reanchor": {}, "optional_route_passages": {}, "optional_targets": {}, "optional_bindings": {},
 		"world_facts": Facts.sanitize({}, seed), "encounters": Encounters.sanitize({}, seed),
 		"dynamic_runtime": {"known_objects": {}, "route_steps": {}, "relief_needs": {}, "bindings": {}}, "travel": {"visited": [], "unlocked": ["plains"], "arrivals": {}}, "services": {}, "service_receipts": {}, "flags": {}, "ending": ""}
 
@@ -541,14 +541,44 @@ static func _target(value: Variant, seed: int) -> Dictionary:
 	return {"target_key": region + "|" + species, "region_id": region, "species": species, "unit_ids": ids,
 		"target_position": position, "tick": maxi(0, _integer(value.get("tick"), 0))}
 
+## Independent receipt: legacy corner counts never imply passage through a repaired opening.
+## Completed action evidence stays compatible; only unfinished regional walks need this receipt.
+static func regional_passage_proof(value: Variant, a: Dictionary, selected: String, seed: int, check_geometry := true) -> Dictionary:
+	if not value is Dictionary or a.get("id", "") not in ["region_swamp:s3:walk", "region_hill:s3:walk"]: return {}
+	var chain := str(a.get("chain", ""))
+	var id := chain+":near_barrier" if selected=="near" else ("region_hill:shortcut_gate" if chain=="region_hill" and selected=="outer" else "")
+	if id.is_empty() or _integer(value.get("seed"), -1) != seed or value.get("route") != selected or value.get("passage") != id: return {}
+	var start := _position(value.get("from"))
+	var finish := _position(value.get("to"))
+	if start.is_empty() or finish.is_empty(): return {}
+	var from := Vector2(start[0],start[1])
+	var to := Vector2(finish[0],finish[1])
+	if from.distance_to(to) > 350.0 or from.distance_to(to) < 0.001: return {}
+	var receipt := {"seed":seed,"route":selected,"passage":id,"from":start,"to":finish}
+	# GameState restores this ledger before configuring BiomeMap. Keep typed receipts
+	# here; the runtime always revalidates them against the active seeded cells.
+	if not check_geometry: return receipt
+	if BiomeMap.current_seed() != seed: return {}
+	var passage := CampaignLayout.regional_passage(chain.trim_prefix("region_"), selected)
+	if passage.is_empty(): return {}
+	var before: float = (from-passage.center).dot(passage.direction)
+	var after: float = (to-passage.center).dot(passage.direction)
+	if before > 0.0 or after < 0.0 or after-before < 0.001: return {}
+	var crossed := from.lerp(to,-before/(after-before))
+	if absf((crossed-passage.center).cross(passage.direction)) > float(passage.half_width): return {}
+	return receipt
+
 static func _restore_progress(q: Dictionary, raw: Dictionary) -> void:
 	var main_routes: Dictionary = raw.get("main_routes", {}) if raw.get("main_routes") is Dictionary else {}
 	var optional_routes: Dictionary = raw.get("optional_routes", {}) if raw.get("optional_routes") is Dictionary else {}
 	var corners: Dictionary = raw.get("optional_route_steps", {}) if raw.get("optional_route_steps") is Dictionary else {}
 	var optional_reanchor: Dictionary = raw.get("optional_route_reanchor", {}) if raw.get("optional_route_reanchor") is Dictionary else {}
+	var passages: Dictionary = raw.get("optional_route_passages", {}) if raw.get("optional_route_passages") is Dictionary else {}
 	for a: Dictionary in Catalog.actions(int(q.get("seed", 0))).values():
 		if a["kind"] != "route" or not _can_record(q, a["stage"], a["id"], false): continue
 		var selected := choice(q, a)
+		var passage := regional_passage_proof(passages.get(a["id"]), a, selected, int(q.get("seed", 0)), false)
+		if not passage.is_empty(): q["optional_route_passages"][a["id"]] = passage
 		if a.get("chapter", "") != "":
 			var progress: Variant = main_routes.get(a["id"])
 			if not progress is Dictionary or progress.get("route") != selected or not progress.get("visited") is Array: continue

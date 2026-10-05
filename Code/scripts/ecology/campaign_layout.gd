@@ -588,7 +588,12 @@ static func _build_optional_objects() -> void:
 			"near":PackedVector2Array([at+Vector2(0,256),at+Vector2(0,-320)]),
 			"outer":PackedVector2Array([at+Vector2(0,256),at+Vector2(384,256),at+Vector2(384,-384),at+Vector2(0,-320)]),
 		}
+		if terrain in ["swamp", "hill"]:
+			# West approach, then the destroyed three-cell aperture; stay north of the separate hill gate.
+			var gap := (Vector2(_cell(at)+Vector2i(-4,0))+Vector2(0.5,0.5))*CELL
+			_region_routes[terrain]["near"] = PackedVector2Array([gap+Vector2(-96,-32),gap+Vector2(96,-32)])
 		if terrain == "hill":
+			_region_routes[terrain]["outer"] = PackedVector2Array([at+Vector2(384,256),at+Vector2(16,128),at+Vector2(16,-96),at+Vector2(0,-320)])
 			var gate: Array[Vector2i] = []
 			for x in range(-3,4):
 				var cell := _cell(at)+Vector2i(x,0)
@@ -682,6 +687,31 @@ static func entry_for_object(id: String) -> Vector2:
 static func region_routes(terrain: String) -> Dictionary:
 	_ensure()
 	return _region_routes.get(terrain,{}).duplicate(true)
+
+
+## Only the selected repaired regional passage needs a separate swept-body receipt.
+## Centers come from the registered cells, including their half-cell offset at every seed.
+static func regional_passage(terrain: String, choice: String) -> Dictionary:
+	_ensure()
+	var id := "region_"+terrain
+	var cells: Array[Vector2i] = []
+	var direction := Vector2.RIGHT
+	var kind := "barrier"
+	if terrain in ["swamp", "hill"] and choice == "near":
+		id += ":near_barrier"
+		cells = barrier_cells(id)
+	elif terrain == "hill" and choice == "outer":
+		id += ":shortcut_gate"
+		cells = gate_cells(id)
+		direction = Vector2.UP
+		kind = "gate"
+	else:
+		return {}
+	if cells.is_empty(): return {}
+	var center := Vector2.ZERO
+	for cell: Vector2i in cells: center += (Vector2(cell)+Vector2(0.5,0.5))*CELL
+	center /= float(cells.size())
+	return {"id":id,"kind":kind,"center":center,"direction":direction,"half_width":38.0}
 
 
 ## C3 现场路线的真实逐段落脚点。调查/传送不能替代走过这些点。
