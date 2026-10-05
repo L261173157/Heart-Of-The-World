@@ -248,6 +248,10 @@ func _ready() -> void:
 	var fx_layer := FxLayer.new()
 	fx_layer.name = "FxLayer"
 	add_child(fx_layer)
+	# 装备粒子是独立有界池；只消费成功命中/格挡/橙装事件。
+	var equipment_particles := preload("res://scripts/combat/equipment_particle_layer.gd").new()
+	equipment_particles.name = "EquipmentParticles"
+	add_child(equipment_particles)
 	# 世界事件监视（灭绝/入侵潮/饱和 → world_event 播报）
 	add_child(WorldEventWatcher.new())
 	# 成就判定（纯订阅 + GameState 持久化）

@@ -420,12 +420,17 @@ func complete_world(chain: String) -> void:
 	if chain=="world_relief":
 		await go("world_relief:need_a")
 		GameState.inventory["onigiri"]=99
+		var pending_before := _pending_total("onigiri")
 		dynamic.claim_service("world_relief:need_a")
-		check(not GameState.campaign_quest.services.world_relief_station.claimed and GameState.count_item("onigiri")==99,"full inventory keeps whole finite supply pending")
+		check(GameState.campaign_quest.services.world_relief_station.claimed and GameState.count_item("onigiri")==99
+			and _pending_total("onigiri")==pending_before+1,"full inventory settles finite supply into one pending receipt")
+		var pending := GameState.pending_items.duplicate(true)
+		dynamic.claim_service("world_relief:need_a")
+		check(GameState.pending_items==pending and _pending_sources_unique(),"finite world service cannot duplicate pending quantity or source")
 		GameState.inventory["onigiri"]=98
+		check(_claim_one_pending("onigiri") and _pending_total("onigiri")==pending_before,"free room transfers exactly one already-owned supply")
 		dynamic.claim_service("world_relief:need_a")
-		dynamic.claim_service("world_relief:need_a")
-		check(GameState.campaign_quest.services.world_relief_station.claimed and GameState.count_item("onigiri")==99,"finite world supply pays exactly once after freeing room")
+		check(GameState.campaign_quest.services.world_relief_station.claimed and GameState.count_item("onigiri")==99,"finite world supply still pays exactly once")
 
 
 func binding_controls() -> void:
@@ -467,3 +472,27 @@ func binding_controls() -> void:
 	dynamic._route_cache.clear()
 	dynamic._runtime().bindings=original_bindings
 	world.refresh_state(dynamic.visual_state())
+
+
+func _pending_total(item_id: String) -> int:
+	var total := 0
+	for receipt: Dictionary in GameState.pending_items.values():
+		if receipt.get("item_id", "") == item_id: total += int(receipt.get("count", 0))
+	return total
+
+
+func _claim_one_pending(item_id: String) -> bool:
+	for receipt: Dictionary in GameState.pending_items.values():
+		if receipt.get("item_id", "") == item_id:
+			return bool(GameState.equipment_action("claim_pending", {"id": receipt["id"]}, GameState.equipment_revision()).get("ok", false))
+	return false
+
+
+func _pending_sources_unique() -> bool:
+	var sources := {}
+	for key: String in GameState.pending_items:
+		var receipt: Dictionary = GameState.pending_items[key]
+		var source := str(receipt.get("source", ""))
+		if source.is_empty() or sources.has(source) or receipt.get("id", "") != key or int(receipt.get("count", 0)) <= 0: return false
+		sources[source] = true
+	return true

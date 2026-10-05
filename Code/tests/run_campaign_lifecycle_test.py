@@ -89,8 +89,9 @@ def main() -> int:
                                         or evidence(current, 4, "beacon")):
                 return fail("rescued liaison cannot silently repair the remote beacon")
             if phase == "beacon99" and (not evidence(current, 4, "beacon")
-                                          or stage(current, 4).get("receipt", {}).get("paid")):
-                return fail("full inventory must preserve beacon completion and unpaid whole reward")
+                                          or not stage(current, 4).get("receipt", {}).get("paid")
+                                          or not current.get("pending_items")):
+                return fail("full inventory must persist beacon completion, paid reward and pending item receipt")
             if phase == "claim" and not stage(current, 4).get("receipt", {}).get("paid"):
                 return fail("explicit claim did not persist its one-time paid receipt")
             if phase == "paid" and current != snapshots["death"]:

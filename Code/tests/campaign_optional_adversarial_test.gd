@@ -57,13 +57,16 @@ func _shared_service_negatives() -> void:
 	var q:=GameState.campaign_quest.duplicate(true)
 	var inv:=GameState.inventory.duplicate(true)
 	var pos:=_player.position
+	var saved_pending := GameState.pending_items.duplicate(true)
+	var pending_before := _pending_total("onigiri")
 	var endpoints: Array[String]=["region_plains:work_outer","region_plains:station"]
 	GameState.inventory["onigiri"]=99
 	for id: String in endpoints:
 		_player.position=_optional._position(id)
 		_optional.claim_service(id)
-	_negative(GameState.inventory.onigiri==99 and not Data.service_claimed(GameState.campaign_quest,"region_plains_station"),"both full99 endpoints retain exactly one pending shared stock")
+	_negative(GameState.inventory.onigiri==99 and Data.service_claimed(GameState.campaign_quest,"region_plains_station") and _pending_total("onigiri")==pending_before+1 and _pending_sources_unique(),"both full99 endpoints settle exactly one shared stock into a unique pending receipt")
 	GameState.inventory["onigiri"]=98
+	_check(_claim_one_pending("onigiri") and _pending_total("onigiri")==pending_before,"claim one owned overflow item without reopening either service")
 	for id: String in endpoints:
 		_player.position=_optional._position(id)
 		_optional.claim_service(id)
@@ -75,5 +78,6 @@ func _shared_service_negatives() -> void:
 	_negative(GameState.inventory.onigiri==99,"cold ledger restore cannot reopen either shared endpoint")
 	GameState.campaign_quest=q
 	GameState.inventory=inv
+	GameState.pending_items=saved_pending
 	_player.position=pos
 	_refresh()

@@ -94,14 +94,20 @@ func _test_sanitize() -> void:
 
 func _test_inventory() -> void:
 	GameState.inventory = {"onigiri": 99, "gold-key": 99, "tea-leaf": 3}
+	var keys_before := _pending_total("gold-key")
+	var rice_before := _pending_total("onigiri")
+	_check(Inventory.apply({"tea-leaf": 3}, {"gold-key": 1}), "奖励满99仍原子完成交易")
+	_check(GameState.count_item("tea-leaf") == 0 and GameState.count_item("gold-key") == 99
+		and _pending_total("gold-key") == keys_before + 1, "成本一次扣除，溢出钥匙完整留在持久收据")
+	_check(Inventory.apply({}, {"onigiri": 1, "water-pot": 1}), "混合可装和溢出奖励同一事务到账")
+	_check(GameState.count_item("water-pot") == 1 and _pending_total("onigiri") == rice_before + 1, "可装奖励和待领取余量总数守恒")
+	_check(_pending_sources_unique(), "每个溢出收据具有唯一非空来源和正数余量")
+	var pending_before := GameState.pending_items.duplicate(true)
+	_check(Inventory.apply({"gold-key": 1}, {"gold-key": 1}), "同物品先扣后奖正常提交")
+	_check(GameState.count_item("gold-key") == 99 and GameState.pending_items == pending_before, "同物品净额精确且不凭空创建溢出")
 	var before := GameState.inventory.duplicate(true)
-	_check(not Inventory.apply({"tea-leaf": 3}, {"gold-key": 1}), "奖励满99阻止交易")
-	_check(GameState.inventory == before, "容量失败不先扣材料")
-	_check(not Inventory.apply({}, {"onigiri": 1, "water-pot": 1}), "多奖励任一溢出则整体失败")
-	_check(GameState.count_item("water-pot") == 0, "部分可装的奖励也不提前发放")
-	_check(Inventory.apply({"gold-key": 1}, {"gold-key": 1}), "同物品先扣再奖后容量99允许")
-	_check(GameState.count_item("gold-key") == 99, "同物品净额精确")
-	_check(not Inventory.apply({"tea-leaf": 4}, {"water-pot": 1}), "成本不足不付奖励")
+	_check(not Inventory.apply({"tea-leaf": 4}, {"water-pot": 1}), "成本不足仍拒绝整个交易")
+	_check(before == GameState.inventory and pending_before == GameState.pending_items, "缺料失败既不改库存也不产生待领取")
 
 func _test_legacy() -> void:
 	GameState.quests = {"active": [], "completed": {}, "receipts": {}, "last_receipt": ""}
@@ -110,15 +116,18 @@ func _test_legacy() -> void:
 	GameState.quests["active"].append(q)
 	var gold := GameState.gold
 	var xp := GameState.stats.xp
-	_check(not _qm._complete(q), "旧收集奖励满时保留待结算")
-	_check(GameState.quests["active"].has(q) and GameState.count_item("tea-leaf") == 3, "收集失败保留委托与全部材料")
-	_check(GameState.gold == gold and GameState.stats.xp == xp and GameState.quests["completed"].is_empty(), "失败无金币经验/计数/收据部分提交")
+	var pending_before := _pending_total("gold-key")
+	_check(_qm._complete(q), "旧手动收集满包仍完整结算")
+	_check(not GameState.quests["active"].has(q) and GameState.count_item("tea-leaf") == 0, "完成一次后移除任务并扣足成本")
+	_check(GameState.gold == gold + 25 and GameState.stats.xp == xp + 20
+		and GameState.quests["completed"]["capacity_collect"] == 1, "金币经验完成数在同次原子提交精确支付")
+	_check(GameState.count_item("gold-key") == 99 and _pending_total("gold-key") == pending_before + 1, "整单奖励未截断，满额钥匙保存待领取")
+	var receipts := GameState.pending_items.duplicate(true)
+	_check(not _qm._complete(q) and GameState.gold == gold + 25 and GameState.pending_items == receipts, "重复结算不重付金币也不重复创建收据")
 	GameState.remove_item("gold-key", 1)
-	_check(GameState.quests["active"].has(q), "手动交付任务释放空间后仍需手动确认")
-	_check(_qm._complete(q), "释放空间后整单可提交")
-	_check(GameState.count_item("tea-leaf") == 0 and GameState.count_item("gold-key") == 99, "成功交易扣料和奖励原子到账")
-	_check(GameState.gold == gold + 25 and GameState.quests["completed"]["capacity_collect"] == 1, "完成一次计数与报酬")
-	_check(not _qm._complete(q) and GameState.gold == gold + 25, "重复结算不重付")
+	_check(_pending_total("gold-key") == pending_before + 1 and GameState.count_item("gold-key") == 98, "腾出空间不暗中领取已保存余量")
+	_check(_claim_one_pending("gold-key") and GameState.count_item("gold-key") == 99
+		and _pending_total("gold-key") == pending_before, "明确领取恢复一格且待领取总量准确减少一件")
 	var id := ""
 	for i in 100:
 		var candidate := "retry_bonus_%d" % i
@@ -131,18 +140,23 @@ func _test_legacy() -> void:
 	GameState.inventory[bonus] = 99
 	GameState.quests["active"].append(q)
 	gold = GameState.gold
-	_check(not _qm._complete(q), "旧自动探索委托满仓时保持待付")
-	_check(q.get("settlement_blocked", false), "待付状态明确可呈现")
+	pending_before = _pending_total(bonus)
+	_check(_qm._complete(q), "旧自动探索满包仍在原触发点支付")
+	_check(not GameState.quests["active"].has(q) and GameState.gold == gold + 25
+		and _pending_total(bonus) == pending_before + 1, "自动模式不增加现场动作要求且保存完整奖品")
+	receipts = GameState.pending_items.duplicate(true)
 	GameState.remove_item(bonus, 1)
-	_check(not GameState.quests["active"].has(q) and GameState.gold == gold + 25, "旧自动模式在空间恢复信号上自动重试，不要求新动作")
-	_check(GameState.count_item(bonus) == 99 and GameState.quests["completed"][id] == 1, "自动重试奖励恰好一次")
+	_check(GameState.gold == gold + 25 and GameState.pending_items == receipts, "库存变化信号不重试已付任务或复制收据")
+	_check(GameState.count_item(bonus) == 98 and GameState.quests["completed"][id] == 1, "任务报酬恰好一次；待领取保持显式")
 	q = _legacy("same_item")
 	q["item"] = "gold-key"
 	q["need"] = 1
 	q["progress"] = 1
 	GameState.inventory["gold-key"] = 99
 	GameState.quests["active"].append(q)
-	_check(_qm._complete(q) and GameState.count_item("gold-key") == 99, "实际委托按扣料后容量而非错误的预扣库存判断")
+	pending_before = _pending_total("gold-key")
+	_check(_qm._complete(q) and GameState.count_item("gold-key") == 99
+		and _pending_total("gold-key") == pending_before, "实际委托同物品先扣再奖不会虚增溢出")
 
 func _test_camp_ledger() -> void:
 	_check(_qm.offer(Data.LANDMARK, "camp_ecology", "营地巡守")["kind"] == "info", "无真实世界目标不可在桌面生成有奖空单")
@@ -164,10 +178,11 @@ func _test_camp_ledger() -> void:
 	GameState.camp_quest["outcome"] = "survey"
 	GameState.inventory["onigiri"] = 99
 	var gold := GameState.gold
-	_check(_qm.claim(Data.ID).contains("99"), "营地领取整笔奖励满仓阻止")
-	_check(not GameState.camp_quest["paid"] and GameState.gold == gold, "营地容量失败不付金币或写已付")
-	GameState.remove_item("onigiri", 1)
-	_check(_qm.claim(Data.ID).contains("交付成功"), "返回真实营地NPC旁手动成功交付")
+	var pending_before := _pending_total("onigiri")
+	_check(_qm.claim(Data.ID).contains("交付成功"), "返回真实营地NPC旁满包也可手动完整交付")
+	_check(GameState.camp_quest["paid"] and GameState.gold > gold
+		and _pending_total("onigiri") == pending_before + 1, "金币与已付收据同时提交，奖品溢出不截断")
+	_check(_pending_sources_unique(), "营地奖励同样具有唯一持久来源")
 	_check(GameState.camp_quest["paid"] and not GameState.camp_quest["active"], "成功账本写稳定已付标记")
 	gold = GameState.gold
 	GameState.remove_item("onigiri", 1)
@@ -296,3 +311,27 @@ func _test_loaded_target_positions() -> void:
 		body.queue_free()
 	await get_tree().process_frame
 	WorldSim.sim = null
+
+
+func _pending_total(item_id: String) -> int:
+	var total := 0
+	for receipt: Dictionary in GameState.pending_items.values():
+		if receipt.get("item_id", "") == item_id: total += int(receipt.get("count", 0))
+	return total
+
+
+func _claim_one_pending(item_id: String) -> bool:
+	for receipt: Dictionary in GameState.pending_items.values():
+		if receipt.get("item_id", "") == item_id:
+			return bool(GameState.equipment_action("claim_pending", {"id": receipt["id"]}, GameState.equipment_revision()).get("ok", false))
+	return false
+
+
+func _pending_sources_unique() -> bool:
+	var sources := {}
+	for key: String in GameState.pending_items:
+		var receipt: Dictionary = GameState.pending_items[key]
+		var source := str(receipt.get("source", ""))
+		if source.is_empty() or sources.has(source) or receipt.get("id", "") != key or int(receipt.get("count", 0)) <= 0: return false
+		sources[source] = true
+	return true

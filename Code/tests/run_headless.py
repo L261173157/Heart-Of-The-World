@@ -14,6 +14,17 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "equipment_earned_budget": ([str(PROJECT / "tests/run_equipment_earned_budget_test.py")], "=== EQUIPMENT EARNED BUDGET PASS ==="),
+    "equipment_exploration_migration": (["res://tests/equipment_exploration_migration_test.tscn", "--quit-after", "1000"], "=== EQUIPMENT EXPLORATION MIGRATION PASS"),
+    "equipment_attack_sources": (["res://tests/equipment_attack_sources_test.tscn", "--quit-after", "10000"], "=== EQUIPMENT ATTACK SOURCES PASS"),
+    "equipment_service": (["res://tests/equipment_service_test.tscn", "--quit-after", "1000"], "=== EQUIPMENT SERVICE PASS"),
+    "equipment_bag_ui": (["res://tests/equipment_bag_ui_test.tscn", "--quit-after", "20000"], "=== EQUIPMENT BAG UI PASS"),
+    "equipment_domain": (["-s", "tests/equipment_domain_test.gd"], "EQUIPMENT DOMAIN TESTS PASSED"),
+    "equipment_drops": (["-s", "tests/equipment_drops_test.gd"], "=== EQUIPMENT DROPS PASS"),
+    "equipment_kill_integration": (["res://tests/equipment_kill_integration_test.tscn", "--quit-after", "10000"], "=== EQUIPMENT KILL INTEGRATION PASS"),
+    "equipment_combat": (["res://tests/equipment_combat_test.tscn", "--quit-after", "10000"], "=== EQUIPMENT COMBAT PASS"),
+    "equipment_particles": (["res://tests/equipment_particles_test.tscn", "--quit-after", "10000"], "=== EQUIPMENT PARTICLES PASS"),
+    "equipment_persistence": ([str(PROJECT / "tests/run_equipment_persistence_test.py")], "=== EQUIPMENT PERSISTENCE LIFECYCLE PASS"),
     "campaign_walk_geometry": (["res://tests/campaign_walk_geometry_test.tscn", "--quit-after", "30000"], "=== CAMPAIGN WALK GEOMETRY PASS"),
     "campaign_dynamic_truth": (["res://tests/campaign_dynamic_truth_test.tscn", "--quit-after", "100000"], "CAMPAIGN_DYNAMIC_TRUTH_TEST PASS"),
     "campaign_regional_passage": (["res://tests/campaign_regional_passage_test.tscn", "--quit-after", "100000"], "=== CAMPAIGN REGIONAL PASSAGE PASS"),
@@ -150,11 +161,11 @@ def unexpected_errors(case: str, output: str) -> list[str]:
 
 def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str],
              godot: str, logs: Path, timeout: int) -> bool:
-    if name in {"campaign_regional_passage", "campaign_story_lifecycle", "campaign_optional_lifecycle", "campaign_optional_outcomes", "campaign_dynamic_lifecycle", "campaign_dynamic_save_failure", "campaign_cross_family", "campaign_earned_budget"}:
+    if name in {"campaign_regional_passage", "campaign_story_lifecycle", "campaign_optional_lifecycle", "campaign_optional_outcomes", "campaign_dynamic_lifecycle", "campaign_dynamic_save_failure", "campaign_cross_family", "campaign_earned_budget", "equipment_earned_budget"}:
         timeout = max(timeout, 1800)  # 六章实走、双路线和双结局的独立进程链。
     command = ([sys.executable, args[0], godot] if args[0].endswith(".py")
                else [godot, "--headless", "--path", str(PROJECT), *args])
-    if name in {"campaign_cross_family", "campaign_earned_budget"}:
+    if name in {"campaign_cross_family", "campaign_earned_budget", "equipment_earned_budget", "equipment_persistence"}:
         command += ["--log-dir", str(logs / name)]
     print(f"[{name}] 开始", flush=True)
     with subprocess.Popen(command, env=env, stdout=subprocess.PIPE,

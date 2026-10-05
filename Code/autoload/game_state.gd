@@ -21,7 +21,11 @@ const SAVE_DEBOUNCE := 2.0
 ## v14 新战役、远征旅行与有限作者内容独立账本。
 ## v15 增加三至六章；旧批次凭最小读取版本保护后续收据。
 ## v16 启用人物与区域故事；较早批次不能覆盖这些新增收据。
-const SAVE_VERSION := 17
+## v18 唯一装备实例、六槽、来源掉落、保底与溢出收据。
+const SAVE_VERSION := 18
+const GearCatalog = preload("res://scripts/equipment/equipment_catalog.gd")
+const GearInventory = preload("res://scripts/equipment/equipment_inventory.gd")
+const GearDrops = preload("res://scripts/equipment/equipment_drops.gd")
 
 ## 世界种子（世界 v5）：「新的冒险」重掷，游戏内 BiomeMap.configure 消费；
 ## v3 旧档无此键 → DEFAULT_SEED（旧世界与旧 ecology 存档严丝合缝）
@@ -57,12 +61,29 @@ var _future_campaign_warned := false
 ## 物品栏（玩法 v7，存档 v6）：id -> 数量（钳 ITEM_MAX）。合法 id 真源是
 ## EconomyMath 的价格表（纯逻辑层，随迁服务端）；表现元数据在 ItemCatalog
 var inventory: Dictionary = {}
-## 已占用槽位默认锁定；false 是玩家明确选择的按总词条自动换装。
+## 旧存档槽锁字段只用于迁移提示；v18实例锁在equipment_state内，不再启用自动换装。
 var equipment_locks: Dictionary = {}
-## 单个待比较位：首件保留到明确选择，满位后新掉落折金，不覆盖未查看的候选。
+## 旧存档单候选暂存；加载后迁入唯一实例表，生产掉落不再使用此容量。
 var pending_equipment: Dictionary = {}
-## 每次新候选递增；按钮保存此凭证，重复/延迟输入不能处理后来的装备。
+## 旧候选凭证保留用于兼容读取；新动作使用实例ID+账本修订号。
 var equipment_offer_id: int = 0
+## v18 权威实例账本；stats.equips 仅为派生属性缓存。
+var equipment_state: Dictionary = GearInventory.empty_state()
+var equipment_drop_state: Dictionary = GearDrops.empty_state()
+var pending_items: Dictionary = {}
+var pending_item_sequence := 0
+var item_source_receipts: Dictionary = {}
+var first_boss_choices: Array = []
+var first_boss_choice_source := ""
+var equipment_preferred_slot := "weapon"
+var equipment_explored_ilvl := 1
+var equipment_fixed_offers: Dictionary = {}
+var equipment_migration_notice := ""
+var _equipment_busy := false
+var _migration_backup_required := false
+var _loaded_save_bytes := PackedByteArray()
+var _future_save_version := 0
+var _future_equipment_schema := 0
 ## 自动赏金跨场景/进程持久化；{} 表示交接期。
 var bounty: Dictionary = {}
 ## 当前追踪的已接 NPC 委托；无效 ID 由任务管理器回退。
@@ -96,7 +117,7 @@ var player_snapshot: Variant = null
 var settings: Dictionary = {"volume": 0.8, "music_volume": 1.0, "sfx_volume": 1.0,
 	"screen_shake": true, "damage_numbers": true, "auto_aim": false,
 	"hero_skin": "blue", "lantern_shadows": true, "show_fps": false,
-	"mobile_shortcut": "bolt", "mobile_recovery": "heal"}
+	"mobile_shortcut": "bolt", "mobile_recovery": "heal", "equipment_particles_reduced": false}
 ## 本局击杀数（死亡信息/统计用）
 var session_kills: int = 0
 ## 主动阅读对话开合标记（运行态，不存档）；攻击与交互始终独立。
@@ -223,147 +244,56 @@ func add_gold(amount: int) -> void:
 
 # --- 游商营地（金币 → 永久强化的消费出口） + 装备掉落 ---
 
-## 装备：稀有度名（0~3）
-const RARITY_NAMES := ["普通", "精良", "稀有", "史诗"]
-## 四槽位（策划纲要：头盔/衣服/鞋子 + 武器），各自独立单件替换
-const EQUIP_SLOTS := ["weapon", "helmet", "armor", "boots"]
-const SLOT_NAMES := {"weapon": "武器", "helmet": "头盔", "armor": "衣服", "boots": "鞋子"}
-const EQUIP_PREFIX := ["猎手", "龙鳞", "霜刃", "灰烬", "蚁噬", "龟甲", "夜枭", "荒野"]
-const EQUIP_SUFFIX := {"weapon": ["之刃", "之核", "獠牙"], "helmet": ["战冠", "面甲", "兜帽"],
-	"armor": ["鳞甲", "护胸", "皮衣"], "boots": ["之履", "胫甲", "便鞋"]}
-## 按部位的词条池：id -> [最小值, 最大值]（比例）；稀有度线性放大。
-## 武器偏输出 / 头盔偏效用 / 衣服偏生存 / 鞋子保底移速（策划：鞋子=移速+1条随机）
-const EQUIP_AFFIXES := {
-	"weapon": {"atk": [0.05, 0.18], "cdr": [0.03, 0.10], "lifesteal": [0.02, 0.06],
-		"xp": [0.04, 0.12], "gold": [0.05, 0.15]},
-	"helmet": {"hp": [0.05, 0.20], "xp": [0.04, 0.12], "gold": [0.05, 0.15],
-		"cdr": [0.03, 0.10]},
-	"armor": {"hp": [0.05, 0.20], "lifesteal": [0.02, 0.06], "atk": [0.03, 0.10]},
-	"boots": {"move": [0.04, 0.12], "hp": [0.03, 0.10], "gold": [0.04, 0.10]},
-}
+## 六个装备槽；掉落只入包，不再自动换装或折金。
+const RARITY_NAMES := ["普通", "精良", "稀有", "史诗", "传奇"]
+const EQUIP_SLOTS := ["weapon", "offhand", "helmet", "armor", "boots", "charm"]
+const SLOT_NAMES := {"weapon": "武器", "offhand": "副手", "helmet": "头盔", "armor": "衣服", "boots": "鞋子", "charm": "饰品"}
 
-
-## 随机生成一件指定槽位的装备（rarity 0~3）：2 条不重复词条（鞋子 = 移速 + 1 条随机）；
-## 元素附魔只在武器槽且稀有度以上 35% 出
+## 兼容旧工具的生成入口；正式掉落只使用来源锁定的独立随机种子。
 func roll_equipment(rarity: int, slot := "weapon") -> Dictionary:
-	rarity = clampi(rarity, 0, 3)
-	slot = slot if slot in EQUIP_SLOTS else "weapon"
-	var affixes := {}
-	var pool: Array = EQUIP_AFFIXES[slot].keys()
-	pool.shuffle()
-	if slot == "boots":
-		affixes["move"] = _roll_affix(slot, "move", rarity)
-		pool.erase("move")
-	# 词条数：常规 2 条；鞋子为 移速 + 1 条随机（合计 2）
-	var count := mini(1 if slot == "boots" else 2, pool.size())
-	for i in count:
-		var id: String = pool[i]
-		affixes[id] = _roll_affix(slot, id, rarity)
-	var suffixes: Array = EQUIP_SUFFIX[slot]
-	var item := {
-		"slot": slot,
-		"name": "%s%s" % [EQUIP_PREFIX[randi() % EQUIP_PREFIX.size()],
-			suffixes[randi() % suffixes.size()]],
-		"rarity": rarity,
-		"affixes": affixes,
-	}
-	if slot == "weapon" and rarity >= 2 and randf() < 0.35:
-		item["element"] = "fire" if randf() < 0.5 else "ice"
-	return item
+	var nonce := int(equipment_state.get("next_id", 1))
+	return GearCatalog.generate(hash("manual|%d|%d" % [world_seed, nonce]), equipment_explored_ilvl, rarity, slot)
 
-
-func _roll_affix(slot: String, id: String, rarity: int) -> float:
-	var rangev: Array = EQUIP_AFFIXES[slot][id]
-	var t := (0.5 + 0.5 * rarity / 3.0)  # 稀有度抬升词条区间
-	return lerpf(float(rangev[0]), float(rangev[1]), t * randf())
-
-
-## 锁定是保留构筑的默认值：旧档缺字段、新装备入空槽都不会被下一件静默换掉。
-## 空槽无需锁；只有玩家在背包明确解锁后，才启用旧有的总词条自动比较。
 func is_equipment_locked(slot: String) -> bool:
-	return slot in EQUIP_SLOTS and not stats.equips.get(slot, {}).is_empty() \
-			and bool(equipment_locks.get(slot, true))
-
+	var id := str(equipment_state.get("equipped", {}).get(slot, ""))
+	return not id.is_empty() and bool(equipment_state.get("items", {}).get(id, {}).get("locked", false))
 
 func set_equipment_locked(slot: String, locked: bool) -> bool:
-	if not slot in EQUIP_SLOTS or stats.equips.get(slot, {}).is_empty():
-		return false
-	if is_equipment_locked(slot) == locked:
-		return false
-	equipment_locks[slot] = locked
-	_queue_save()
-	return true
+	var id := str(equipment_state.get("equipped", {}).get(slot, ""))
+	if id.is_empty(): return false
+	return bool(equipment_action("lock", {"id": id, "value": locked}, equipment_revision()).get("ok", false))
 
-
-## 掉落入口返回实际处置，避免表现层把“待比较”误报为“已出售”。
-## 空槽自动穿戴，明确解锁仍按旧有评分自动换装；默认锁定槽保留一个候选。
-## 同时只保留一件：待比较期间的后续掉落折金且明确播报，不覆盖首件或无声丢失。
+## 获得物品不等于穿戴；同名不同实例不会覆盖，稳定ID不能重复入库。
 func receive_equipment(item: Dictionary) -> String:
-	if item.is_empty():
-		return "invalid"
-	var slot := str(item.get("slot", "weapon"))
-	if not slot in EQUIP_SLOTS:
-		return "invalid"
-	var clean := _sanitize_equip_item(slot, item)
-	var current: Dictionary = stats.equips.get(slot, {})
-	if current.is_empty() or (not is_equipment_locked(slot) \
-			and stats.equip_score(clean) > stats.equip_score(current)):
-		stats.equips[slot] = clean
-		if current.is_empty():
-			equipment_locks[slot] = true
-		stats.changed.emit()
-		if not current.is_empty():
-			add_gold(EconomyMath.sell_price(int(current.get("rarity", 0))))
-		_invalidate_world_save_cache()
-		return "equipped"
-	if is_equipment_locked(slot) and pending_equipment.is_empty():
-		equipment_offer_id += 1
-		pending_equipment = clean
-		_invalidate_world_save_cache()
-		EventBus.equipment_offer_changed.emit()
-		return "pending"
-	add_gold(EconomyMath.sell_price(int(clean.get("rarity", 0))))
+	if equipment_read_only() or item.is_empty(): return "invalid"
+	var result := GearInventory.add_item(equipment_state, item)
+	if not result.get("ok", false): return "invalid"
+	equipment_state = result["state"]
 	_invalidate_world_save_cache()
-	return "sold"
+	EventBus.equipment_offer_changed.emit()
+	EventBus.inventory_changed.emit()
+	return "stored"
 
-
-## 旧调用点的兼容布尔接口：仅已经穿上才返回 true。
+## 旧布尔入口不再隐含同意穿戴/出售；明确动作使用 equipment_action。
 func try_equip(item: Dictionary) -> bool:
 	return receive_equipment(item) == "equipped"
 
+func resolve_pending_equipment(_equip_new: bool, _expected_offer_id: int) -> bool:
+	return false
 
-## 先撤销候选凭证，再变更属性/金币并广播；重复点按与信号重入最多结算一次。
-func resolve_pending_equipment(equip_new: bool, expected_offer_id: int) -> bool:
-	if pending_equipment.is_empty() or expected_offer_id != equipment_offer_id:
-		return false
-	var item := pending_equipment.duplicate(true)
-	pending_equipment.clear()
-	var sold: Dictionary = item
-	if equip_new:
-		var slot: String = item["slot"]
-		sold = stats.equips.get(slot, {}).duplicate(true)
-		stats.equips[slot] = item
-		# 玩家明确选中的构筑继续受保护，不沿用途中切换的自动模式。
-		equipment_locks[slot] = true
-		stats.changed.emit()
-	if not sold.is_empty():
-		add_gold(EconomyMath.sell_price(int(sold.get("rarity", 0))))
-	_invalidate_world_save_cache()
-	EventBus.equipment_offer_changed.emit()
-	return true
-
-
-## 装备描述文本（HUD 图鉴/掉落 toast 用）
 func equip_description(item: Dictionary) -> String:
-	var names := {"atk": "攻击", "hp": "生命", "cdr": "冷却", "lifesteal": "吸血",
-		"move": "移速", "gold": "金币", "xp": "经验"}
+	if item.is_empty(): return "空槽"
+	var names := {"atk":"物攻", "phys":"物攻", "magic":"魔攻", "hp":"生命", "mp":"精力", "mp_regen":"回蓝", "heal_power":"治疗", "cdr":"减冷却", "lifesteal":"吸血", "move":"移速", "gold":"金币", "xp":"经验", "guard":"格挡强度", "block_cost":"格挡省蓝"}
 	var parts: Array[String] = []
-	for key in item.get("affixes", {}):
-		parts.append("%s+%.0f%%" % [names.get(key, key), float(item["affixes"][key]) * 100.0])
+	for area: String in ["affixes"]:
+		var bonuses: Variant = item.get(area, {})
+		if bonuses is Dictionary:
+			for key: String in bonuses:
+				parts.append("%s+%.2f%%" % [names.get(key, key), float(bonuses[key]) * 100.0])
 	var element := str(item.get("element", ""))
-	if element != "":
-		parts.append("火焰附魔" if element == "fire" else "寒冰附魔")
-	return "%s·%s [%s]" % [RARITY_NAMES[clampi(int(item.get("rarity", 0)), 0, RARITY_NAMES.size() - 1)], item.get("name", "?"), " ".join(parts)]
+	if element != "": parts.append("火焰附魔" if element == "fire" else "寒冰附魔")
+	var level := "旧制原值" if item.get("legacy", false) else "iLv%d·需Lv%d" % [int(item.get("item_level", 1)), int(item.get("required_level", 1))]
+	return "%s·%s（%s） %s" % [RARITY_NAMES[clampi(int(item.get("rarity", 0)), 0, 4)], item.get("name", "?"), level, " / ".join(parts)]
 
 
 func upgrade_level(kind: String) -> int:
@@ -377,7 +307,7 @@ func upgrade_cost(kind: String) -> int:
 
 ## 购买一级强化：成功扣钱返回 true；种类非法/满级/钱不够返回 false 不改状态
 func buy_upgrade(kind: String) -> bool:
-	if not kind in UPGRADE_KINDS:
+	if equipment_read_only() or not kind in UPGRADE_KINDS:
 		return false
 	if upgrade_level(kind) >= UPGRADE_MAX_LEVEL:
 		return false
@@ -394,20 +324,14 @@ func buy_upgrade(kind: String) -> bool:
 
 # --- 物品栏（玩法 v7 P0）：库存单点；掉落/购买/售出统一入口 ---
 
-## 获得物品（monster 掉落 / 商店购买 / P1 任务奖励都走这）。
-## 未知 id 忽略；总量钳 ITEM_MAX（满 99 静默丢溢出——单机游戏不惩罚囤积）
+## 获得物品先存可用库存，超过99的余额进入持久待领取；没有静默丢弃。
 func add_item(id: String, count: int = 1) -> void:
-	if not EconomyMath.knows_item(id) or count <= 0:
-		return
-	var total := mini(int(inventory.get(id, 0)) + count, ITEM_MAX)
-	inventory[id] = total
-	EventBus.item_gained.emit(id, count, total)
-	EventBus.inventory_changed.emit()
-	_queue_save()
+	apply_inventory_transaction({}, {id: count})
 
 
 ## 扣减物品（不足返回 false 不改状态）；归零即 erase（存档不留 0 键）
 func remove_item(id: String, count: int = 1) -> bool:
+	if equipment_read_only(): return false
 	var have := int(inventory.get(id, 0))
 	if have < count or count <= 0:
 		return false
@@ -416,6 +340,7 @@ func remove_item(id: String, count: int = 1) -> bool:
 		inventory.erase(id)
 	else:
 		inventory[id] = have
+	_equipment_bump()
 	EventBus.inventory_changed.emit()
 	_queue_save()
 	return true
@@ -437,24 +362,39 @@ func try_use_consumable(id: String) -> bool:
 ## 商店购买消耗品：钱不够 / 已满 ITEM_MAX 返回 false
 func buy_item(id: String) -> bool:
 	var price := EconomyMath.item_price(id)
-	if price <= 0 or gold < price or count_item(id) >= ITEM_MAX:
+	if equipment_read_only() or _equipment_busy or price <= 0 or gold < price or count_item(id) >= ITEM_MAX:
 		return false
+	_equipment_busy = true
+	begin_world_reward()
 	gold -= price
+	inventory[id] = count_item(id) + 1
+	_equipment_bump()
+	_queue_save()
 	EventBus.gold_changed.emit(gold)
-	add_item(id, 1)
+	EventBus.item_gained.emit(id, 1, count_item(id))
+	EventBus.inventory_changed.emit()
+	EventBus.equipment_offer_changed.emit()
+	end_world_reward()
+	_equipment_busy = false
 	return true
 
-
-## 商店出售材料（一次性全卖该 id）：返回卖出件数（0 = 不可售或没货）。
-## 收入走 add_gold（贪婪被动与装备折金同口径放大）
+## 普通材料沿用既有金币倍率；装备交易使用独立固定实收价。
 func sell_material(id: String) -> int:
 	var price := EconomyMath.item_sell_price(id)
 	var n := count_item(id)
-	if price <= 0 or n <= 0:
+	if equipment_read_only() or _equipment_busy or price <= 0 or n <= 0:
 		return 0
+	_equipment_busy = true
+	begin_world_reward()
 	inventory.erase(id)
+	gold += roundi(price * n * stats.gold_mult())
+	_equipment_bump()
+	_queue_save()
+	EventBus.gold_changed.emit(gold)
 	EventBus.inventory_changed.emit()
-	add_gold(price * n)
+	EventBus.equipment_offer_changed.emit()
+	end_world_reward()
+	_equipment_busy = false
 	return n
 
 
@@ -509,6 +449,7 @@ func fog_knows_position(pos: Vector2) -> bool:
 
 func fog_reveal_position(pos: Vector2) -> bool:
 	_ensure_exploration()
+	equipment_explored_ilvl = maxi(equipment_explored_ilvl, _equipment_terrain_level(BiomeMap.terrain_at(pos)))
 	var added := exploration.reveal(pos)
 	for cell: Vector2i in added:
 		var coarse := fog_cell_of((Vector2(cell) + Vector2.ONE * 0.5) * ExplorationFog.CELL)
@@ -592,6 +533,22 @@ func reset_all() -> void:
 	equipment_locks = {}
 	pending_equipment = {}
 	equipment_offer_id += 1
+	equipment_state = GearInventory.empty_state()
+	equipment_drop_state = GearDrops.empty_state()
+	pending_items = {}
+	pending_item_sequence = 0
+	item_source_receipts = {}
+	first_boss_choices = []
+	first_boss_choice_source = ""
+	equipment_preferred_slot = "weapon"
+	equipment_explored_ilvl = 1
+	equipment_fixed_offers = {}
+	equipment_migration_notice = ""
+	_future_save_version = 0
+	_future_equipment_schema = 0
+	_migration_backup_required = false
+	_loaded_save_bytes = PackedByteArray()
+	_equipment_busy = false
 	bounty = {}
 	tracked_quest_id = ""
 	save_now()
@@ -683,11 +640,11 @@ func end_world_reward() -> void:
 ## 降频序列化，跳过时复用缓存——文件仍带（可能早至 6s 的）ecology 键
 ## 返回 true 只表示临时档写入/flush/原子替换全部成功；测试禁用写盘也返回 false。
 func save_now(include_ecology := true) -> bool:
-	if _future_campaign_min_reader > SAVE_VERSION:
+	if equipment_read_only():
 		_save_timer = 0.0
 		if not _future_campaign_warned:
 			_future_campaign_warned = true
-			EventBus.hint_requested.emit("此存档包含更新版本的远征进度，当前版本只读，不会覆盖原存档；请使用较新的战役版本继续")
+			EventBus.hint_requested.emit("此存档的数据格式当前无法安全写入，已启用只读保护，不会覆盖原存档；请使用兼容的新版本继续")
 		return false
 	if _world_reward_depth > 0:
 		_world_reward_save_requested = true
@@ -733,7 +690,19 @@ func save_now(include_ecology := true) -> bool:
 		"camp_quest": camp_quest.duplicate(true),
 		"outpost_quest": outpost_quest.duplicate(true),
 		"campaign_quest": campaign_quest.duplicate(true),
-		"campaign_min_reader": SAVE_VERSION if not campaign_quest.is_empty() else 13,
+		"campaign_min_reader": SAVE_VERSION,
+		"equipment_schema": 1,
+		"equipment_state": equipment_state.duplicate(true),
+		"equipment_drop_state": equipment_drop_state.duplicate(true),
+		"pending_items": pending_items.duplicate(true),
+		"pending_item_sequence": pending_item_sequence,
+		"item_source_receipts": item_source_receipts.duplicate(true),
+		"first_boss_choices": first_boss_choices.duplicate(true),
+		"first_boss_choice_source": first_boss_choice_source,
+		"equipment_preferred_slot": equipment_preferred_slot,
+		"equipment_explored_ilvl": equipment_explored_ilvl,
+		"equipment_fixed_offers": equipment_fixed_offers.duplicate(true),
+		"equipment_migration_notice": equipment_migration_notice,
 		"age_days": stats.age_days,
 		"lifespan_days": stats.lifespan_days,
 		"codex": codex,
@@ -822,11 +791,15 @@ func save_now(include_ecology := true) -> bool:
 	if FileAccess.get_file_as_bytes(tmp_path) != payload:
 		DirAccess.remove_absolute(tmp_path)
 		return _save_failed("存档写入校验失败，保留旧档")
+	if _migration_backup_required and not _preserve_equipment_migration_backup():
+		DirAccess.remove_absolute(tmp_path)
+		return _save_failed("旧存档备份写入失败，保留原存档；本次进度尚未可靠保存")
 	var err := DirAccess.rename_absolute(tmp_path, SAVE_PATH)
 	if err != OK:
 		DirAccess.remove_absolute(tmp_path)
 		return _save_failed("存档原子替换失败（错误码 %d），保留旧档" % err)
 	last_save_unix = saved_at
+	_migration_backup_required = false
 	return true
 
 
@@ -963,7 +936,8 @@ func _load() -> void:
 	var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
 	if file == null:
 		return
-	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	_loaded_save_bytes = file.get_buffer(file.get_length())
+	var parsed: Variant = JSON.parse_string(_loaded_save_bytes.get_string_from_utf8())
 	file.close()
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_warning("存档损坏，已忽略")
@@ -972,6 +946,14 @@ func _load() -> void:
 	_future_campaign_min_reader = _safe_int(data.get("campaign_min_reader", 0), 0)
 	_future_campaign_warned = false
 	var version := _safe_int(data.get("version", 1), 1)
+	_future_save_version = version if version > SAVE_VERSION else 0
+	_future_equipment_schema = _safe_int(data.get("equipment_schema", 0), 0)
+	var raw_equipment_schema: Variant = data.get("equipment_schema", null)
+	if data.has("equipment_schema") or data.has("equipment_state"):
+		if typeof(raw_equipment_schema) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(raw_equipment_schema)) \
+				or float(raw_equipment_schema) != float(_future_equipment_schema) or _future_equipment_schema < 1:
+			_future_equipment_schema = 2 # 损坏/未知格式仅尝试只读恢复，不能覆盖完整实例账本。
+	_migration_backup_required = version < SAVE_VERSION
 	if version > SAVE_VERSION:
 		push_warning("存档版本 %d 高于当前支持的 %d（可能来自更新版本客户端），按兼容模式尝试读取" % [
 			version, SAVE_VERSION])
@@ -1106,7 +1088,7 @@ func _load() -> void:
 					# 直接 settings[key] 索引会在键缺失时中断整个 _load
 					settings[key] = clampf(_safe_float(saved_settings[key],
 						float(settings.get(key, 1.0))), 0.0, 1.0)
-				"screen_shake", "damage_numbers", "auto_aim", "lantern_shadows", "show_fps":
+				"screen_shake", "damage_numbers", "auto_aim", "lantern_shadows", "show_fps", "equipment_particles_reduced":
 					if typeof(saved_settings[key]) == TYPE_BOOL:
 						settings[key] = saved_settings[key]
 				"mobile_shortcut":
@@ -1248,9 +1230,409 @@ func _load() -> void:
 			var n := clampi(_safe_int(saved_inventory[key], 0), 0, ITEM_MAX)
 			if n > 0:
 				inventory[key] = n
+	_restore_equipment_state(data)
 	last_save_unix = maxf(0.0, _safe_float(data.get("last_save_unix", 0.0), 0.0))
 	_apply_settings()
 	EventBus.player_progress_changed.emit(
 		stats.level, stats.xp, stats.xp_to_next(), stats.pending_points
 	)
 	EventBus.gold_changed.emit(gold)
+
+# --- v18 装备与物品事务边界 ---
+
+func equipment_read_only() -> bool:
+	return _future_campaign_min_reader > SAVE_VERSION or _future_save_version > SAVE_VERSION or _future_equipment_schema > 1
+
+func equipment_revision() -> int:
+	return int(equipment_state.get("revision", 0))
+
+func _equipment_bump() -> void:
+	equipment_state["revision"] = equipment_revision() + 1
+
+func _equipment_player() -> Node:
+	return get_tree().get_first_node_in_group("player")
+
+func equipment_can_swap() -> bool:
+	var player := _equipment_player()
+	return not equipment_read_only() and player != null and player.has_method("can_change_loadout") and bool(player.call("can_change_loadout"))
+
+func equipment_swap_reason() -> String:
+	if equipment_read_only(): return "更新版本存档只读"
+	var player := _equipment_player()
+	if player == null: return "进入冒险后可装配"
+	return str(player.call("loadout_block_reason")) if player.has_method("loadout_block_reason") else "脱战5秒后可装配"
+
+func equipment_snapshot() -> Dictionary:
+	var result := equipment_state.duplicate(true)
+	result["pending"] = pending_items.values().duplicate(true)
+	result["first_boss_choices"] = first_boss_choices.duplicate(true)
+	result["first_boss_source"] = first_boss_choice_source
+	result["preferred_slot"] = equipment_preferred_slot
+	result["can_swap"] = equipment_can_swap()
+	result["swap_reason"] = equipment_swap_reason()
+	result["can_trade"] = not equipment_read_only()
+	result["trade_reason"] = "更新版本存档只读" if equipment_read_only() else ""
+	result["max_ilvl"] = equipment_explored_ilvl
+	result["gold"] = gold
+	result["materials"] = inventory.duplicate(true)
+	result["migration_notice"] = equipment_migration_notice
+	return result
+
+func equipment_query(filters: Dictionary = {}, page := 0, page_size := 24) -> Dictionary:
+	return GearInventory.query(equipment_state, filters, page, page_size)
+
+func equipment_preview(id: String) -> Dictionary:
+	var item: Dictionary = equipment_state.get("items", {}).get(id, {})
+	if item.is_empty():
+		for entry: Dictionary in equipment_state.get("buyback", []):
+			if str(entry.get("item", {}).get("id", "")) == id: item = entry["item"]
+	if item.is_empty(): return {}
+	var result := stats.preview_equipment(item)
+	result["item"] = item.duplicate(true)
+	result["current"] = stats.equips.get(str(item.get("slot", "")), {}).duplicate(true)
+	result["references"] = GearInventory.preset_references(equipment_state, id)
+	result["equipped"] = GearInventory.is_equipped(equipment_state, id)
+	result["protection"] = GearInventory.protection_reason(equipment_state, id)
+	return result
+
+func _equipment_context() -> Dictionary:
+	return {"gold": gold, "materials": inventory.duplicate(true), "level": stats.level, "can_swap": equipment_can_swap()}
+
+## 面板凭证由ID和修订号共同组成。确认只授权所看到的物品，不能处理下一件。
+func equipment_action(action: String, payload: Dictionary, expected_revision: int) -> Dictionary:
+	if equipment_read_only(): return {"ok": false, "error": "read_only"}
+	if _equipment_busy or _world_reward_depth > 0: return {"ok": false, "error": "transaction_busy"}
+	if expected_revision != equipment_revision(): return {"ok": false, "error": "stale_revision"}
+	if action in ["sell", "decompose", "buyback_clear", "buyback_discard", "presets_clear_reference"] and payload.get("confirmed", false) != true:
+		return {"ok": false, "error": "confirmation_required"}
+	if action == "preferred_slot":
+		var slot := str(payload.get("slot", ""))
+		if slot not in EQUIP_SLOTS: return {"ok": false, "error": "invalid_slot"}
+		equipment_preferred_slot = slot
+		_equipment_bump()
+		_queue_save()
+		EventBus.equipment_offer_changed.emit()
+		return {"ok": true}
+	if action == "claim_pending": return _claim_pending_item(str(payload.get("id", "")))
+	if action == "first_boss_choose": return _claim_first_boss(str(payload.get("id", "")))
+	var context := _equipment_context()
+	var offer_token := ""
+	if action in ["craft", "purchase"]:
+		offer_token = str(payload.get("token", ""))
+		var fixed: Dictionary = equipment_fixed_offers.get(offer_token, {})
+		if fixed.is_empty() or str(fixed.get("kind", "")) != action: return {"ok": false, "error": "invalid_offer"}
+		context["offered_item"] = fixed["item"].duplicate(true)
+	var offer := GearInventory.preview(equipment_state, action, payload, context)
+	if not offer.get("ok", false): return offer
+	var committed := GearInventory.commit(equipment_state, offer, context)
+	if not committed.get("ok", false): return committed
+	_equipment_busy = true
+	begin_world_reward()
+	# 所有权、钱、材料、余量先同时公布；之后才发任何可重入的信号。
+	equipment_state = committed["state"]
+	gold = int(committed["gold"])
+	inventory = committed["materials"]
+	for id: String in inventory.keys():
+		var count := int(inventory[id])
+		if count > ITEM_MAX:
+			_store_pending_item(id, count - ITEM_MAX, "decompose:%d" % equipment_revision())
+			inventory[id] = ITEM_MAX
+		elif count <= 0: inventory.erase(id)
+	if not offer_token.is_empty():
+		equipment_fixed_offers.erase(offer_token)
+	_sync_equipped_stats()
+	if action in ["equip", "unequip", "preset_apply"]:
+		var player := _equipment_player()
+		if player != null and player.has_method("apply_loadout_change"): player.call("apply_loadout_change")
+	stats.changed.emit()
+	EventBus.gold_changed.emit(gold)
+	EventBus.inventory_changed.emit()
+	EventBus.equipment_offer_changed.emit()
+	_invalidate_world_save_cache()
+	end_world_reward()
+	_equipment_busy = false
+	return {"ok": true, "revision": equipment_revision(), "gold_delta": committed.get("gold_delta", 0), "parts_delta": committed.get("parts_delta", 0)}
+
+## 成品第一次浏览即固定；取消、翻页、重新打开都复用同一件。
+func equipment_offer(kind: String, slot: String, base_id := "") -> Dictionary:
+	if equipment_read_only() or kind not in ["craft", "purchase"] or slot not in EQUIP_SLOTS: return {}
+	var nonce := int(equipment_state.get("craft_nonce", 0))
+	var target := slot if base_id.is_empty() else base_id
+	# 未购买的其他预览不因购买白装或另一部位而重抽。
+	for existing: Dictionary in equipment_fixed_offers.values():
+		if str(existing.get("kind", "")) == kind and str(existing.get("target", "")) == target \
+				and int(existing.get("item", {}).get("item_level", 1)) == equipment_explored_ilvl:
+			return existing.duplicate(true)
+	var token := ("%d|%s|%s|%d|%d" % [world_seed, kind, target, equipment_explored_ilvl, nonce]).sha256_text()
+	if equipment_fixed_offers.has(token): return equipment_fixed_offers[token].duplicate(true)
+	var item := GearCatalog.generate(hash("offer|" + token), equipment_explored_ilvl, 2 if kind == "craft" else 0, target)
+	if item.is_empty() or str(item.get("slot", "")) != slot: return {}
+	item["id"] = "offer:" + token
+	item = GearCatalog.sanitize_item(JSON.parse_string(JSON.stringify(item)))
+	var cost := GearCatalog.craft_cost(item)
+	var result := {"kind": kind, "target": target, "token": token, "item": item, "price": int(cost["gold"]) if kind == "craft" else GearCatalog.purchase_cost(item), "parts": int(cost["parts"]) if kind == "craft" else 0}
+	equipment_fixed_offers[token] = result
+	_equipment_bump()
+	_queue_save()
+	return result.duplicate(true)
+
+func _sync_equipped_stats() -> void:
+	stats.equips = GearInventory.equipped_items(equipment_state)
+
+func _store_pending_item(id: String, count: int, source: String) -> void:
+	if count <= 0: return
+	pending_item_sequence += 1
+	var receipt_id := "pending:%d" % pending_item_sequence
+	while pending_items.has(receipt_id):
+		pending_item_sequence += 1
+		receipt_id = "pending:%d" % pending_item_sequence
+	pending_items[receipt_id] = {"id": receipt_id, "item_id": id, "count": count, "source": source}
+
+## 任务/击杀/分解共用库存结算；收据先关闭，所有物料再广播。
+func can_apply_inventory_transaction(costs: Dictionary, rewards: Dictionary) -> bool:
+	if equipment_read_only(): return false
+	for id: String in costs:
+		if not EconomyMath.knows_item(id) or int(costs[id]) < 0 or count_item(id) < int(costs[id]): return false
+	for id: String in rewards:
+		if not EconomyMath.knows_item(id) or int(rewards[id]) < 0: return false
+	return true
+
+func apply_inventory_transaction(costs: Dictionary, rewards: Dictionary, source := "") -> bool:
+	if not can_apply_inventory_transaction(costs, rewards): return false
+	if not source.is_empty() and item_source_receipts.has(source): return false
+	begin_world_reward()
+	if not source.is_empty(): item_source_receipts[source] = true
+	for id: String in costs:
+		var remaining := count_item(id) - int(costs[id])
+		if remaining > 0: inventory[id] = remaining
+		else: inventory.erase(id)
+	for id: String in rewards:
+		var total := count_item(id) + int(rewards[id])
+		inventory[id] = mini(ITEM_MAX, total)
+		if total > ITEM_MAX: _store_pending_item(id, total - ITEM_MAX, source if not source.is_empty() else "reward:%d" % (pending_item_sequence + 1))
+		if total == 0: inventory.erase(id)
+	if not costs.is_empty() or not rewards.is_empty():
+		_equipment_bump()
+		_queue_save()
+		for id: String in rewards:
+			if int(rewards[id]) > 0: EventBus.item_gained.emit(id, int(rewards[id]), count_item(id))
+		EventBus.inventory_changed.emit()
+		EventBus.equipment_offer_changed.emit()
+	end_world_reward()
+	return true
+
+func _claim_pending_item(id: String) -> Dictionary:
+	if not pending_items.has(id): return {"ok": false, "error": "missing_receipt"}
+	var receipt: Dictionary = pending_items[id]
+	var item_id := str(receipt.get("item_id", ""))
+	var amount := mini(ITEM_MAX - count_item(item_id), int(receipt.get("count", 0)))
+	if amount <= 0: return {"ok": false, "error": "inventory_full"}
+	_equipment_busy = true
+	begin_world_reward()
+	inventory[item_id] = count_item(item_id) + amount
+	receipt["count"] = int(receipt["count"]) - amount
+	if int(receipt["count"]) == 0: pending_items.erase(id)
+	_equipment_bump()
+	_queue_save()
+	EventBus.inventory_changed.emit()
+	EventBus.equipment_offer_changed.emit()
+	end_world_reward()
+	_equipment_busy = false
+	return {"ok": true, "claimed": amount}
+
+func _claim_first_boss(id: String) -> Dictionary:
+	var chosen: Dictionary = {}
+	for candidate: Dictionary in first_boss_choices:
+		if str(candidate.get("id", "")) == id: chosen = candidate
+	if chosen.is_empty(): return {"ok": false, "error": "missing_choice"}
+	var added := GearInventory.add_item(equipment_state, chosen)
+	if not added.get("ok", false): return added
+	_equipment_busy = true
+	begin_world_reward()
+	equipment_state = added["state"]
+	first_boss_choices.clear()
+	equipment_drop_state["first_boss_consumed"] = true
+	equipment_drop_state["first_boss_status"] = "claimed"
+	_invalidate_world_save_cache()
+	EventBus.equipment_offer_changed.emit()
+	EventBus.inventory_changed.emit()
+	end_world_reward()
+	_equipment_busy = false
+	return {"ok": true, "id": id}
+
+func _equipment_terrain_level(terrain: String) -> int:
+	return int({"plains": 1, "forest": 3, "snow": 5, "swamp": 5, "hill": 7, "lava": 10}.get(terrain, 1))
+
+func _verified_equipment_source(source: Dictionary, lethal: bool) -> Dictionary:
+	if WorldSim.sim == null or _safe_int(source.get("world_seed", -1), -1) != world_seed: return {}
+	var instance_id := _safe_int(source.get("instance_id", -1), -1)
+	var inst: MonsterInstance = WorldSim.sim.instances.get(instance_id)
+	if inst == null or not inst.is_alive: return {}
+	var actor_id := _safe_int(source.get("actor_instance_id", 0), 0)
+	var player_id := _safe_int(source.get("player_instance_id", 0), 0)
+	if actor_id <= 0 or player_id <= 0 or not is_instance_id_valid(actor_id) or not is_instance_id_valid(player_id): return {}
+	var actor := instance_from_id(actor_id) as Node
+	var player := instance_from_id(player_id) as Node
+	if not actor is MonsterBase or not player is Player or player._is_dead or player.current_hp <= 0.0 or not actor.is_inside_tree() or player != _equipment_player() or actor.get("inst") != inst: return {}
+	if lethal and (_world_reward_depth <= 0 or float(actor.get("current_hp")) > 0.0 or source.get("player_kill", false) != true or not bool(actor.get("_reward_settling"))): return {}
+	if lethal:
+		var attributed: Variant = actor.get("_equipment_kill_source")
+		if not attributed is Dictionary or attributed.get("player_kill", false) != true \
+				or str(attributed.get("source_id", "")) != str(source.get("source_id", "")) \
+				or _safe_int(attributed.get("player_instance_id", 0), 0) != player_id: return {}
+	if not lethal and float(actor.get("current_hp")) <= 0.0: return {}
+	var region: SimRegion = WorldSim.sim.regions.get(inst.region_id)
+	if region == null: return {}
+	var kind := "boss" if inst.species.is_boss else ("elite" if inst.is_elite else "ordinary")
+	var locked: Dictionary = equipment_drop_state.get("sources", {}).get(str(source.get("source_id", "")), {})
+	var terrain := str(locked.get("terrain", region.terrain))
+	var expected := GearDrops.create_source(world_seed, kind, inst.id, 0, terrain, {"generation": inst.generation, "splits_on_death": inst.species.splits_on_death})
+	expected["player_kill"] = lethal
+	if str(source.get("source_id", "")) != str(expected.get("source_id", "")): return {}
+	return expected
+
+func notify_equipment_first_combat(source: Dictionary) -> Dictionary:
+	if equipment_read_only(): return {}
+	var verified := _verified_equipment_source(source, false)
+	if verified.is_empty(): return {}
+	var before: int = equipment_drop_state.get("sources", {}).size()
+	var locked := GearDrops.begin_combat(equipment_drop_state, verified, stats.equips, equipment_preferred_slot)
+	if equipment_drop_state.get("sources", {}).size() != before: _invalidate_world_save_cache()
+	return locked
+
+func settle_equipment_drop(source: Dictionary) -> Dictionary:
+	if equipment_read_only(): return {}
+	var verified := _verified_equipment_source(source, true)
+	if verified.is_empty(): return {}
+	var receipt := GearDrops.settle(equipment_drop_state, verified)
+	if receipt.is_empty() or receipt.get("duplicate", false): return receipt
+	for item: Dictionary in receipt.get("items", []):
+		if receive_equipment(item) == "stored":
+			EventBus.hint_requested.emit("获得%s·%s，已存入背包" % [RARITY_NAMES[clampi(int(item.get("rarity", 0)), 0, 4)], str(item.get("name", "装备"))])
+	if not receipt.get("first_boss_choices", []).is_empty():
+		first_boss_choices = receipt["first_boss_choices"].duplicate(true)
+		first_boss_choice_source = str(receipt.get("source_id", ""))
+		EventBus.hint_requested.emit("首领遗物已备妥：菜单→背包→待领取，从三件传奇中选择一件")
+		_equipment_bump()
+		EventBus.equipment_offer_changed.emit()
+	_invalidate_world_save_cache()
+	return receipt
+
+func _preserve_equipment_migration_backup() -> bool:
+	if _loaded_save_bytes.is_empty(): return true
+	var path := SAVE_PATH + ".pre-equipment-v17.bak"
+	if FileAccess.file_exists(path):
+		# 已有不同的旧档也保留；为当前来源另建内容寻址备份，绝不覆盖。
+		if FileAccess.get_file_as_bytes(path) == _loaded_save_bytes: return true
+		path = SAVE_PATH + ".pre-equipment-" + _loaded_save_bytes.hex_encode().sha256_text().substr(0, 16) + ".bak"
+		if FileAccess.file_exists(path): return FileAccess.get_file_as_bytes(path) == _loaded_save_bytes
+	var backup := FileAccess.open(path, FileAccess.WRITE)
+	if backup == null: return false
+	var written := backup.store_buffer(_loaded_save_bytes)
+	backup.flush()
+	var err := backup.get_error()
+	backup.close()
+	return written and err == OK and FileAccess.get_file_as_bytes(path) == _loaded_save_bytes
+
+func _restore_equipment_state(data: Dictionary) -> void:
+	pending_items = {}
+	pending_item_sequence = maxi(0, _safe_int(data.get("pending_item_sequence", 0), 0))
+	var saved_pending: Variant = data.get("pending_items", {})
+	if saved_pending is Dictionary:
+		for id: Variant in saved_pending:
+			var raw: Variant = saved_pending[id]
+			if not id is String or not raw is Dictionary: continue
+			var item_id := str(raw.get("item_id", ""))
+			var count := _safe_int(raw.get("count", 0), 0)
+			if EconomyMath.knows_item(item_id) and count > 0:
+				pending_items[id] = {"id": id, "item_id": item_id, "count": count, "source": str(raw.get("source", ""))}
+	item_source_receipts = {}
+	var receipts: Variant = data.get("item_source_receipts", {})
+	if receipts is Dictionary:
+		for id: Variant in receipts:
+			if id is String and typeof(receipts[id]) == TYPE_BOOL and receipts[id]: item_source_receipts[id] = true
+	equipment_preferred_slot = str(data.get("equipment_preferred_slot", "weapon"))
+	if equipment_preferred_slot not in EQUIP_SLOTS: equipment_preferred_slot = "weapon"
+	equipment_explored_ilvl = clampi(_safe_int(data.get("equipment_explored_ilvl", 1), 1), 1, 10) if data.has("equipment_explored_ilvl") else _equipment_known_terrain_level()
+	first_boss_choice_source = str(data.get("first_boss_choice_source", ""))
+	first_boss_choices = []
+	var choices: Variant = data.get("first_boss_choices", [])
+	if choices is Array:
+		for value: Variant in choices:
+			if not value is Dictionary: continue
+			var item := GearCatalog.sanitize_item(value)
+			if not item.is_empty() and int(item.get("rarity", 0)) == 4 and not str(item.get("id", "")).is_empty(): first_boss_choices.append(item)
+	equipment_drop_state = GearDrops.sanitize_state(data.get("equipment_drop_state", {}))
+	# 尚未选择时，可由同档已确认的来源收据恢复完整候选；已选状态绝不重发。
+	if first_boss_choices.is_empty() and equipment_drop_state.get("first_boss_status", "") == "pending":
+		for receipt: Dictionary in equipment_drop_state.get("receipts", {}).values():
+			if bool(receipt.get("first_boss", false)) and not receipt.get("first_boss_choices", []).is_empty():
+				first_boss_choices = receipt["first_boss_choices"].duplicate(true)
+				first_boss_choice_source = str(receipt.get("source_id", ""))
+				break
+	equipment_migration_notice = str(data.get("equipment_migration_notice", ""))
+	if data.get("equipment_state") is Dictionary:
+		equipment_state = GearInventory.sanitize_state(data["equipment_state"])
+	else:
+		equipment_state = GearInventory.empty_state()
+		var old_equipped: Dictionary = data.get("equips", {}).duplicate(true) if data.get("equips", {}) is Dictionary else {}
+		if data.get("equip") is Dictionary and not data["equip"].is_empty() and not old_equipped.has("weapon"):
+			old_equipped["weapon"] = data["equip"].duplicate(true)
+		for slot: String in EQUIP_SLOTS:
+			if not old_equipped.get(slot) is Dictionary: continue
+			var id := "legacy:%d:equipped:%s" % [world_seed, slot]
+			var item := GearCatalog.legacy_item(old_equipped[slot], id, slot)
+			var added := GearInventory.add_item(equipment_state, item)
+			if added.get("ok", false):
+				equipment_state = added["state"]
+				equipment_state["equipped"][slot] = id
+		if not pending_equipment.is_empty():
+			var slot := str(pending_equipment.get("slot", "weapon"))
+			var item := GearCatalog.legacy_item(data.get("pending_equipment", pending_equipment), "legacy:%d:pending" % world_seed, slot)
+			var added := GearInventory.add_item(equipment_state, item)
+			if added.get("ok", false): equipment_state = added["state"]
+		if not old_equipped.is_empty() or not pending_equipment.is_empty():
+			equipment_migration_notice = "旧装备与候选已按原值保留；旧槽自动模式已停止。新掉落全部入包，不再自动换装或出售。"
+	pending_equipment = {}
+	equipment_locks = {}
+	_sync_equipped_stats()
+	equipment_fixed_offers = {}
+	var offers: Variant = data.get("equipment_fixed_offers", {})
+	if offers is Dictionary:
+		for token: Variant in offers:
+			var value: Variant = offers[token]
+			if not token is String or not value is Dictionary or str(value.get("kind", "")) not in ["craft", "purchase"]: continue
+			var item := GearCatalog.sanitize_item(value.get("item", {}))
+			if item.is_empty(): continue
+			equipment_fixed_offers[token] = {"kind": str(value["kind"]), "target": str(value.get("target", item.get("base_id", item.get("slot", "")))), "token": token, "item": item,
+				"price": int(GearCatalog.craft_cost(item)["gold"]) if value["kind"] == "craft" else GearCatalog.purchase_cost(item), "parts": int(GearCatalog.craft_cost(item)["parts"]) if value["kind"] == "craft" else 0}
+
+## 旧档兑换档位只从已消毒的真实地图记忆迁移，不用等级、年龄或旧装备推测。
+func _equipment_known_terrain_level() -> int:
+	BiomeMap.configure(world_seed)
+	var highest := 1
+	for byte_index: int in range(exploration.legacy.size() - 1, -1, -1):
+		var bits := int(exploration.legacy[byte_index])
+		if bits == 0: continue
+		for bit: int in 8:
+			if bits & (1 << bit) == 0: continue
+			var index := byte_index * 8 + bit
+			var pos := (Vector2(index % 200, index / 200) + Vector2.ONE * 0.5) * 4000.0
+			highest = maxi(highest, _equipment_terrain_level(BiomeMap.terrain_at(pos)))
+			if highest == 10: return highest
+	var chunk_keys: Array = exploration.chunks.keys()
+	chunk_keys.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return a.x + a.y > b.x + b.y)
+	for key: Vector2i in chunk_keys:
+		var bytes: PackedByteArray = exploration.chunks[key]
+		for byte_index: int in bytes.size():
+			var bits := int(bytes[byte_index])
+			if bits == 0: continue
+			for bit: int in 8:
+				if bits & (1 << bit) == 0: continue
+				var index := byte_index * 8 + bit
+				var cell := key * 32 + Vector2i(index % 32, index / 32)
+				if not ExplorationFog.valid_cell(cell): continue
+				var pos := (Vector2(cell) + Vector2.ONE * 0.5) * ExplorationFog.CELL
+				highest = maxi(highest, _equipment_terrain_level(BiomeMap.terrain_at(pos)))
+				if highest == 10: return highest
+	return highest

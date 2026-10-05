@@ -93,6 +93,11 @@ func launch(dir: Vector2, dmg: float, p_speed := 270.0, p_source := "", p_bolt :
 	# 每次发射均为新弹道动作，即使调用者复用同一字典也生成全新 ID。
 	attack_context = EnemyAttackContext.create(float(p_context.get("strength", dmg)),
 		bool(p_context.get("blockable", true)), -direction)
+	# 动作 ID 每发重建，但合法来源必须从发射者传到实际命中/格挡。
+	# 新字典先清掉池中上发来源；无来源的测试弹/环境弹不能借旧射手领取资格。
+	var equipment_source: Variant = p_context.get("equipment_source", {})
+	if equipment_source is Dictionary and not equipment_source.is_empty():
+		attack_context["equipment_source"] = equipment_source.duplicate(true)
 	speed = p_speed
 	source_name = p_source
 	bolt_tex = p_bolt

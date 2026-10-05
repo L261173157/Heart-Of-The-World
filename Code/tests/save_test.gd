@@ -238,74 +238,94 @@ func _test_progress_meta() -> void:
 	var hp_before: float = GameState.stats.max_hp()
 	GameState.stats.add_passive("hp")
 	_check(GameState.stats.max_hp() > hp_before, "被动等级即时影响衍生属性")
-	# 装备：四槽位生成/评分替换/词条求和/鞋子保底移速/存档往返/旧档迁移
-	GameState.stats.equips = {}
+	# 真实装备所有权是存档真源；穿戴副本仅由它派生，换下旧件保留在包中。
+	GameState.equipment_state = EquipmentInventory.empty_state()
+	GameState._sync_equipped_stats()
 	var weak := {"slot": "weapon", "name": "旧刀", "rarity": 0, "affixes": {"atk": 0.05}}
 	var strong := {"slot": "weapon", "name": "新刃", "rarity": 3,
 		"affixes": {"atk": 0.20, "hp": 0.10}, "element": "fire"}
 	var boots := {"slot": "boots", "name": "快靴", "rarity": 1, "affixes": {"move": 0.10}}
-	_check(GameState.try_equip(weak), "空位装备任何掉落")
-	_check(GameState.stats.equips["weapon"]["name"] == "旧刀", "装备写入武器槽")
+	_equip_fixture(weak, "save:weak")
+	_check(GameState.stats.equips["weapon"]["name"] == "旧刀", "授权装配真源派生武器槽")
 	var gold_before_replace := GameState.gold
-	GameState.set_equipment_locked("weapon", false)
-	_check(GameState.try_equip(strong), "明确解锁后同槽更高评分替换")
-	_check(GameState.gold - gold_before_replace == EconomyMath.sell_price(0),
-		"换下的旧装备按稀有度折金（+%d，旧实现直接蒸发）" % (GameState.gold - gold_before_replace))
+	_equip_fixture(strong, "save:strong")
+	_check(GameState.stats.equips["weapon"]["id"] == "save:strong", "明确装配替换指定武器")
+	_check(GameState.gold == gold_before_replace and GameState.equipment_state.items.has("save:weak"),
+		"换下的旧装备仍归玩家所有，不自动折金")
 	_check(GameState.stats.equip_element() == "fire", "武器元素读取")
-	_check(GameState.try_equip(boots), "异槽掉落不与武器槽比较（鞋子独立入槽）")
+	_equip_fixture(boots, "save:boots")
+	_check(GameState.stats.equips["boots"]["id"] == "save:boots", "鞋子独立入槽")
 	_check(GameState.stats.equip_affix("atk") > 0.19 and GameState.stats.equip_affix("move") > 0.09,
 		"多槽词条求和生效（atk=%.2f move=%.2f）" % [GameState.stats.equip_affix("atk"), GameState.stats.equip_affix("move")])
 	var atk_before: float = GameState.stats.physical_attack()
-	GameState.stats.equips["weapon"] = {"slot": "weapon", "name": "测试", "rarity": 1, "affixes": {"atk": 0.30}}
+	_equip_fixture({"slot": "weapon", "name": "测试", "rarity": 1, "affixes": {"atk": 0.30}}, "save:test")
 	_check(GameState.stats.physical_attack() > atk_before, "装备攻击词条生效")
+	var owned := GameState.equipment_state.duplicate(true)
 	GameState.save_now()
+	GameState.equipment_state = EquipmentInventory.empty_state()
 	GameState.stats.equips = {}
 	GameState._load()
 	_check(GameState.stats.equips.get("weapon", {}).get("name", "") == "测试"
-			and GameState.stats.equips.get("boots", {}).get("name", "") == "快靴", "读档恢复四槽装备")
-	for slot in ["weapon", "helmet", "armor", "boots"]:
+			and GameState.stats.equips.get("boots", {}).get("name", "") == "快靴", "读档从装配真源恢复装备")
+	_check(GameState.equipment_state.items.size() == owned.items.size() and owned.items.keys().all(func(id: String) -> bool: return GameState.equipment_state.items.has(id))
+			and GameState.equipment_state.equipped == owned.equipped, "读档保留全部四件所有权和已穿引用")
+	for slot: String in GameState.EQUIP_SLOTS:
 		var rolled: Dictionary = GameState.roll_equipment(2, slot)
-		var has_move: bool = rolled["affixes"].has("move")
-		var ok: bool = rolled.has("name") and rolled["affixes"].size() == 2 and int(rolled["rarity"]) == 2
+		var ok: bool = rolled.has("name") and rolled["affix_rolls"].size() == 2 and int(rolled["rarity"]) == 2
 		if slot == "boots":
-			ok = ok and has_move  # 鞋子保底移速词条
+			ok = ok and rolled["fixed_affixes"].has("move")
 		if slot != "weapon":
-			ok = ok and not rolled.has("element")  # 元素附魔只在武器槽
-		_check(ok, "按部位生成装备（%s）：%s" % [slot, str(rolled)])
-	# 旧档迁移：单件时代的 "equip" 键应落到武器槽
-	GameState.stats.equips = {}
-	var legacy := FileAccess.open(GameState.SAVE_PATH, FileAccess.READ)
-	var data: Dictionary = JSON.parse_string(legacy.get_as_text())
-	legacy.close()
+			ok = ok and not rolled.has("element")
+		_check(ok and rolled["slot"] == slot, "六部位固定主属性及双词条生成：" + slot)
+	# 真正旧档必须移除新装备真源；否则新档应优先读取 equipment_state。
+	var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(GameState.SAVE_PATH))
+	data.erase("equipment_schema")
+	data.erase("equipment_state")
+	data["version"] = 17
+	data["campaign_min_reader"] = 17
 	data.erase("equips")
 	data["equip"] = {"name": "古剑", "rarity": 2, "affixes": {"atk": 0.15}}
-	var rewrite := FileAccess.open(GameState.SAVE_PATH, FileAccess.WRITE)
-	rewrite.store_string(JSON.stringify(data))
-	rewrite.close()
+	_write_equipment_fixture(data)
 	GameState._load()
 	_check(GameState.stats.equips.get("weapon", {}).get("name", "") == "古剑", "旧档单件装备迁移到武器槽")
-	# 旧档迁移的消毒：legacy "equip" 内层字段写坏（affixes 为数组）时不得绕过消毒
-	# 直接入槽——否则 equip_affix 每次 max_hp() 求值即崩，读档坏档循环
-	GameState.stats.equips = {}
-	data.erase("equip")
+	var migrated_id := str(GameState.stats.equips["weapon"]["id"])
+	GameState._load()
+	_check(GameState.equipment_state.items.size() == 1 and GameState.stats.equips["weapon"]["id"] == migrated_id,
+		"重复旧档迁移保持确定性ID且不增发装备")
 	data["equip"] = {"name": "锈剑", "rarity": 1, "affixes": [1, 2, 3]}
-	rewrite = FileAccess.open(GameState.SAVE_PATH, FileAccess.WRITE)
-	rewrite.store_string(JSON.stringify(data))
-	rewrite.close()
+	_write_equipment_fixture(data)
 	GameState._load()
 	var legacy_affixes: Variant = GameState.stats.equips.get("weapon", {}).get("affixes", null)
 	_check(typeof(legacy_affixes) == TYPE_DICTIONARY, "legacy 数组 affixes 被消毒为字典")
 	_check(GameState.stats.max_hp() > 0.0, "消毒后的 legacy 装备不炸衍生属性求值")
-	# 词条数值硬钳：手改档 atk 9.9 → 0.5（正常掉落理论最大 0.20，钳 2.5 倍余量）
-	GameState.stats.equips = {}
 	data.erase("equip")
 	data["equips"] = {"weapon": {"name": "神装", "rarity": 3, "affixes": {"atk": 9.9}}}
-	rewrite = FileAccess.open(GameState.SAVE_PATH, FileAccess.WRITE)
-	rewrite.store_string(JSON.stringify(data))
-	rewrite.close()
+	_write_equipment_fixture(data)
 	GameState._load()
 	_check(absf(GameState.stats.equip_affix("atk") - GameState.AFFIX_HARD_CAP) < 0.0001,
-		"手改档超模词条被钳到硬上限（实际 %.2f）" % GameState.stats.equip_affix("atk"))
+		"手改档超模旧词条生效值仍受旧硬上限约束（实际 %.2f）" % GameState.stats.equip_affix("atk"))
+
+
+## 纯存档夹具通过正式工厂与原子装配生成有效真源，不把派生stats.equips当存档输入。
+func _equip_fixture(raw: Dictionary, id: String) -> void:
+	var item := EquipmentCatalog.legacy_item(raw, id, str(raw["slot"]))
+	var added := EquipmentInventory.add_item(GameState.equipment_state, item)
+	_check(bool(added.get("ok", false)), "存档夹具工厂合法入库：" + id)
+	if not added.get("ok", false): return
+	var state: Dictionary = added["state"]
+	var context := {"gold": GameState.gold, "materials": GameState.inventory, "level": GameState.stats.level, "can_swap": true}
+	var offer := EquipmentInventory.preview(state, "equip", {"id": id}, context)
+	var committed := EquipmentInventory.commit(state, offer, context)
+	_check(bool(committed.get("ok", false)), "存档夹具原子装配：" + id)
+	if committed.get("ok", false):
+		GameState.equipment_state = committed["state"]
+		GameState._sync_equipped_stats()
+
+
+func _write_equipment_fixture(data: Dictionary) -> void:
+	var file := FileAccess.open(GameState.SAVE_PATH, FileAccess.WRITE)
+	file.store_string(JSON.stringify(data))
+	file.close()
 
 
 ## 寿命系统：天数推进/升级延长/倒下缩短/风烛残年衰减/存档往返

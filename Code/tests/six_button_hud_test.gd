@@ -278,20 +278,27 @@ func minimap_occlusion_contract() -> void:
 	map.set_process(true)
 
 func reading_toggle_contract() -> void:
-	GameState.stats.equips.erase("weapon")
-	GameState.receive_equipment({"slot": "weapon", "name": "测试铁剑", "rarity": 1, "affixes": {"atk": 0.05}})
+	var item := EquipmentCatalog.legacy_item({"slot": "weapon", "name": "测试铁剑", "rarity": 1,
+		"affixes": {"atk": 0.05}, "locked": true}, "reading_toggle", "weapon")
+	check(GameState.receive_equipment(item) == "stored", "reading control fixture owns a locked bag item without auto-equipping")
 	hud._toggle_inventory()
 	await settle()
-	var lock: Button = hud._equipment_lock_buttons["weapon"]
-	var scroll := lock.get_parent()
-	while scroll != null and not scroll is ScrollContainer:
-		scroll = scroll.get_parent()
-	if scroll is ScrollContainer:
-		scroll.ensure_control_visible(lock)
+	await tap(hud._inv_layer.find_child("BagTab_gear", true, false))
+	var row: Button = hud._inv_layer.find_child("BagItem_reading_toggle", true, false)
+	var scroll := row.get_parent()
+	while scroll != null and not scroll is ScrollContainer: scroll = scroll.get_parent()
+	if scroll is ScrollContainer: scroll.ensure_control_visible(row)
 	await settle()
-	check(lock.button_pressed and GameState.is_equipment_locked("weapon"), "real equipment toggle initially mirrors locked state")
+	await tap(row)
+	var lock: Button = hud._inv_layer.find_child("BagLock", true, false)
+	check(lock.text.contains("解除锁定") and GameState.equipment_state.items.reading_toggle.locked,
+		"real item action initially mirrors locked ownership state")
+	var revision := GameState.equipment_revision()
 	await tap(lock)
-	check(not lock.button_pressed and not GameState.is_equipment_locked("weapon"), "raw touch toggles equipment control and actual lock exactly once")
+	lock = hud._inv_layer.find_child("BagLock", true, false)
+	check(lock.text == "锁定" and not GameState.equipment_state.items.reading_toggle.locked
+		and GameState.equipment_revision() == revision + 1, "raw touch changes item protection exactly once")
+	revision = GameState.equipment_revision()
 	lock.grab_focus()
 	var key := InputEventKey.new()
 	key.keycode = KEY_ENTER
@@ -303,7 +310,9 @@ func reading_toggle_contract() -> void:
 	key.pressed = false
 	get_viewport().push_input(key, true)
 	await settle()
-	check(lock.button_pressed and GameState.is_equipment_locked("weapon"), "native Enter still toggles same equipment control exactly once")
+	lock = hud._inv_layer.find_child("BagLock", true, false)
+	check(lock.text.contains("解除锁定") and GameState.equipment_state.items.reading_toggle.locked
+		and GameState.equipment_revision() == revision + 1, "native Enter changes the same item protection exactly once")
 	hud._close_inventory()
 
 func alternate_clue_contract() -> void:

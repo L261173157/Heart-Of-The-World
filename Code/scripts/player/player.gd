@@ -119,6 +119,8 @@ const SAVED_TIMER_PROPERTIES := {
 	"empower_buff": "_empower_timer", "dash_buff": "_dash_buff_timer",
 	"guard_break": "_guard_break_timer", "hurt_iframes": "_hurt_iframes",
 	"protect": "_protect_timer",
+	"equip_combo": "_equipment_combo_cd", "equip_focus": "_equipment_focus_cd",
+	"equip_safe_wait": "_equipment_safe_wait",
 }
 ## 上限采用原始技能常量，不按当前装备重新计算已开始的冷却。
 const SAVED_TIMER_LIMITS := {
@@ -127,6 +129,7 @@ const SAVED_TIMER_LIMITS := {
 	"empower": Skill.EMPOWER_COOLDOWN, "empower_buff": Skill.EMPOWER_DURATION,
 	"dash_buff": Skill.DASH_BUFF_TIME, "guard_break": Skill.GUARD_BREAK_TIME,
 	"hurt_iframes": HURT_IFRAME, "protect": RESPAWN_PROTECT,
+	"equip_combo": Skill.EQUIP_COMBO_ICD, "equip_focus": Skill.EQUIP_FOCUS_ICD, "equip_safe_wait": Skill.EQUIP_SAFE_WAIT,
 }
 
 ## 武装强化剩余持续时间（>0 = 强化状态中）
@@ -176,6 +179,15 @@ var _guard_seen_attacks: Dictionary = {}
 var _counter_charge := 0
 var _guard_feedback: Node2D
 var _guard_last_sound := -9999.0
+## 装备触发冷却按剩余游戏时间保存，不依附装备实例；换下再穿不能洗冷却。
+var _equipment_combo_cd := 0.0
+var _equipment_focus_cd := 0.0
+var _equipment_safe_wait := 0.0
+var _equipment_swing_checked := false
+var _equipment_swing_f := 0.0
+var _equipment_root_serial := 0
+var _equipment_pending_bolts: Dictionary = {}
+
 
 
 
@@ -247,6 +259,7 @@ func _ready() -> void:
 	# （生命/精力的权威持有者，满血满蓝拦截与治疗技能同口径）
 	EventBus.item_use_requested.connect(use_item)
 	EventBus.touch_input_reset.connect(_clear_pending_actions)
+	EventBus.player_bolt_live_hit.connect(_on_equipment_bolt_hit)
 
 
 func _guard_is_held() -> bool:
@@ -386,7 +399,7 @@ func _tick_guard(delta: float) -> void:
 	if not _guard_is_held():
 		return
 	activity_serial += 1
-	current_mp = maxf(0.0, current_mp - Skill.GUARD_DRAIN_PER_SEC * delta)
+	current_mp = maxf(0.0, current_mp - stats.equipment_guard_drain_per_sec() * delta)
 	if current_mp <= 0.0:
 		_break_guard()
 		return
@@ -451,7 +464,7 @@ func _resolve_guard_hit(amount: float, from_position: Vector2, context: Dictiona
 		return amount
 	var strength := maxf(0.0, float(context.get("strength", amount)))
 	var capacity := stats.guard_strength()
-	var cost := Skill.guard_hit_cost(minf(strength, capacity))
+	var cost := stats.equipment_guard_hit_cost(minf(strength, capacity))
 	if current_mp < cost:
 		_break_guard()
 		return amount
@@ -465,6 +478,7 @@ func _resolve_guard_hit(amount: float, from_position: Vector2, context: Dictiona
 	guard_charge = mini(Skill.GUARD_MAX_CHARGE, guard_charge + 1)
 	_guard_charge_age = 0.0
 	_guard_feedback.impact(false)
+	EventBus.equipment_particles_requested.emit("block", global_position + guard_direction * 20.0, guard_direction)
 	_play_guard_sound()
 	_push_guard()
 	_squash(Vector2(0.95, 1.05), 0.11)
@@ -483,6 +497,9 @@ func _play_guard_sound(heavy := false) -> void:
 
 
 func _start_guard_counter(charge: int, direction: Vector2) -> void:
+	_mark_equipment_combat()
+	_equipment_swing_checked = false
+	_equipment_swing_f = stats.equip_mechanism("shield")
 	guard_state = "counter"
 	_counter_charge = clampi(charge, 1, Skill.GUARD_MAX_CHARGE)
 	if _counter_charge == Skill.GUARD_MAX_CHARGE:
@@ -571,7 +588,8 @@ func save_snapshot() -> Dictionary:
 		var respawn_pos := WorldConfig.nearest_checkpoint_respawn(global_position, GameState.discovered_checkpoints)
 		return {"position": [respawn_pos.x, respawn_pos.y],
 			"hp": stats.max_hp(), "mp": stats.max_mp(),
-			"combat_timers": {"protect": RESPAWN_PROTECT}}
+			"combat_timers": {"protect": RESPAWN_PROTECT, "equip_combo": _equipment_combo_cd,
+				"equip_focus": _equipment_focus_cd, "equip_safe_wait": _equipment_safe_wait}}
 	var timers := {}
 	for key: String in SAVED_TIMER_PROPERTIES:
 		timers[key] = maxf(0.0, float(get(SAVED_TIMER_PROPERTIES[key])))
@@ -636,6 +654,7 @@ func teleport_to(destination: Vector2) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	_tick_equipment_combat(delta)
 	_refresh_context()
 	var interact_target := TouchInput.consume_interact()
 	if Input.is_action_just_pressed("interact") and interact_target.is_empty():
@@ -947,6 +966,7 @@ func _try_dash() -> void:
 	current_mp -= Skill.DASH_COST
 	EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
 	_push_skills()
+	_mark_equipment_combat()
 	_dash_timer = DASH_TIME
 	_dash_cd = Skill.DASH_COOLDOWN * stats.cooldown_mult()
 	# 冲刺起手同步翻面（朝向可能来自攻击吸附的斜向向量，移动分支的
@@ -1017,6 +1037,7 @@ func _try_heavy_attack() -> void:
 		return
 	if _heavy_cd > 0.0 or current_mp < Skill.HEAVY_COST or _is_dead:
 		return
+	_mark_equipment_combat()
 	_heavy_cd = Skill.HEAVY_COOLDOWN * stats.cooldown_mult()
 	current_mp -= Skill.HEAVY_COST
 	EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
@@ -1025,10 +1046,11 @@ func _try_heavy_attack() -> void:
 	EventBus.camera_shake_requested.emit(5.0)
 	_play_ring(Skill.HEAVY_RADIUS, Color(1.0, 0.85, 0.4, 0.9))
 	_play_burst()
-	var dmg := CombatMath.physical_damage(stats.physical_attack() * Skill.HEAVY_MULT)
+	var dmg := CombatMath.physical_damage(stats.physical_attack() * Skill.HEAVY_MULT * stats.heavy_damage_mult())
 	var targets: Array = get_tree().get_nodes_in_group("monsters")
 	targets.append_array(get_tree().get_nodes_in_group("nests"))
 	var hit_any := false
+	var equipment_hit_sent := false
 	for body in targets:
 		var monster := body as Node2D
 		if monster == null or not body.has_method("take_damage"):
@@ -1044,7 +1066,14 @@ func _try_heavy_attack() -> void:
 						stats.equip_element(), mb.inst.species.element)
 				final_dmg *= em
 				effective = em > 1.0
-			body.take_damage(final_dmg, global_position, true, stats.knockback_mult(), effective)
+			var live_enemy := _equipment_live_enemy(body)
+			if mb != null:
+				mb.take_damage(final_dmg, global_position, true, stats.knockback_mult(), effective, self)
+			else:
+				body.take_damage(final_dmg, global_position, true, stats.knockback_mult(), effective)
+			if live_enemy and not equipment_hit_sent:
+				equipment_hit_sent = true
+				EventBus.equipment_particles_requested.emit("hit", monster.global_position, (monster.global_position - global_position).normalized())
 			hit_any = true
 	if hit_any:
 		EventBus.hit_stop_requested.emit(0.055)
@@ -1057,14 +1086,25 @@ func _try_cast_bolt() -> void:
 		return
 	if _bolt_cd > 0.0 or current_mp < Skill.BOLT_COST or _is_dead:
 		return
+	_mark_equipment_combat()
 	_bolt_cd = Skill.BOLT_COOLDOWN * stats.cooldown_mult()
 	current_mp -= Skill.BOLT_COST
 	EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
 	_push_skills()
 	SfxManager.play("bolt")
+	var effects := stats.bolt_effects()
+	_equipment_root_serial += 1
+	var root_id := "%d:%d" % [get_instance_id(), _equipment_root_serial]
+	var focus_f := stats.equip_mechanism("focus")
+	_equipment_pending_bolts[root_id] = {"f": focus_f, "paid": Skill.BOLT_COST}
+	# 正常飞行最多数枚；仍限制异常外部调用造成的旧根记录积累。
+	while _equipment_pending_bolts.size() > 32:
+		_equipment_pending_bolts.erase(_equipment_pending_bolts.keys()[0])
+	effects.merge({"root_id": root_id, "paid_mp": Skill.BOLT_COST, "focus_f": focus_f,
+		"player_source": weakref(self)})
 	PlayerBolt.spawn(get_parent(), global_position + facing * 22.0, facing,
-		CombatMath.magic_damage(stats.magic_attack() * Skill.BOLT_MULT),
-		stats.equip_element(), stats.bolt_effects())
+		CombatMath.magic_damage(stats.magic_attack() * Skill.BOLT_MULT) * stats.equipment_bolt_damage_mult(),
+		stats.equip_element(), effects)
 
 
 ## 治疗：消耗 MP 回复智力加成生命，绿色涟漪特效（深区续航的资源取舍）；
@@ -1076,6 +1116,7 @@ func _try_heal() -> void:
 	if _heal_cd > 0.0 or current_mp < Skill.HEAL_COST or _is_dead \
 			or current_hp >= stats.max_hp() - 0.5:
 		return
+	_mark_equipment_combat()
 	_heal_cd = Skill.HEAL_COOLDOWN * stats.cooldown_mult()
 	current_mp -= Skill.HEAL_COST
 	var healed := stats.heal_power() * Skill.HEAL_MULT
@@ -1123,6 +1164,7 @@ func _try_empower() -> void:
 	if _empower_cd > 0.0 or _empower_timer > 0.0 \
 			or current_mp < Skill.EMPOWER_COST or _is_dead:
 		return
+	_mark_equipment_combat()
 	_empower_cd = Skill.EMPOWER_COOLDOWN * stats.cooldown_mult()
 	_empower_timer = Skill.EMPOWER_DURATION
 	current_mp -= Skill.EMPOWER_COST
@@ -1202,6 +1244,9 @@ func _try_attack() -> void:
 		_attack_buffer_timer = ATTACK_BUFFER_TIME
 		return
 	# 极限攻速也必须让本刀扫完；否则0.25s预输入会截断0.26s末端角度。
+	_mark_equipment_combat()
+	_equipment_swing_checked = false
+	_equipment_swing_f = stats.equip_mechanism("combo")
 	_attack_cooldown = maxf(stats.attack_interval(), ATTACK_WINDOW)
 	_attack_timer = ATTACK_WINDOW
 	_attack_anim_linger = ATTACK_WINDOW + ATTACK_ANIM_LINGER
@@ -1498,6 +1543,7 @@ func _play_burst() -> void:
 func _take_environmental_damage(amount: float) -> void:
 	if _is_dead:
 		return
+	_mark_equipment_combat()
 	if _guard_is_held() or guard_state == "counter":
 		cancel_guard()
 	activity_serial += 1
@@ -1532,6 +1578,11 @@ func take_damage(amount: float, from_position := Vector2.INF, source_name := "",
 		if _guard_seen_attacks.size() > 128:
 			_guard_seen_attacks.erase(_guard_seen_attacks.keys()[0])
 	activity_serial += 1
+	_mark_equipment_combat()
+	# 真正接敌（包括成功格挡）即锁定本敌的掉落偏好；无敌/重复攻击已在上方排除。
+	var equipment_source: Variant = attack_context.get("equipment_source")
+	if typeof(equipment_source) == TYPE_DICTIONARY:
+		GameState.notify_equipment_first_combat(equipment_source)
 	amount = _resolve_guard_hit(amount, from_position, attack_context)
 	if amount <= 0.0:
 		return false
@@ -1572,6 +1623,7 @@ func _die() -> void:
 		return
 	cancel_guard(true, true)
 	_is_dead = true
+	_equipment_pending_bolts.clear()
 	_weapon_visual.clear()
 	visual.material = null
 	_respawn_timer = RESPAWN_DELAY
@@ -1672,6 +1724,8 @@ func _respawn() -> void:
 
 
 func _on_attack_body_entered(body: Node) -> void:
+	if is_queued_for_deletion() or get_parent() == null or get_parent().is_queued_for_deletion():
+		return
 	# 传送/死亡会先结束攻击窗，再延迟关形状；物理冲刷期迟到的进入信号不能补刀。
 	if _is_dead or _attack_timer <= 0.0:
 		return
@@ -1691,7 +1745,7 @@ func _on_attack_body_entered(body: Node) -> void:
 		return
 	_hit_this_swing.append(body)
 	var is_counter := guard_state == "counter" and _counter_charge > 0
-	var mult := Skill.guard_counter_mult(_counter_charge) if is_counter else stats.sword_damage_mult()
+	var mult := stats.equipment_guard_counter_mult(_counter_charge) if is_counter else stats.sword_damage_mult()
 	if not is_counter:
 		if _combo == 3:
 			mult *= Skill.COMBO_HEAVY_MULT
@@ -1711,8 +1765,15 @@ func _on_attack_body_entered(body: Node) -> void:
 			EventBus.fx_requested.emit(
 				"flame" if stats.equip_element() == "fire" else "frost",
 				monster.global_position, 1.1)
-	body.take_damage(CombatMath.physical_damage(stats.physical_attack() * mult),
-			global_position, (_counter_charge == Skill.GUARD_MAX_CHARGE if is_counter else _combo == 3), stats.knockback_mult(), effective)
+	var live_enemy := _equipment_live_enemy(body)
+	var dealt := CombatMath.physical_damage(stats.physical_attack() * mult)
+	var heavy := _counter_charge == Skill.GUARD_MAX_CHARGE if is_counter else _combo == 3
+	if monster != null:
+		monster.take_damage(dealt, global_position, heavy, stats.knockback_mult(), effective, self)
+	else:
+		body.take_damage(dealt, global_position, heavy, stats.knockback_mult(), effective)
+	if live_enemy:
+		_resolve_equipment_swing_hit(is_counter, (body as Node2D).global_position)
 	# 噬血被动：命中吸血；武装强化期间额外回复最大生命 3%（连击越快续航越强）
 	var lifesteal := 0.0 if is_counter else stats.lifesteal_per_hit()
 	if not is_counter and _empower_timer > 0.0:
@@ -1802,3 +1863,105 @@ func _push_hud() -> void:
 	)
 	EventBus.gold_changed.emit(GameState.gold)
 	_push_skills()
+
+
+## 根攻击只在第一只已确认的活体怪物结算。尸体、巢穴和障碍没有触发入口。
+func _equipment_live_enemy(body: Node) -> bool:
+	var monster := body as MonsterBase
+	return monster != null and monster.is_inside_tree() and not monster.is_queued_for_deletion() \
+		and monster.state != MonsterBase.S_CORPSE and monster.current_hp > 0.0 \
+		and monster._is_authoritative_live_source()
+
+
+func _resolve_equipment_swing_hit(is_counter: bool, hit_position: Vector2) -> void:
+	if _equipment_swing_checked:
+		return
+	_equipment_swing_checked = true
+	var kind := "hit"
+	if _equipment_swing_f > 0.0:
+		if is_counter and _counter_charge == Skill.GUARD_MAX_CHARGE:
+			kind = "orange"
+		elif not is_counter and _combo == 3 and _equipment_combo_cd <= 0.0:
+			_equipment_combo_cd = Skill.EQUIP_COMBO_ICD
+			current_hp = minf(stats.max_hp(), current_hp + stats.equipment_combo_heal())
+			EventBus.player_hp_changed.emit(current_hp, stats.max_hp())
+			kind = "orange"
+	EventBus.equipment_particles_requested.emit(kind, hit_position, _attack_direction)
+
+
+## 只接收本玩家本次支付过蓝量的主弹根，先消费凭证，再检冷却，避免二次进入。
+func _on_equipment_bolt_hit(root_id: String, paid_mp: float, mechanism_f: float,
+		hit_position: Vector2) -> void:
+	if is_queued_for_deletion() or get_parent() == null or get_parent().is_queued_for_deletion() \
+			or not _equipment_pending_bolts.has(root_id):
+		return
+	var receipt: Dictionary = _equipment_pending_bolts[root_id]
+	_equipment_pending_bolts.erase(root_id)
+	if _is_dead:
+		return
+	var refund := minf(float(receipt.f), minf(float(receipt.paid), maxf(0.0, paid_mp)))
+	refund = minf(refund, maxf(0.0, mechanism_f))
+	var kind := "hit"
+	if refund > 0.0 and _equipment_focus_cd <= 0.0:
+		_equipment_focus_cd = Skill.EQUIP_FOCUS_ICD
+		current_mp = minf(stats.max_mp(), current_mp + refund)
+		EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
+		_push_skills()
+		kind = "orange"
+	EventBus.equipment_particles_requested.emit(kind, hit_position, facing)
+
+
+func _mark_equipment_combat() -> void:
+	_equipment_safe_wait = Skill.EQUIP_SAFE_WAIT
+
+
+func _tick_equipment_combat(delta: float) -> void:
+	_equipment_combo_cd = maxf(0.0, _equipment_combo_cd - delta)
+	_equipment_focus_cd = maxf(0.0, _equipment_focus_cd - delta)
+	if _equipment_has_pursuit():
+		_mark_equipment_combat()
+	else:
+		_equipment_safe_wait = maxf(0.0, _equipment_safe_wait - delta)
+
+
+func _equipment_has_pursuit() -> bool:
+	for body in get_tree().get_nodes_in_group("monsters"):
+		var monster := body as MonsterBase
+		if monster != null and monster.is_engaged_with_player(self):
+			return true
+	return false
+
+
+func _equipment_has_active_action() -> bool:
+	if _dash_timer > 0.0 or _attack_timer > 0.0 or _attack_anim_linger > 0.0 \
+			or guard_state != "idle":
+		return true
+	for bolt in get_tree().get_nodes_in_group("player_bolts"):
+		# 命中主弹在帧末才回池/分裂，尚在树内的结算帧也不可穿插换装。
+		if is_instance_valid(bolt) and bolt.is_inside_tree() and not bolt.is_queued_for_deletion():
+			return true
+	return false
+
+
+## 背包本身会暂停，因此只检查游戏状态，不把暂停时间计为脱战。
+func can_change_loadout() -> bool:
+	return loadout_block_reason().is_empty()
+
+
+func loadout_block_reason() -> String:
+	if _is_dead:
+		return "倒下时不能换装"
+	if _equipment_has_pursuit():
+		return "仍有敌人追击，脱战5秒后可换装"
+	if _equipment_has_active_action():
+		return "攻击、架盾或技能尚未结束"
+	if _equipment_safe_wait > 0.0:
+		return "脱战后还需%.1f秒才能换装" % _equipment_safe_wait
+	return ""
+
+
+## 装备事务提交后只钳低超上限资源，不按新上限补血蓝，也不重置任何CD/增益。
+func apply_loadout_change() -> void:
+	current_hp = minf(current_hp, stats.max_hp())
+	current_mp = minf(current_mp, stats.max_mp())
+	_push_hud()

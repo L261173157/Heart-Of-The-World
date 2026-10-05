@@ -199,38 +199,58 @@ func _item(item_name: String, affixes: Dictionary, element := "fire") -> Diction
 func _test_equipment_offer() -> void:
 	var current := _item("吸血火刃", {"atk": 0.2, "lifesteal": 0.05})
 	var candidate := _item("寻金冰刃", {"gold": 0.3, "xp": 0.2}, "ice")
+	current["id"] = "choices_current"
+	candidate["id"] = "choices_candidate"
 	GameState.receive_equipment(current)
+	_check(GameState.equipment_action("equip", {"id": "choices_current"}, GameState.equipment_revision()).get("ok", false), "装备对比前明确穿戴现用火刃")
 	GameState.receive_equipment(candidate)
 	_check(not _hud._inv_layer.visible and not get_tree().paused
-			and _hud._equipment_badge.text == "待比较", "战斗新装备只提示背包，不自动打断")
+			and GameState.equipment_state.items.size() == 2 and GameState.stats.equip_element() == "fire", "战斗新装备收入背包，不自动穿戴或打断")
 	await _press_key(KEY_O)
-	await _settle()
-	var benefit: Label = _hud._equipment_offer.find_child("EquipmentBenefit", true, false)
-	_check(benefit.text.contains("物理攻击") and benefit.text.contains("金币倍率")
-			and benefit.text.contains("火焰 → 寒冰"), "装备比较同时显示得失和真实元素切换")
+	await _touch(_hud._inv_layer.find_child("BagTab_gear", true, false))
+	var item_button: Button = _hud._inv_layer.find_child("BagItem_choices_candidate", true, false)
+	await _reveal(item_button)
+	await _touch(item_button)
+	var detail: Control = _hud._inv_layer.find_child("BagDetail", true, false)
+	var detail_text := _equipment_detail_text(detail)
+	_check(detail_text.contains("物理攻击") and detail_text.contains("金币倍率")
+			and detail_text.contains("火焰") and detail_text.contains("寒冰"), "装备比较同时显示得失和真实元素切换")
 	await _capture("equipment-candidate")
-	var token := GameState.equipment_offer_id
+	var token := GameState.equipment_revision()
+	var old_serial := int(_hud._inv_layer.get("_serial"))
 	var old_gold := GameState.gold
-	var keep: Button = _hud._equipment_offer.find_child("KeepEquipment", true, false)
-	await _reveal(keep)
-	await _touch(keep)
-	_check(GameState.pending_equipment.is_empty() and GameState.stats.equips["weapon"] == current
-			and GameState.gold > old_gold, "真实保留按钮出售候选且保留当前构筑")
+	await _touch(_hud._inv_layer.find_child("BagSell", true, false))
+	_check(GameState.gold == old_gold and GameState.equipment_state.items.has("choices_candidate"), "出售第一下只展示确认，不消费物品")
+	await _touch(_hud._inv_layer.find_child("BagConfirmCancel", true, false))
+	_check(GameState.gold == old_gold and GameState.equipment_state.items.size() == 2, "取消出售保留两件所有权")
+	await _touch(_hud._inv_layer.find_child("BagSell", true, false))
+	var sale_price := EquipmentCatalog.sale_value(GameState.equipment_state.items["choices_candidate"])
+	await _touch(_hud._inv_layer.find_child("BagConfirmAccept", true, false))
+	_check(not GameState.equipment_state.items.has("choices_candidate")
+			and GameState.stats.equips.weapon.id == "choices_current" and GameState.gold == old_gold + sale_price,
+			"真实二次确认出售所选一件，现用构筑保留且金额精确")
+	candidate["id"] = "choices_later"
 	GameState.receive_equipment(candidate)
-	_hud._resolve_equipment_offer(false, token)
+	_hud._inv_layer.call("_perform", "sell", {"ids": ["choices_later"], "confirmed": true}, token, old_serial)
 	await _settle()
-	_check(not GameState.pending_equipment.is_empty(), "旧候选按钮的延迟回调不能处理新候选")
-	var equip: Button = _hud._equipment_offer.find_child("EquipCandidate", true, false)
-	var expected: Dictionary = GameState.stats.preview_equipment(candidate)["after"]
-	await _reveal(equip)
-	await _touch(equip)
-	_check(GameState.pending_equipment.is_empty() and GameState.stats.equips["weapon"] == candidate,
-			"真实装备候选按钮完成明确换装")
-	_check(GameState.stats.benefit_snapshot() == expected and _hud._equipment_badge.text == "",
-			"真实换装收益与预览一致且待处理提示消失")
+	_check(GameState.equipment_state.items.has("choices_later") and GameState.gold == old_gold + sale_price, "旧物品回调不能处理后来掉落")
+	item_button = _hud._inv_layer.find_child("BagItem_choices_later", true, false)
+	await _reveal(item_button)
+	await _touch(item_button)
+	var expected: Dictionary = GameState.equipment_preview("choices_later")["after"]
+	await _touch(_hud._inv_layer.find_child("BagEquip", true, false))
+	_check(GameState.stats.equips.weapon.id == "choices_later"
+			and GameState.equipment_state.items.has("choices_current"), "真实穿戴按钮完成换装，换下旧件仍在背包")
+	_check(GameState.stats.benefit_snapshot() == expected and GameState.stats.equip_element() == "ice", "真实换装收益和元素与预览一致")
 	await _press_key(KEY_ESCAPE)
 	_hud._close_inventory()
 	_check(not get_tree().paused, "背包重复关闭不残留暂停")
+
+
+func _equipment_detail_text(node: Node) -> String:
+	var text: String = node.text if node is Label else ""
+	for child: Node in node.get_children(): text += "\n" + _equipment_detail_text(child)
+	return text
 
 
 func _test_task_choices() -> void:

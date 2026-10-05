@@ -86,9 +86,7 @@ func _prepare_earned() -> void:
 	GameState.gold = mini(GameState.gold,int(_budget.gold))
 	GameState.add_item("onigiri",int(_budget.onigiri))
 	while GameState.stats.pending_points > 0: GameState.allocate("strength")
-	for kind: String in ["weapon","vigor"]:
-		for _i in 2: _check(GameState.buy_upgrade(kind),"actual affordable shop upgrade "+kind)
-	_check(GameState.gold == 11 and GameState.count_item("onigiri") == 5,"291gold minus280 upgrades =11; five bonus food only")
+	_purchase_earned_upgrades()
 	_player.set_process(true)
 	# Actual natural regeneration at the already completed, safe snow beacon.
 	var rest_frames := 0
@@ -97,6 +95,7 @@ func _prepare_earned() -> void:
 		rest_frames += 1
 	print("EARNED_REST ",JSON.stringify({"seconds":rest_frames/60.0,"hp":_player.current_hp,"mp":_player.current_mp}))
 	if not await _travel_story("lava","c5:beacon",false): return
+	if not await _after_earned_travel(): return
 	if not await _normal_stage(C6,1): return
 	var actions := _stage_actions(C6,2)
 	if not await _do_action(actions[0]): return
@@ -125,7 +124,7 @@ func _prepare_earned() -> void:
 	print("EARNED_PREFIGHT ",JSON.stringify({"receipts":_budget,"gold":GameState.gold,"inventory":GameState.inventory,"level":GameState.stats.level,"xp":GameState.stats.xp,
 		"strength":GameState.stats.strength,"hp":_player.current_hp,"max_hp":GameState.stats.max_hp(),"mp":_player.current_mp,"attack":GameState.stats.physical_attack(),
 		"weapon":GameState.stats.upgrade_weapon,"vigor":GameState.stats.upgrade_vigor,"boss_id":boss.id,"boss_age":boss.age,"boss_anchor":[boss.spawn_pos.x,boss.spawn_pos.y],"boss_hp":body.current_hp,"boss_max_hp":boss.max_hp(),
-		"player_position":[_player.global_position.x,_player.global_position.y],"setup":"genuine C5 ledger; discard capacity fixture stock; retain only paid chapter bonuses; shop methods; natural rest; real campaign travel and walking; freeze ecology/unrelated actors"}))
+		"equipment_build":_earned_equipment_report(),"player_position":[_player.global_position.x,_player.global_position.y],"setup":"genuine C5 ledger; discard capacity fixture stock; retain only paid chapter bonuses; shop methods; natural rest; real campaign travel and walking; freeze ecology/unrelated actors"}))
 
 func _fight_earned(reckless: bool) -> void:
 	var boss := _original_boss()
@@ -136,7 +135,7 @@ func _fight_earned(reckless: bool) -> void:
 	var body: Guardian = _world._nodes.get(boss.id)
 	_check(body != null,"cold original turtle body")
 	if body == null: return
-	_check(GameState.stats.level == 3 and GameState.stats.strength == 7 and GameState.stats.upgrade_weapon == 2 and GameState.stats.upgrade_vigor == 2,"cold build is Lv3/STR7/weapon2/vigor2")
+	_check_earned_build()
 	_check(GameState.count_item("onigiri") == 5 and GameState.count_item("life-pot") == 0 and GameState.count_item("water-pot") == 0,"cold finite stock is five paid bonus onigiri")
 	_check(_player._protect_timer <= 0 and _player._hurt_iframes <= 0,"cold save has no protected opening")
 	if _mobile:
@@ -259,7 +258,7 @@ func _fight_earned(reckless: bool) -> void:
 	var report := {"scenario":"reckless" if reckless else ("mobile_expert_main_only" if _mobile else "expert_main_only"),"seconds":_combat_seconds,"loop_seconds":frame/60.0,"ui_costs":_ui_costs,"won":not boss.is_alive,"died":_player._is_dead,"hp_start":initial_hp,"hp_end":_player.current_hp,"hp_min":min_hp,"mp_min":min_mp,
 		"boss_hp_start":initial_boss_hp,"boss_hp_end":body.current_hp,"boss_id":boss.id,"boss_age":boss.age,"boss_anchor_unchanged":boss.spawn_pos==initial_anchor,"windups":windups,"smashes":smashes,"damage_events":hits,"boss_walked_px":distance_travelled,
 		"guard_active_frames":guard_frames,"actual_dashes":actual_dashes,"food_used":food_start-GameState.count_item("onigiri"),"attack_inputs":attack_inputs,"dash_inputs":dash_inputs,"shield_inputs":guard_inputs,"heavy_inputs":heavy_inputs,"empower_inputs":empower_inputs,"heals":heals,"gold_before_kill":start_gold,
-		"limitations":"expert frame-aware AI-state bot; frozen ecology/unrelated actors; no damage/stat/HP/anchor/invulnerability edits; genuine C1-C5 ledger, bounded cleaned stock; normal natural regen; 1/60 game-second physics"}
+		"equipment_build":_earned_equipment_report(),"limitations":"expert frame-aware AI-state bot; frozen ecology/unrelated actors; no damage/stat/HP/anchor/invulnerability edits; genuine C1-C5 ledger, bounded cleaned stock; normal natural regen; 1/60 game-second physics"}
 	print("EARNED_COMBAT_RESULT ",JSON.stringify(report))
 	_check(boss.age == age and boss.spawn_pos == initial_anchor,"original Boss age and anchor not modified")
 	_check(windups > 0 and smashes > 0 and hits > 0,"original AI attacked and truly damaged normal player")
@@ -384,3 +383,22 @@ func _finish_story() -> void:
 func _finish() -> void:
 	print("=== CAMPAIGN EARNED BOSS %s (%d checks, %d failures) ===" % ["PASS" if _fails==0 else "FAIL",_checks,_fails])
 	get_tree().quit(0 if _fails==0 else 1)
+
+
+## 仅供派生验收夹具替换合法购买方案；默认路径和旧断言保持原样。
+func _purchase_earned_upgrades() -> void:
+	for kind: String in ["weapon","vigor"]:
+		for _i in 2: _check(GameState.buy_upgrade(kind),"actual affordable shop upgrade "+kind)
+	_check(GameState.gold == 11 and GameState.count_item("onigiri") == 5,"291gold minus280 upgrades =11; five bonus food only")
+
+
+func _after_earned_travel() -> bool:
+	return true
+
+
+func _check_earned_build() -> void:
+	_check(GameState.stats.level == 3 and GameState.stats.strength == 7 and GameState.stats.upgrade_weapon == 2 and GameState.stats.upgrade_vigor == 2,"cold build is Lv3/STR7/weapon2/vigor2")
+
+
+func _earned_equipment_report() -> Dictionary:
+	return {}

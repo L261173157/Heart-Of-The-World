@@ -383,26 +383,33 @@ func _legacy_capacity_contract() -> void:
 		"progress": 0, "gold": 17, "xp": 3, "claim_at_npc": true}
 	_qm.accept(manual)
 	var before := _wallet()
+	var pending_before := _pending_total("gold-key")
 	_qm.claim("cap_manual")
-	_check(_wallet() == before and GameState.quests["active"].size() == 1,
-		"旧手动收集奖励满99时保留材料/金币/经验/任务，无部分结算")
+	_check(GameState.quests["active"].is_empty() and GameState.gold == int(before["gold"]) + 17
+		and GameState.count_item("fish") == 1 and _pending_total("gold-key") == pending_before + 1,
+		"旧手动收集满99时材料、报酬与溢出收据整笔结算")
+	var paid_wallet := _wallet()
+	var paid_pending := GameState.pending_items.duplicate(true)
+	_qm.claim("cap_manual")
+	_check(_wallet() == paid_wallet and GameState.pending_items == paid_pending, "重复手动领取不重新扣料或创建余量")
 	GameState.remove_item("gold-key", 1)
-	_check(GameState.quests["active"].size() == 1, "手动单腾位仍等待用户明确交付")
-	_qm.claim("cap_manual")
-	_check(GameState.quests["active"].is_empty() and GameState.count_item("gold-key") == 99
-		and GameState.count_item("fish") == 1, "手动重试仅扣所需材料并补齐奖励到99")
+	_check(GameState.quests["active"].is_empty() and _pending_total("gold-key") == pending_before + 1, "腾位不重开奖励任务或自动领余量")
+	_check(_claim_one_pending("gold-key") and GameState.count_item("gold-key") == 99, "明确领取一件保存的奖励")
 	var legacy := manual.duplicate(true)
 	legacy["id"] = "cap_legacy"
 	legacy["progress"] = 0
 	legacy.erase("claim_at_npc")
 	GameState.add_item("fish", 1)
 	before = _wallet()
+	pending_before = _pending_total("gold-key")
 	_qm.accept(legacy)
-	_check(_wallet() == before and GameState.quests["active"].size() == 1,
-		"旧自动单满奖品时不截断奖励，不吞材料和已达成进度")
-	GameState.remove_item("gold-key", 1)
-	_check(GameState.quests["active"].is_empty() and GameState.count_item("gold-key") == 99
-		and GameState.count_item("fish") == 0, "旧自动单腾位后自动重试完成，无需改变旧领奖方式")
+	_check(GameState.quests["active"].is_empty() and GameState.gold == int(before["gold"]) + 17
+		and GameState.count_item("fish") == 0 and _pending_total("gold-key") == pending_before + 1,
+		"旧自动单按原完成时机扣料结算，满包奖品完整留存")
+	paid_wallet = _wallet()
+	paid_pending = GameState.pending_items.duplicate(true)
+	_qm.claim("cap_legacy")
+	_check(_wallet() == paid_wallet and GameState.pending_items == paid_pending and _pending_sources_unique(), "旧自动单不重付且每个溢出来源唯一")
 	var same := manual.duplicate(true)
 	same["id"] = "cap_same_item"
 	same["item"] = "gold-key"
@@ -471,21 +478,24 @@ func _cold(phase: String) -> void:
 			await _home()
 			var wallet := _wallet()
 			_qm.claim(CAMP_ID)
-			_check(_wallet() == wallet and not GameState.camp_quest.get("paid", false), "营地满背包领取全事务保持原状")
-			_check(_save(), "完整但容量待领状态真实写盘")
-			_write_expected({"ledger": GameState.camp_quest.duplicate(true), "wallet": _wallet()})
+			_check(GameState.camp_quest.get("paid", false) and GameState.gold == int(wallet["gold"]) + int(GameState.camp_quest["paid_gold"])
+				and _pending_total("onigiri") > 0 and _pending_sources_unique(), "满背包明确领取支付整笔报酬与唯一奖品收据")
+			_check(_save(), "已付合同与待领取余量原子写盘")
+			_write_expected({"ledger": GameState.camp_quest.duplicate(true), "wallet": _wallet(), "pending": GameState.pending_items.duplicate(true)})
 		"--cold-claim":
 			var expected := _expected()
 			_check(_same(GameState.camp_quest, expected["ledger"]) and _same(_wallet(), expected["wallet"]),
-				"独立冷进程完整恢复容量待领账本及金币/经验/库存")
+				"独立冷进程完整恢复已付账本及金币/经验/库存")
 			await _home()
 			var wallet := _wallet()
 			_qm.claim(CAMP_ID)
-			_check(_wallet() == wallet and not GameState.camp_quest.get("paid", false), "冷加载后仍不能部分领奖")
+			_check(_wallet() == wallet and GameState.camp_quest.get("paid", false)
+				and _same(GameState.pending_items, expected["pending"]), "冷加载重领奖不重复金币经验或奖品收据")
+			var remaining := _pending_total("onigiri")
 			GameState.remove_item("onigiri", 1)
-			_qm.claim(CAMP_ID)
-			_check(GameState.camp_quest.get("paid", false) and GameState.count_item("onigiri") == 99,
-				"空出一格后明确领取，一次支付全部奖励")
+			_check(_claim_one_pending("onigiri") and _pending_total("onigiri") == remaining - 1, "空出一格后仅领取一份已保存余量")
+			_check(GameState.camp_quest.get("paid", false) and GameState.count_item("onigiri") == 99
+				and GameState.gold == int(wallet["gold"]), "领取余量不再次支付任务报酬")
 			_check(_save(), "已支付收据真实写盘")
 			_write_expected({"ledger": GameState.camp_quest.duplicate(true), "wallet": _wallet()})
 		"--cold-paid":
@@ -513,3 +523,27 @@ func _cold(phase: String) -> void:
 func _finish() -> void:
 	print("=== CAMP PILOT CONTRACT %s (%d checks, %d failures) ===" % ["PASS" if _fails == 0 else "FAIL", _checks, _fails])
 	get_tree().quit(0 if _fails == 0 else 1)
+
+
+func _pending_total(item_id: String) -> int:
+	var total := 0
+	for receipt: Dictionary in GameState.pending_items.values():
+		if receipt.get("item_id", "") == item_id: total += int(receipt.get("count", 0))
+	return total
+
+
+func _claim_one_pending(item_id: String) -> bool:
+	for receipt: Dictionary in GameState.pending_items.values():
+		if receipt.get("item_id", "") == item_id:
+			return bool(GameState.equipment_action("claim_pending", {"id": receipt["id"]}, GameState.equipment_revision()).get("ok", false))
+	return false
+
+
+func _pending_sources_unique() -> bool:
+	var sources := {}
+	for key: String in GameState.pending_items:
+		var receipt: Dictionary = GameState.pending_items[key]
+		var source := str(receipt.get("source", ""))
+		if source.is_empty() or sources.has(source) or receipt.get("id", "") != key or int(receipt.get("count", 0)) <= 0: return false
+		sources[source] = true
+	return true

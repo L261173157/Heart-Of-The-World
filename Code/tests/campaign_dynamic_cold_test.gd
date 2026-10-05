@@ -70,11 +70,16 @@ func _run() -> void:
 			await go("world_relief:need_a")
 			GameState.inventory["onigiri"]=99
 			dynamic.claim_service("world_relief:need_a")
-			check(not GameState.campaign_quest.services.world_relief_station.claimed,"actual save retains pending service at99")
+			check(GameState.campaign_quest.services.world_relief_station.claimed and _pending_total("onigiri") > 0 and _pending_sources_unique(),"actual full save retains paid service and unique pending supply")
 		"service_claim":
 			await go("world_relief:need_a")
-			check(not GameState.campaign_quest.services.world_relief_station.claimed and GameState.count_item("onigiri")==99,"cold full service kept both inventory and receipt untouched")
+			check(GameState.campaign_quest.services.world_relief_station.claimed and GameState.count_item("onigiri")==99 and _pending_total("onigiri")>0,"cold full service keeps paid receipt and pending stock")
+			var pending := GameState.pending_items.duplicate(true)
+			dynamic.claim_service("world_relief:need_a")
+			check(GameState.pending_items==pending,"cold replay does not duplicate pending stock")
+			var remaining := _pending_total("onigiri")
 			GameState.inventory["onigiri"]=98
+			check(_claim_one_pending("onigiri") and _pending_total("onigiri")==remaining-1,"cold explicit claim transfers exactly one pending item")
 			dynamic.claim_service("world_relief:need_a")
 			dynamic.claim_service("world_relief:need_a")
 			check(GameState.campaign_quest.services.world_relief_station.claimed and GameState.count_item("onigiri")==99,"actual finite service claims exactly once")
@@ -119,6 +124,7 @@ func verify_loaded() -> void:
 	check(normalized(dynamic.facts.snapshot().decline_runs)==normalized(prior.get("decline_runs",{})),"actual cold load preserves the first low-population witness before tick3")
 	check(GameState.gold==int(prior.gold) and GameState.stats.xp==int(prior.xp),"actual cold load preserves gold/xp, no replay payment")
 	check(normalized(receipt_summary())==normalized(prior.receipts),"actual cold load preserves every dynamic receipt")
+	check(normalized(GameState.pending_items)==normalized(prior.get("pending_items",{})) and _pending_sources_unique(),"cold load preserves exact overflow quantities and unique source receipts")
 	check(normalized(q.dynamic_runtime.bindings)==normalized(prior.bindings),"actual cold load preserves immutable world/nest anchors")
 	check(normalized(dynamic.encounters.snapshot().counts)==normalized(prior.counts),"actual cold load does not reroll finite counts")
 	check(dynamic.encounters.snapshot().active==prior.active and q.active_random==prior.active,"actual cold load agrees one active ID in both ledgers")
@@ -144,7 +150,7 @@ func persist_and_exit() -> void:
 	var file:=FileAccess.open(manifest_path,FileAccess.WRITE)
 	check(file!=null,"manifest file writable")
 	if file!=null:
-		file.store_string(JSON.stringify({"gold":GameState.gold,"xp":GameState.stats.xp,"receipts":receipt_summary(),
+		file.store_string(JSON.stringify({"gold":GameState.gold,"xp":GameState.stats.xp,"receipts":receipt_summary(),"pending_items":GameState.pending_items,
 			"evidence":evidence_summary(),"puzzles":GameState.campaign_quest.puzzle_progress,"route_steps":GameState.campaign_quest.dynamic_runtime.route_steps,"decline_runs":dynamic.facts.snapshot().decline_runs,"bindings":GameState.campaign_quest.dynamic_runtime.bindings,"counts":state.counts,"active":state.active,
 			"sequence":dynamic.facts.snapshot().sequence,"tick":WorldSim.sim.tick_count,"last_issue_tick":state.last_issue_tick,"last_closed":state.last_closed,
 			"nodes":dynamic.selected_nodes(),"migration_contracts":migration_contracts(),"investigation_notes":Dynamic.completed_investigation_notes(GameState.campaign_quest)}))

@@ -50,7 +50,7 @@ static func upgrade_cost(current_level: int) -> int:
 
 ## 装备折价：替换下来的装备按稀有度折金（捡到就比穿强 → 也有金币补偿）
 static func sell_price(rarity: int) -> int:
-	return 20 + clampi(rarity, 0, 3) * 10
+	return 20 + clampi(rarity, 0, 4) * 10
 
 
 ## --- 物品经济（玩法 v7 P0）：掉落映射 / 买价 / 材料卖价 全收口在此 ---
@@ -108,7 +108,7 @@ const COLLECT_PREMIUM := 2.0
 
 ## 合法物品 id（存档消毒 / 商店校验共用）
 static func knows_item(id: String) -> bool:
-	return ITEM_BUY.has(id) or ITEM_SELL.has(id)
+	return ITEM_BUY.has(id) or ITEM_SELL.has(id) or id == "equipment-parts"
 
 
 ## 物种的材料（"" = 不掉）；Boss 优先查 BOSS_MATERIAL

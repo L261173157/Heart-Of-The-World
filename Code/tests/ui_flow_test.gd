@@ -244,7 +244,16 @@ func _test_world_death_respawn() -> void:
 	_check(hud._quick_id == "medipack" and hud._quick_badge.text == "×2"
 			and hud._recovery_status.text.is_empty(), "生命缺口事件使已明确选择的恢复品可用（×2）")
 	hud._refresh_inventory()
-	_check(hud._inv_grid.get_child_count() == 1, "物品栏格子按持有点亮（1 格）")
+	await _touch_control(hud._inv_layer.find_child("BagTab_supplies", true, false))
+	var supply_rows: Control = hud._inv_layer.find_child("BagRows", true, false)
+	_check(supply_rows.get_child_count() == 1 and supply_rows.find_child("BagSupply_medipack", true, false) != null,
+		"补给页仅列实际持有的一种补给")
+	await _touch_control(hud._inv_layer.find_child("BagUseSupply", true, false))
+	_check(GameState.count_item("medipack") == 1 and is_equal_approx(player.current_hp, player.stats.max_hp()),
+		"真实背包使用按钮只扣一份并恢复玩家生命")
+	await _touch_control(hud._inv_layer.find_child("BagUseSupply", true, false))
+	_check(GameState.count_item("medipack") == 1 and hud._quick_id == "medipack",
+		"满血重复使用不浪费补给也不改变恢复预设")
 	hud._toggle_inventory()
 	_check(not hud._inv_layer.visible and not get_tree().paused, "物品栏关闭解除暂停")
 	# ESC 弹层链：物品栏优先于暂停菜单

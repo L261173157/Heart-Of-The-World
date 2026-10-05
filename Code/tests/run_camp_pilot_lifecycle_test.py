@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""营地首章真实死亡/贡献/容量待领/支付收据的独立进程存档回归。"""
+"""营地首章真实死亡/贡献/溢出待领取/支付收据的独立进程存档回归。"""
 from __future__ import annotations
 
 import json
@@ -65,8 +65,8 @@ def main() -> int:
                     return 1
             elif phase == "pending":
                 ledger = current["camp_quest"]
-                if ledger["stage"] != "return" or ledger["paid"] or current["inventory"].get("onigiri") != 99:
-                    print("FAIL full-inventory ready ledger not persisted")
+                if ledger["stage"] != "completed" or not ledger["paid"] or current["inventory"].get("onigiri") != 99 or not any(r.get("item_id") == "onigiri" and r.get("count", 0) > 0 for r in current.get("pending_items", {}).values()):
+                    print("FAIL paid full-inventory contract and pending item were not persisted")
                     return 1
             elif phase == "claim":
                 if not current["camp_quest"]["paid"] or current["camp_quest"]["stage"] != "completed":

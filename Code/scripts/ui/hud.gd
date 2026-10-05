@@ -103,14 +103,7 @@ var _supply_btns: Dictionary = {}
 var _sell_btns: Dictionary = {}
 ## 物品栏弹层（阅读型：打开暂停世界，照图鉴口径）
 var _inv_layer: Control
-var _inv_grid: GridContainer
-var _inv_hint: Label
-var _equipment_labels: Dictionary = {}
-var _equipment_lock_buttons: Dictionary = {}
-## 单件候选只在背包比较，不在战斗中弹层；按钮绑定本次 offer，旧回调不能处理新件。
-var _equipment_offer: VBoxContainer
 var _equipment_badge: Label
-var _equipment_pick_locked := false
 var _task_layer: Control
 var _task_rows: VBoxContainer
 var _task_snapshot: Array = []
@@ -1196,6 +1189,8 @@ func _close_top_layer_or_toggle_pause() -> void:
 		return
 	if not _modal_stack.is_empty():
 		var layer: Control = _modal_stack.back()["layer"]
+		if layer == _inv_layer and bool(_inv_layer.call("cancel_confirmation")):
+			return
 		if layer == _dialogue_panel:
 			_on_dialogue_action("decline")
 		else:
@@ -1338,6 +1333,9 @@ func _sync_modal_focus(preferred: Control = null) -> void:
 			fallback = %CodexClose
 		elif active == _inv_layer:
 			fallback = _inv_layer.find_child("InventoryClose", true, false)
+			if bool(_inv_layer.call("confirmation_active")):
+				active = _inv_layer.find_child("BagConfirmation", true, false)
+				fallback = active.find_child("BagConfirmCancel", true, false)
 		elif active == shop_panel:
 			fallback = %BtnShopClose
 	for node: Node in get_node("Root").find_children("*", "Control", true, false):
@@ -1370,6 +1368,8 @@ func _close_codex() -> void:
 
 
 func _close_inventory() -> void:
+	if _inv_layer != null and _inv_layer.call("cancel_confirmation"):
+		return
 	_pop_modal(_inv_layer)
 
 
@@ -1741,106 +1741,22 @@ func _on_item_gained(item_id: String, count: int, total: int) -> void:
 ## 物品栏弹层（阅读型，照图鉴口径：打开暂停世界 + 清触屏队列；
 ## 全代码构建避免 .tscn 手术，结构同 CodexLayer：Dim → Panel → VB → Scroll → Grid）
 func _setup_inventory_layer() -> void:
-	var root := get_node("Root") as Control
-	_inv_layer = Control.new()
+	_inv_layer = preload("res://scripts/ui/equipment_bag.gd").new()
 	_inv_layer.name = "InventoryLayer"
 	_inv_layer.visible = false
 	_inv_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.add_child(_inv_layer)
-
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.45)
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_STOP  # 挡住下层触控
-	_inv_layer.add_child(dim)
-
-	var panel := PanelContainer.new()
-	# 中心锚定 + 四向偏移（照 ShopPanel 的 tscn 模式）：PRESET_CENTER 的
-	# MINSIZE 模式把控件左上角放在屏幕中心，600 高的面板底部直接出屏
-	panel.anchor_left = 0.5
-	panel.anchor_top = 0.5
-	panel.anchor_right = 0.5
-	panel.anchor_bottom = 0.5
-	panel.offset_left = -324.0
-	panel.offset_top = -290.0
-	panel.offset_right = 324.0
-	panel.offset_bottom = 290.0
-	_inv_layer.add_child(panel)
-	# 木瓦底 + 芥末黄丝带标题（与游商营地同属交易/收纳意象）
-	HotwTheme.paper_panel(panel, HotwTheme.WOOD_TILE, 40)
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 20)
-	margin.add_theme_constant_override("margin_top", 14)
-	margin.add_theme_constant_override("margin_right", 20)
-	margin.add_theme_constant_override("margin_bottom", 14)
-	panel.add_child(margin)
-	var vb := VBoxContainer.new()
-	margin.add_child(vb)
-
-	var title := HotwTheme.ribbon_tag("装备与物品", 2, 240.0)
-	title.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	vb.add_child(title)
-
-	_inv_hint = Label.new()
-	_inv_hint.add_theme_font_size_override("font_size", 16)
-	_inv_hint.add_theme_color_override("font_color", Color(0.85, 0.85, 0.8, 0.9))
-	_inv_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_inv_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vb.add_child(_inv_hint)
-
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 356)
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	vb.add_child(scroll)
-	_inv_grid = GridContainer.new()
-	_inv_grid.columns = 5
-	_inv_grid.add_theme_constant_override("h_separation", 10)
-	_inv_grid.add_theme_constant_override("v_separation", 10)
-	_inv_grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	var contents := VBoxContainer.new()
-	contents.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	contents.add_theme_constant_override("separation", 12)
-	scroll.add_child(contents)
-	var equipment_help := Label.new()
-	equipment_help.text = "锁定槽保留 1 件待比较装备；选择后换下或放弃的装备折金。\n候选未处理时，后续掉落直接折金。解锁可启用总词条自动换装。"
-	equipment_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	equipment_help.add_theme_font_size_override("font_size", 16)
-	_equipment_offer = VBoxContainer.new()
-	_equipment_offer.name = "EquipmentOffer"
-	_equipment_offer.add_theme_constant_override("separation", 8)
-	contents.add_child(_equipment_offer)
-	contents.add_child(equipment_help)
-	for slot: String in GameState.EQUIP_SLOTS:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-		contents.add_child(row)
-		var detail := Label.new()
-		detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		detail.add_theme_font_size_override("font_size", 16)
-		row.add_child(detail)
-		_equipment_labels[slot] = detail
-		var lock_button := Button.new()
-		lock_button.name = "EquipmentLock_" + slot
-		lock_button.custom_minimum_size = Vector2(152, 72)
-		lock_button.toggle_mode = true
-		lock_button.toggled.connect(_on_equipment_lock_toggled.bind(slot))
-		row.add_child(lock_button)
-		_equipment_lock_buttons[slot] = lock_button
-	contents.add_child(HSeparator.new())
-	contents.add_child(_inv_grid)
-
-	var close := Button.new()
-	close.name = "InventoryClose"
-	close.text = "关闭（O）"
-	close.custom_minimum_size = Vector2(0, 56)
-	close.pressed.connect(_close_inventory)
-	vb.add_child(close)
+	_inv_layer.set("input_allowed", _can_use_reading_control)
+	get_node("Root").add_child(_inv_layer)
+	_inv_layer.connect("close_requested", _close_inventory)
+	_inv_layer.connect("controls_rebuilt", _inventory_controls_rebuilt)
+	_inv_layer.connect("input_barrier_requested", _inventory_input_barrier)
+	_inv_layer.connect("feedback", _toast_combat)
 
 
 func _toggle_inventory() -> void:
 	if _inv_layer.visible:
+		if _inv_layer.call("cancel_confirmation"):
+			return
 		_pop_modal(_inv_layer)
 	else:
 		_refresh_inventory()
@@ -1848,73 +1764,19 @@ func _toggle_inventory() -> void:
 
 
 func _refresh_inventory() -> void:
-	_refresh_equipment()
-	_refresh_equipment_offer()
-	# 先摘除再延迟释放：queue_free 是帧末生效，同帧连刷（拾取信号 + 使用后刷新）
-	# 会把待释放格子留在树里，格数统计与布局都失真
-	for child in _inv_grid.get_children().duplicate():
-		_inv_grid.remove_child(child)
-		child.queue_free()
-	var ids: Array[String] = []
-	ids.append_array(ItemCatalog.ids_of_kind("consumable"))
-	ids.append_array(ItemCatalog.ids_of_kind("material"))
-	# 钥匙也入列：凭证类物品必须有常驻 UI 可查持有量（此前拾取 toast 之外无处可看）
-	ids.append_array(ItemCatalog.ids_of_kind("key"))
-	var shown := 0
-	for id: String in ids:
-		var n := GameState.count_item(id)
-		if n <= 0:
-			continue
-		shown += 1
-		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(104, 104)
-		var icon := HotwTheme.add_icon(btn, ItemCatalog.icon_of(id), 23.0)
-		icon.offset_bottom = -38
-		_add_button_caption(btn, ItemCatalog.name_of(id))
-		var caption := btn.get_node("Caption") as Label
-		caption.offset_top = -34
-		caption.offset_bottom = -12
-		caption.add_theme_font_size_override("font_size", 14)
-		HotwTheme.add_badge(btn, "×%d" % n).add_theme_font_size_override("font_size", 16)
-		btn.pressed.connect(_on_inv_cell.bind(id))
-		_inv_grid.add_child(btn)
-	_inv_hint.text = "消耗品点击即使用 ｜ 材料可整叠售予营地行商" if shown > 0 \
-			else "暂无材料与补给——猎杀野兽有机会拾取"
+	if _inv_layer != null:
+		_inv_layer.call("refresh")
 
 
-## 开关用目标布尔值而非反转：同一回调重复交付也不会翻回原状态。
-func _on_equipment_lock_toggled(locked: bool, slot: String) -> void:
-	if _inv_layer == null or not _inv_layer.visible:
-		return
-	GameState.set_equipment_locked(slot, locked)
-	_refresh_equipment()
+func _inventory_controls_rebuilt() -> void:
+	if _inv_layer != null and _inv_layer.visible:
+		_sync_modal_focus()
 
 
-func _refresh_equipment() -> void:
-	for slot: String in _equipment_labels:
-		var item: Dictionary = GameState.stats.equips.get(slot, {})
-		var label: Label = _equipment_labels[slot]
-		var button: Button = _equipment_lock_buttons[slot]
-		var locked := GameState.is_equipment_locked(slot)
-		label.text = "%s：%s" % [GameState.SLOT_NAMES[slot],
-				"尚未装备" if item.is_empty() else GameState.equip_description(item)]
-		button.disabled = item.is_empty()
-		button.set_pressed_no_signal(locked)
-		button.text = "空槽" if item.is_empty() else ("已锁定\n点击解锁" if locked else "自动换装\n点击锁定")
-
-
-## 物品格子点击：消耗品 → 经 item_use_requested 交 player 应用（满血拦截也在那）；
-## 钥匙 → 播报用途（凭证不可用不可售）；材料 → 文案播报（面板是暂停态，_toast 计时冻结可从容读）
-func _on_inv_cell(id: String) -> void:
-	if ItemCatalog.is_consumable(id):
-		EventBus.item_use_requested.emit(id)
-		_refresh_inventory()  # player 同步扣减，立刻反映数量
-	elif ItemCatalog.kind_of(id) == "key":
-		_toast("%s：城塞宝箱凭证（%s）" % [ItemCatalog.name_of(id),
-			"击败精英怪有几率掉落" if id == "silver-key" else "完成收集委托获得"])
-	else:
-		_toast("%s：%s（%d 金/个）" % [ItemCatalog.name_of(id), ItemCatalog.desc_of(id),
-			EconomyMath.item_sell_price(id)])
+func _inventory_input_barrier() -> void:
+	_release_gameplay_touches()
+	if _gesture_gate != null:
+		_gesture_gate.require_release()
 
 
 ## 恢复键只使用明确选定的治疗技能或消耗品。
@@ -1996,8 +1858,7 @@ func _on_progress_changed(level: int, xp: int, xp_needed: int, pending_points: i
 	_xp_target = xp
 	_refresh_stats_label(level, pending_points)
 	if _inv_layer != null and _inv_layer.visible:
-		_refresh_equipment()
-		_refresh_equipment_offer()
+		_refresh_inventory()
 	if _stat_layer != null and _stat_layer.visible:
 		_refresh_stat_preview()
 
@@ -2403,62 +2264,13 @@ func _confirm_quest_abandon(id: String) -> void:
 
 
 func _on_equipment_offer_changed() -> void:
+	# 掉落只更新菜单标记，不打断战斗打开背包。
 	if _equipment_badge != null:
-		_equipment_badge.text = "待比较" if not GameState.pending_equipment.is_empty() else ""
+		_equipment_badge.text = ""
 	if _inv_layer != null and _inv_layer.visible:
-		_refresh_equipment_offer()
-		_refresh_equipment()
-		_sync_modal_focus()
+		_refresh_inventory()
+	_refresh_menu_badge()
 
-
-func _refresh_equipment_offer() -> void:
-	if _equipment_offer == null:
-		return
-	for child: Node in _equipment_offer.get_children():
-		_equipment_offer.remove_child(child)
-		child.queue_free()
-	var candidate: Dictionary = GameState.pending_equipment
-	_equipment_offer.visible = not candidate.is_empty()
-	if candidate.is_empty():
-		return
-	var slot := str(candidate.get("slot", "weapon"))
-	var current: Dictionary = GameState.stats.equips.get(slot, {})
-	var token := GameState.equipment_offer_id
-	_equipment_offer.add_child(_readable_label("待比较 · " + str(GameState.SLOT_NAMES.get(slot, slot)), 20))
-	_equipment_offer.add_child(_readable_label("当前：" + (GameState.equip_description(current)
-			if not current.is_empty() else "空槽") + "\n候选：" + GameState.equip_description(candidate), 16))
-	var preview := GameState.stats.preview_equipment(candidate)
-	var effect := _benefit_text(preview, true)
-	var element_names := {"": "无", "fire": "火焰", "ice": "寒冰"}
-	if slot == "weapon":
-		effect += "\n武器元素  %s → %s" % [element_names.get(str(current.get("element", "")), "无"),
-				element_names.get(str(candidate.get("element", "")), "无")]
-	var benefit := _readable_label(effect, 16)
-	benefit.name = "EquipmentBenefit"
-	_equipment_offer.add_child(benefit)
-	var actions := HBoxContainer.new()
-	actions.add_theme_constant_override("separation", 12)
-	_equipment_offer.add_child(actions)
-	for equip_new: bool in [true, false]:
-		var button := Button.new()
-		button.name = "EquipCandidate" if equip_new else "KeepEquipment"
-		button.text = "装备候选 / 出售旧件" if equip_new else "保留当前 / 出售候选"
-		button.custom_minimum_size = Vector2(268, 60)
-		button.add_theme_font_size_override("font_size", 16)
-		button.pressed.connect(_resolve_equipment_offer.bind(equip_new, token))
-		actions.add_child(button)
-	_equipment_offer.add_child(HSeparator.new())
-
-
-func _resolve_equipment_offer(equip_new: bool, token: int) -> void:
-	if _equipment_pick_locked or _inv_layer == null or not _inv_layer.visible or passive_layer.visible:
-		return
-	_equipment_pick_locked = true
-	GameState.resolve_pending_equipment(equip_new, token)
-	_refresh_inventory()
-	_sync_modal_focus()
-	await get_tree().process_frame
-	_equipment_pick_locked = false
 
 # --- Six fixed combat actions and reversible reading stack ---
 var _shortcut_btn: Button
@@ -2725,6 +2537,11 @@ func _setup_adventure_menu() -> void:
 	%MenuBtn.custom_minimum_size = Vector2(0, 48)
 
 func _refresh_menu_badge() -> void:
+	var bag_button := pause_layer.find_child("MenuInventory", true, false) as Button
+	if bag_button != null and GameState.has_method("equipment_snapshot"):
+		var snapshot: Dictionary = GameState.call("equipment_snapshot")
+		var pending_count := (snapshot.get("pending", []) as Array).size() + (1 if not (snapshot.get("first_boss_choices", []) as Array).is_empty() else 0)
+		bag_button.text = "背包" + (" · %d待领" % pending_count if pending_count > 0 else "")
 	if _menu_growth_btn != null:
 		var count := GameState.stats.pending_points + GameState.stats.pending_passive_picks
 		_menu_growth_btn.text = "成长" + (" · %d待选" % count if count > 0 else "")

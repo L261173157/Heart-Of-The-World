@@ -108,8 +108,10 @@ def main() -> int:
                 return 1
             if phase == "repair" and (not evidence.get("signpost_repaired")
                                       or current.get("inventory", {}).get("onigiri") != 99
-                                      or "outpost:lost_watch" not in current.get("checkpoints", [])):
-                print("FAIL completed physical repair and pending99 reward must coexist")
+                                      or "outpost:lost_watch" not in current.get("checkpoints", [])
+                                      or not quest.get("receipts", {}).get("restoration", {}).get("paid")
+                                      or not any(r.get("item_id") == "onigiri" and r.get("count", 0) > 0 for r in current.get("pending_items", {}).values())):
+                print("FAIL physical repair, paid contract and pending item must coexist")
                 return 1
             if phase == "paid" and current != snapshots["claim"]:
                 print("FAIL paid cold reader rewrote saved reward or world data")

@@ -251,7 +251,7 @@ func _chapter_one_seed(pending := false) -> bool:
 	if pending: GameState.inventory["onigiri"] = 99
 	if not await _repair(pending): return false
 	if pending: await _next_clue_contract()
-	_check(_q().get("stage", "") == ("claim" if pending else "completed") and _evidence("next_clue_received"), "首章经真实调查、取物、救援、生态、修路和线索交接完成")
+	_check(_q().get("stage", "") == "completed" and _evidence("next_clue_received"), "首章经真实调查、取物、救援、生态、修路和线索交接完成")
 	return _evidence("next_clue_received")
 
 func _walk_home_context(use_recall := false) -> bool:
@@ -361,14 +361,15 @@ func _legacy_menu(mode: String) -> void:
 		and GameState.camp_quest.get("gold") == original.get("gold") and GameState.camp_quest.get("xp") == original.get("xp"), "只进入旧单和恢复不会付奖、改价或吞未付收据")
 
 func _chapter_one_resume_tail() -> void:
-	_check(_evidence("next_clue_received") and _q().get("stage", "") == "claim", "真实前哨修复、后续线索与满99未付尾款同时保留")
+	_check(_evidence("next_clue_received") and _q().get("stage", "") == "completed"
+		and _pending_total("onigiri") > 0, "真实修复和线索已完成，满包尾奖保存在待领取")
+	var wallet := _wallet()
+	var pending := GameState.pending_items.duplicate(true)
 	_qm.abandon("lost_outpost_v1")
-	_check(not _q().get("active", true), "暂停未付首章仍保留真实修复和线索")
+	_check(_q().get("receipts", {}).get("restoration", {}).get("paid", false), "旧放弃调用不能撤销已付首章")
 	if not await _walk_home_context(true) or not await _open_camp_option("outpost:menu"): return
-	_check(_hud._dialogue_yes.visible and _hud._dialogue_kind in ["quest", "camp_action"], "新战役菜单的原前哨入口仍显示明确恢复按钮")
-	if _hud._dialogue_yes.visible: await _tap(_hud._dialogue_yes)
 	_hud._close_dialogue()
-	_check(_q().get("active", false) and not _q().get("receipts", {}).get("restoration", {}).get("paid", true), "恢复原首章不吞满99尾款或重新支付已付里程碑")
+	_check(_wallet() == wallet and GameState.pending_items == pending, "战役菜单阅读旧首章不重付或吞掉满包余量")
 	await _claim_restoration()
 
 func _future_reader_guard() -> void:
@@ -573,29 +574,34 @@ func _forest_beacon() -> bool:
 	await _ci("c2:beacon")
 	_check(_ce(4, "beacon") and _campaign_data.ready(_cq(), C2 + ":s4"), "完整前置证据加真实现场确认才点亮烽灯")
 	_check(_cp("c2:beacon").get("repaired"), "烽灯实体实际表现已修复而非只有任务文字改变")
-	_check(not _cs(4).get("receipt", {}).get("paid", false) and _wallet() == wallet, "库存99保留修复事实，但金币/经验/物品整笔未付")
+	var gold := roundi(int(reward["gold"]) * GameState.stats.gold_mult())
+	var xp := int(int(reward["xp"]) * GameState.stats.passive_mult("xp", 1.1) * (1.0 + GameState.stats.equip_affix("xp")))
+	_check(_cs(4).get("receipt", {}).get("paid", false) and GameState.gold == int(wallet["gold"]) + gold
+		and _wallet_xp(_wallet()) == _wallet_xp(wallet) + xp and _pending_total(bonus) > 0,
+		"库存99仍原子支付冻结合同金币经验，物品进入持久待领取")
 	return _ce(4, "beacon")
 
 func _forest_claim() -> void:
 	if not await _cw("c2:beacon"): return
 	var wallet := _wallet()
-	await _claim_in_ui()
-	_check(_wallet() == wallet and not _cs(4).get("receipt", {}).get("paid", false), "冷恢复满99仍不能先付金币经验或部分物品")
+	var pending := GameState.pending_items.duplicate(true)
+	_campaign.claim(C2 + ":s4")
+	_check(_wallet() == wallet and _cs(4).get("receipt", {}).get("paid", false)
+		and GameState.pending_items == pending, "冷恢复后已付满包合同不再支付金币经验或复制余量")
 	var reward: Dictionary = _campaign_data.reward(_cq(), C2 + ":s4")
 	var bonus := str(reward.get("bonus", ""))
+	var remaining := _pending_total(bonus)
+	_check(remaining > 0 and _pending_sources_unique(), "冷恢复保留有唯一来源的终段奖品余量")
 	if not bonus.is_empty(): GameState.remove_item(bonus, 1)
-	_check(not _cs(4).get("receipt", {}).get("paid", false), "腾出空间不擅自提交明确领取")
+	_check(_claim_one_pending(bonus) and _pending_total(bonus) == remaining - 1, "空出一格后明确领取已付终段的一份奖品")
+	_check(_cs(4).get("receipt", {}).get("paid", false) and GameState.gold == int(wallet["gold"])
+		and _wallet_xp(_wallet()) == _wallet_xp(wallet) and GameState.count_item(bonus) == 99,
+		"领取余量只转移奖品，不再次增加金币或跨级经验")
 	wallet = _wallet()
-	var gold := roundi(int(reward["gold"]) * GameState.stats.gold_mult())
-	var xp := int(int(reward["xp"]) * GameState.stats.passive_mult("xp", 1.1) * (1.0 + GameState.stats.equip_affix("xp")))
-	await _claim_in_ui()
-	_check(_cs(4).get("receipt", {}).get("paid", false), "腾出容量后现场明确领取整笔终段奖励")
-	_check(GameState.gold == int(wallet["gold"]) + gold and _wallet_xp(_wallet()) == _wallet_xp(wallet) + xp
-		and (bonus.is_empty() or GameState.count_item(bonus) == 99), "领取时金币、跨级经验和普通补给按冻结合同精确同时到账")
-	wallet = _wallet()
+	pending = GameState.pending_items.duplicate(true)
 	_campaign.claim(C2 + ":s4")
 	_campaign.object_action("c2:beacon")
-	_check(_wallet() == wallet, "重复领取与重复修复回调不能复付终段奖励")
+	_check(_wallet() == wallet and GameState.pending_items == pending, "重复领取和重复修复不能复付终段奖励")
 
 func _claim_in_ui() -> void:
 	await _ci("c2:beacon", false)
@@ -727,7 +733,7 @@ func _expected_path() -> String:
 	return GameState.SAVE_PATH + ".campaign_expected"
 
 func _write_campaign_expected() -> void:
-	_write_expected({"campaign": _cq().duplicate(true), "outpost": _q().duplicate(true), "wallet": _wallet(),
+	_write_expected({"campaign": _cq().duplicate(true), "outpost": _q().duplicate(true), "wallet": _wallet(), "pending_items": GameState.pending_items.duplicate(true),
 		"checkpoints": GameState.discovered_checkpoints.duplicate(), "clock": _world_clock(),
 		"resources": _resources(), "destroyed": ObstacleField.destroyed_list()})
 
@@ -756,6 +762,7 @@ func _cold_campaign_expected() -> void:
 			_check(_cp(id) != null and _cp(id).get("activated"), "完成机关冷加载仍有点亮的真实符标：" + id)
 	_check(_same(_q(), expected["outpost"]), "独立进程保留原首章原始账本")
 	_check(_same(_wallet(), expected["wallet"]), "独立进程精确恢复金币、经验、等级和库存")
+	_check(_same(GameState.pending_items, expected.get("pending_items", {})) and _pending_sources_unique(), "独立进程逐项恢复待领取数量、ID和唯一来源")
 	var checkpoints := GameState.discovered_checkpoints.duplicate()
 	var expected_checkpoints: Array = expected["checkpoints"].duplicate()
 	checkpoints.sort()
