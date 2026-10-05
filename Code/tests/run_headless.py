@@ -14,6 +14,7 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "campaign_walk_geometry": (["res://tests/campaign_walk_geometry_test.tscn", "--quit-after", "30000"], "=== CAMPAIGN WALK GEOMETRY PASS"),
     "campaign_dynamic_truth": (["res://tests/campaign_dynamic_truth_test.tscn", "--quit-after", "100000"], "CAMPAIGN_DYNAMIC_TRUTH_TEST PASS"),
     "campaign_regional_passage": (["res://tests/campaign_regional_passage_test.tscn", "--quit-after", "100000"], "=== CAMPAIGN REGIONAL PASSAGE PASS"),
     "campaign_feedback_layout": (["res://tests/campaign_feedback_layout_test.tscn", "--quit-after", "10000"], "=== CAMPAIGN FEEDBACK LAYOUT PASS"),
@@ -153,6 +154,8 @@ def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str]
         timeout = max(timeout, 1800)  # 六章实走、双路线和双结局的独立进程链。
     command = ([sys.executable, args[0], godot] if args[0].endswith(".py")
                else [godot, "--headless", "--path", str(PROJECT), *args])
+    if name == "campaign_cross_family":
+        command += ["--log-dir", str(logs / "campaign_cross_family")]
     print(f"[{name}] 开始", flush=True)
     with subprocess.Popen(command, env=env, stdout=subprocess.PIPE,
                           stderr=subprocess.STDOUT, text=True,

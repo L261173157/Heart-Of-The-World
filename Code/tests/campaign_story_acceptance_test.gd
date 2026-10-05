@@ -8,20 +8,27 @@ const C4 := "watch_c4_hill"
 const C5 := "watch_c5_snow"
 const C6 := "watch_c6_lava"
 
-func _cw(id: String, offset := Vector2(0, 56)) -> bool:
-	var prop := _cp(id)
-	_check(prop != null, "主线真实目标存在：" + id)
-	if prop == null: return false
-	var query := _walk_query()
+func _campaign_approach(prop: Node2D, offset: Vector2, query: PhysicsShapeQueryParameters2D) -> Vector2:
 	for approach: Vector2 in [offset, Vector2(56,0), Vector2(-56,0), Vector2(0,-56), Vector2(44,44), Vector2(-44,44)]:
+		# 18px是原步行到达容差，仍须完整留在此实际对象的94px交互范围内。
+		if approach.length()+18.0 > CampaignLayout.INTERACT_DISTANCE: continue
 		var at := prop.global_position + approach
 		if _walk_blocked(at, query): continue
 		var ray := PhysicsRayQueryParameters2D.create(at, prop.global_position, 1)
 		ray.exclude = [_player.get_rid()]
 		if not _world.get_world_2d().direct_space_state.intersect_ray(ray).is_empty(): continue
-		return await _walk_to(at, "主线实走" + id)
-	_check(false, "目标没有可实际站立交互的位置：" + id)
-	return false
+		if _walk_plan(_player.global_position,at,query).is_empty(): continue
+		return at
+	return Vector2.INF
+
+func _cw(id: String, offset := Vector2(0, 56)) -> bool:
+	var prop := _cp(id)
+	_check(prop != null, "主线真实目标存在：" + id)
+	if prop == null: return false
+	var at := _campaign_approach(prop,offset,_walk_query())
+	_check(at.is_finite(), "目标具有可实际站立、实走到达且视线畅通的交互点："+id)
+	if not at.is_finite(): return false
+	return await _walk_to(at, "主线实走" + id)
 
 func _expected() -> Dictionary:
 	var expected := super._expected()

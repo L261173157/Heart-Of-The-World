@@ -17,17 +17,80 @@ func _freeze_new_actor(node: Node) -> void:
 
 func _walk_query() -> PhysicsShapeQueryParameters2D:
 	var query := PhysicsShapeQueryParameters2D.new()
-	var shape := CircleShape2D.new()
-	shape.radius = 12.0
-	query.shape = shape
+	# 与原 Player 的实际方形身体同源；半径12的圆会漏掉20×20方形的四角。
+	query.shape = (_player.get_node("CollisionShape2D") as CollisionShape2D).shape
 	query.collision_mask = 3
 	query.exclude = [_player.get_rid()]
 	return query
 
-func _walk_blocked(at: Vector2, query: PhysicsShapeQueryParameters2D) -> bool:
-	if ObstacleField.blocks(at, 12.0): return true
-	query.transform = Transform2D(0.0, at)
+func _walk_transform(at: Vector2) -> Transform2D:
+	var transform := _player.global_transform
+	transform.origin = at
+	return transform * (_player.get_node("CollisionShape2D") as CollisionShape2D).transform
+
+func _walk_physics_blocked(at: Vector2, query: PhysicsShapeQueryParameters2D) -> bool:
+	query.motion = Vector2.ZERO
+	query.transform = _walk_transform(at)
 	return not _world.get_world_2d().direct_space_state.intersect_shape(query, 1).is_empty()
+
+func _walk_blocked(at: Vector2, query: PhysicsShapeQueryParameters2D) -> bool:
+	return ObstacleField.blocks(at, 12.0) or _walk_physics_blocked(at, query)
+
+func _walk_sweep_clear(from: Vector2, to: Vector2, query: PhysicsShapeQueryParameters2D, contact_start := false) -> bool:
+	# 真实身体贴墙时，ObstacleField的圆形半径+2px余量可覆盖一个合法站位。
+	# 仅当前身体的短首段可退出该保守余量；终点、门户和其它路段仍严格检查。
+	var may_exit_margin := contact_start and from == _player.global_position and from.distance_to(to) <= 64.0
+	if _walk_physics_blocked(from, query) or _walk_blocked(to, query): return false
+	var in_start_margin := ObstacleField.blocks(from, 12.0)
+	if in_start_margin and not may_exit_margin: return false
+	var samples := maxi(1, ceili(from.distance_to(to) / 8.0))
+	for index in range(1, samples):
+		var blocked := ObstacleField.blocks(from.lerp(to, float(index) / samples), 12.0)
+		if blocked and not in_start_margin: return false
+		if not blocked: in_start_margin = false
+	query.transform = _walk_transform(from)
+	query.motion = to - from
+	var sweep := _world.get_world_2d().direct_space_state.cast_motion(query)
+	query.motion = Vector2.ZERO
+	return sweep.size() == 2 and sweep[0] >= 1.0
+
+## 格心被占不等于原请求点不可达。只从未占用格心经真实身体扫掠接近原点，绝不把障碍格改成空格。
+func _walk_plan(from: Vector2, goal: Vector2, query: PhysicsShapeQueryParameters2D) -> PackedVector2Array:
+	if _walk_blocked(goal, query): return PackedVector2Array()
+	var a := Vector2i((from / 32.0).floor())
+	var b := Vector2i((goal / 32.0).floor())
+	var lo := Vector2i(mini(a.x,b.x)-28, mini(a.y,b.y)-28)
+	var hi := Vector2i(maxi(a.x,b.x)+29, maxi(a.y,b.y)+29)
+	var grid := AStarGrid2D.new()
+	grid.region = Rect2i(lo,hi-lo)
+	grid.cell_size = Vector2(32,32)
+	grid.offset = Vector2(16,16)
+	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
+	grid.update()
+	for y in range(lo.y,hi.y):
+		for x in range(lo.x,hi.x):
+			var cell := Vector2i(x,y)
+			grid.set_point_solid(cell,_walk_blocked((Vector2(cell)+Vector2.ONE*0.5)*32.0,query))
+	# 首项被替换成原角色当前位置，不会指挥身体走入这个可能被挤占的格心。
+	grid.set_point_solid(a,false)
+	var portals: Array[Vector2i] = []
+	for y in range(b.y-2,b.y+3):
+		for x in range(b.x-2,b.x+3):
+			var cell := Vector2i(x,y)
+			if not grid.is_point_solid(cell): portals.append(cell)
+	portals.sort_custom(func(left: Vector2i,right: Vector2i) -> bool:
+		return ((Vector2(left)+Vector2.ONE*0.5)*32.0).distance_squared_to(goal) < ((Vector2(right)+Vector2.ONE*0.5)*32.0).distance_squared_to(goal))
+	for portal: Vector2i in portals:
+		var point := (Vector2(portal)+Vector2.ONE*0.5)*32.0
+		if not _walk_sweep_clear(point,goal,query): continue
+		var path := grid.get_point_path(a,portal)
+		if path.is_empty(): continue
+		path[0] = from
+		if path.size()==1 and not _walk_sweep_clear(from,goal,query,true): continue
+		if path.size()>1 and not _walk_sweep_clear(from,path[1],query,true): continue
+		path.append(goal)
+		return path
+	return PackedVector2Array()
 
 ## 战役场景有原生态演员与原城镇/城塞实心建筑。规划也看真实物理体；不挪演员、不关碰撞。
 func _walk_to(goal: Vector2, label: String, arrival := 18.0) -> bool:
@@ -40,31 +103,16 @@ func _walk_to(goal: Vector2, label: String, arrival := 18.0) -> bool:
 	var stuck_frames := 0
 	var path := PackedVector2Array()
 	var attempts := 0
+	var walked_frames := 0
 	_player.set_physics_process(true)
 	for _frame in 7000:
+		walked_frames = _frame
 		if _player.global_position.distance_to(goal) <= arrival: break
 		if path.is_empty():
 			attempts += 1
 			if attempts > 4: break
-			var a := Vector2i((_player.global_position / 32.0).floor())
-			var b := Vector2i((goal / 32.0).floor())
-			var lo := Vector2i(mini(a.x,b.x)-28, mini(a.y,b.y)-28)
-			var hi := Vector2i(maxi(a.x,b.x)+29, maxi(a.y,b.y)+29)
-			var grid := AStarGrid2D.new()
-			grid.region = Rect2i(lo,hi-lo)
-			grid.cell_size = Vector2(32,32)
-			grid.offset = Vector2(16,16)
-			grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
-			grid.update()
-			for y in range(lo.y,hi.y):
-				for x in range(lo.x,hi.x):
-					var cell := Vector2i(x,y)
-					grid.set_point_solid(cell,_walk_blocked((Vector2(cell)+Vector2.ONE*0.5)*32.0,query))
-			grid.set_point_solid(a,false)
-			if grid.is_point_solid(b): break
-			path = grid.get_point_path(a,b)
+			path = _walk_plan(_player.global_position,goal,query)
 			if path.is_empty(): break
-			path.append(goal)
 			cursor = 1 if path.size()>1 else 0
 			stuck_origin = _player.global_position
 			stuck_frames = 0
@@ -88,7 +136,9 @@ func _walk_to(goal: Vector2, label: String, arrival := 18.0) -> bool:
 	_check(arrived,label+"：实际角色绕过现存物理体行走抵达")
 	if not arrived:
 		print("CAMPAIGN_WALK_BLOCKER ", JSON.stringify({"label":label,"goal":[goal.x,goal.y],
-			"actual":[_player.global_position.x,_player.global_position.y],"replans":attempts}))
+			"actual":[_player.global_position.x,_player.global_position.y],"replans":attempts,"frames":walked_frames,
+			"cursor":cursor,"waypoint":[path[cursor].x,path[cursor].y] if not path.is_empty() else [],
+			"goal_blocked":_walk_blocked(goal,query),"goal_grid_blocked":_walk_blocked((goal/32.0).floor()*32.0+Vector2(16,16),query)}))
 	return arrived
 
 func _mount(fresh := false) -> void:

@@ -55,7 +55,7 @@ jobs:
           - suite: campaign_raw_persistence
             tests: campaign_dynamic_copy_guard,campaign_dynamic_write_through,campaign_dynamic_rock_body
           - suite: campaign_cross_family
-            tests: campaign_cross_family
+            tests: campaign_walk_geometry,campaign_cross_family
           - suite: campaign_resume_mobile
             tests: campaign_resume_navigation,campaign_open_room_restore,mobile_clipping,mobile_scroll,campaign_feedback_layout
           - suite: campaign_earned_budget

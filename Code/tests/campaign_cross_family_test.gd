@@ -14,7 +14,26 @@ func _cp(id: String) -> Node2D:
 
 func _cw(id: String, offset := Vector2(0,56)) -> bool:
 	if id == "home:patrol": return await _walk_home_context()
-	return await super._cw(id,offset)
+	if id != "side_letter:record": return await super._cw(id,offset)
+	# 原失败现场的正向回归：当前真实演员可能有合法±26px表现偏移，不能挪怪或改血量来通过。
+	var prop:=_cp(id)
+	if prop==null: return await super._cw(id,offset)
+	var position:=prop.global_position
+	var actor_states: Array=[]
+	for actor: Node in get_tree().get_nodes_in_group("monsters"):
+		if actor is MonsterBase and actor.global_position.distance_to(position)<=512:
+			actor_states.append({"actor":actor,"transform":actor.global_transform,"hp":actor.current_hp,"spawn":actor.inst.spawn_pos})
+	var ecology:=JSON.stringify(WorldSim.sim.to_dict())
+	var health:=_player.current_hp
+	var reached: bool=await super._cw(id,offset)
+	var unchanged:=true
+	for state: Dictionary in actor_states:
+		var actor: MonsterBase=state.actor
+		unchanged=unchanged and is_instance_valid(actor) and actor.global_transform==state.transform and actor.current_hp==state.hp and actor.inst.spawn_pos==state.spawn
+	_check(unchanged,"护信记录实走保留附近原演员位置/生命/出生记录")
+	_check(ecology==JSON.stringify(WorldSim.sim.to_dict()),"护信记录实走前后权威生态序列化字节一致")
+	_check(_player.current_hp==health and prop.global_position==position,"护信记录实走不补血、不移动真实目标")
+	return reached
 
 func _at_campaign_entry(terrain: String) -> bool:
 	if terrain == "home": return _player.global_position.distance_to(WorldConfig.spawn_pos())<100
