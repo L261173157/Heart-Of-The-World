@@ -324,8 +324,13 @@ func _forest_clues() -> bool:
 		_campaign.object_action(id)
 	_check(_same(before, _cq()) and _wallet() == wallet, "第二章错误/远程/越级动作不写证据也不发奖")
 	if not await _cw("c2:herbalist"): return false
+	# EN4 can legitimately discover authored objects while walking. Preserve all
+	# quest/wallet guards, then isolate the hidden-call assertion at arrival.
+	_check(_same(before.get("quests",{}),_cq().get("quests",{})) and _wallet() == wallet, "实际接近只发现现场，不生成交谈证据或支付奖励")
+	before = _cq().duplicate(true)
 	var prop := _cp("c2:herbalist")
 	prop.hide()
+	_check(not prop.is_visible_in_tree(), "直接API调用前NPC确实隐藏且没有等待帧")
 	_campaign.object_action("c2:herbalist")
 	_check(_same(before, _cq()), "隐藏的真实NPC不能被直接API调查")
 	prop.show()

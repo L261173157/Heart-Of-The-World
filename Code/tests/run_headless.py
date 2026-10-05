@@ -14,6 +14,10 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "mobile_clipping": (["res://tests/mobile_clipping_test.tscn", "--quit-after", "10000"], "=== MOBILE CLIPPING PASS"),
+    "mobile_scroll": (["res://tests/mobile_scroll_test.tscn", "--quit-after", "15000"], "=== MOBILE SCROLL PASS"),
+    "campaign_resume_navigation": (["res://tests/campaign_resume_navigation_test.tscn", "--quit-after", "10000"], "=== CAMPAIGN RESUME NAVIGATION PASS"),
+
     "campaign_story_lifecycle": ([str(PROJECT / "tests/run_campaign_story_lifecycle_test.py")], "=== CAMPAIGN STORY LIFECYCLE PASS"),
     "campaign_reward_contract": (["-s", "tests/campaign_reward_contract_test.gd"], "CAMPAIGN_REWARD_CONTRACT_TEST PASS"),
     "campaign_ledger": (["-s", "tests/campaign_ledger_test.gd"], "CAMPAIGN_LEDGER_TEST PASS"),

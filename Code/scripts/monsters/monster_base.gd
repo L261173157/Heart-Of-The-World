@@ -613,6 +613,15 @@ func _nav_velocity_toward(target: Vector2, speed: float) -> Vector2:
 	if profiling:
 		_tv = Time.get_ticks_usec()
 	var direct := (target - global_position).normalized() * speed
+	# 封闭任务房间的内外没有通路；不调用引擎的不可达目标回退，也不直线顶墙。
+	# 每次读取当前门态，机关打开后自然恢复真导航，无需重生怪物或挪动锚点。
+	if CampaignLayout.separated_by_closed_gate(global_position, target):
+		_nav_target = Vector2.INF
+		_navq_velocity = Vector2.INF
+		if profiling:
+			prof_nav_ms += (Time.get_ticks_usec() - _tv) * 0.001
+			prof_nav_n += 1
+		return Vector2.ZERO
 	# 远档免导航（真机性能优化二轮）：屏外个体直线逼近，绕障交给滑行；
 	# 恢复近圈后 retarget 守卫与路径失效重查会自动接回导航
 	if _far_mode or _nav == null or global_position.distance_to(target) > NAV_DIRECT_DIST:

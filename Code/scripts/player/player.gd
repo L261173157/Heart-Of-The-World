@@ -540,7 +540,10 @@ func _restore_saved_state() -> bool:
 			clampf(float(pos[1]), 20.0, WorldConfig.WORLD_SIZE.y - 20.0))
 		# 世界 v5：老档坐标可能落进障碍（障碍场晚于坐标存档落地）——推到最近
 		# 空位；本身在空处则原样返回（位置逐位不变）
+		global_position = CampaignLayout.recover_saved_position(global_position)
 		global_position = ObstacleField.nudge_free(global_position, 10.0)
+		# 墙外重叠点可能被最近空位采样推到墙内，归一后再守一次封闭边界。
+		global_position = CampaignLayout.recover_saved_position(global_position)
 	current_hp = clampf(float(snapshot.get("hp", stats.max_hp())), 1.0, stats.max_hp())
 	current_mp = clampf(float(snapshot.get("mp", stats.max_mp())), 0.0, stats.max_mp())
 	_restore_combat_timers(snapshot.get("combat_timers", {}))

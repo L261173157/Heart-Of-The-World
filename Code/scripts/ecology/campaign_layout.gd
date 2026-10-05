@@ -71,6 +71,7 @@ static var _seed := -2147483648
 static var _sites: Dictionary = {}
 static var _geometry: Dictionary = {}
 static var _gate_cells: Dictionary = {}
+static var _sealed_rooms: Dictionary = {}
 static var _open_gates: Array[String] = []
 static var _barrier_cells: Dictionary = {}
 static var _extra_reserved: Array[Rect2] = []
@@ -91,6 +92,7 @@ static func _ensure() -> void:
 	_sites = {}
 	_geometry = {}
 	_gate_cells = {}
+	_sealed_rooms = {}
 	_barrier_cells = {}
 	_extra_reserved = []
 	_extra_objects = {}
@@ -167,17 +169,20 @@ static func _build_forest_gate() -> void:
 		return
 	var center: Vector2 = _sites.forest.center
 	var gate: Array[Vector2i] = []
+	var walls: Array[Vector2i] = []
 	# 完整档案围合，南面三格（96px）门洞。只解谜开门，不能打碎城墙绕过。
 	for y in range(-14,-2):
 		for x in range(-19,-2):
 			if x != -19 and x != -3 and y != -14 and y != -3:
 				continue
 			var cell := _cell(center) + Vector2i(x,y)
+			walls.append(cell)
 			if y == -3 and x >= -12 and x <= -10:
 				gate.append(cell)
 			else:
 				_geometry[cell] = "castle"
 	_gate_cells["c2:forest_gate"] = gate
+	_register_sealed_room("c2:forest_gate", walls)
 	_paths.forest.append(PackedVector2Array([center + Vector2(-352,128),center + Vector2(-352,-320)]))
 
 
@@ -243,6 +248,39 @@ static func gate_cells(id: String) -> Array[Vector2i]:
 	for cell: Vector2i in _gate_cells.get(id,[]):
 		out.append(cell)
 	return out
+
+
+## 围合范围由刚生成的真实墙格派生；只记录有不可破坏任务门且没有其它出口的房间。
+static func _register_sealed_room(id: String, walls: Array[Vector2i]) -> void:
+	var bounds := Rect2(Vector2(walls[0]) * CELL, Vector2.ONE * CELL)
+	for cell: Vector2i in walls:
+		bounds = bounds.expand(Vector2(cell) * CELL).expand((Vector2(cell) + Vector2.ONE) * CELL)
+	var gate: Array = _gate_cells[id]
+	var door := (Vector2(gate[gate.size() / 2]) + Vector2.ONE * 0.5) * CELL
+	_sealed_rooms[id] = {"bounds": bounds, "exit": door + Vector2(0, CELL * 2.0)}
+
+
+## 锁门时房内外是不同连通分量，不能让寻路器反复查询一个已知不可达目标。
+static func separated_by_closed_gate(from: Vector2, to: Vector2) -> bool:
+	_ensure()
+	for id: String in _sealed_rooms:
+		if id in _open_gates:
+			continue
+		# 导航按墙中心围线分区；外缘格角有小体型可走的空隙，不能误当室内。
+		var bounds: Rect2 = (_sealed_rooms[id]["bounds"] as Rect2).grow(-CELL * 0.5)
+		if bounds.has_point(from) != bounds.has_point(to):
+			return true
+	return false
+
+
+## 新增围墙可能包住旧档原本可走的位置。仅锁门室内的恢复点移到同门外，
+## 不解锁机关、不推进任务；普通位置和已开门房间逐位保持，资源由玩家原路径恢复。
+static func recover_saved_position(pos: Vector2) -> Vector2:
+	_ensure()
+	for id: String in _sealed_rooms:
+		if id not in _open_gates and (_sealed_rooms[id]["bounds"] as Rect2).has_point(pos):
+			return _sealed_rooms[id]["exit"]
+	return pos
 
 
 ## 账本向纯几何注入已经解开的机关。返回实际变化格，供碰撞/导航增量刷新。
@@ -357,16 +395,20 @@ static func _build_snow_ruin() -> void:
 static func _build_fortress_annex(terrain: String) -> void:
 	var anchor := _snap(_sites[terrain]["boss_anchor"])
 	var gate: Array[Vector2i] = []
+	var walls: Array[Vector2i] = []
 	for y in range(-14,7):
 		for x in range(8,25):
 			if x != 8 and x != 24 and y != -14 and y != 6:
 				continue
 			var cell := _cell(anchor) + Vector2i(x,y)
+			walls.append(cell)
 			if y == 6 and x >= 15 and x <= 17:
 				gate.append(cell)
 			else:
 				_geometry[cell] = "castle"
-	_gate_cells["c4:archive_gate" if terrain == "hill" else "c6:core_gate"] = gate
+	var gate_id := "c4:archive_gate" if terrain == "hill" else "c6:core_gate"
+	_gate_cells[gate_id] = gate
+	_register_sealed_room(gate_id, walls)
 	_extra_reserved.append(Rect2(anchor+Vector2(208,-496),Vector2(608,880)))
 	# 安全绕行只压出128px的小路，左翼控制点真实在堡墙另一侧。
 	_paths[terrain].append(PackedVector2Array([anchor+Vector2(0,480),anchor+Vector2(-416,480),anchor+Vector2(-416,-64)]))
