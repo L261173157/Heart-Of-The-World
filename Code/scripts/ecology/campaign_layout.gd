@@ -80,6 +80,7 @@ static var _lava_pocket := Rect2()
 static var _reserved_rects_by_chunk: Dictionary = {}
 static var _reserved_paths_by_chunk: Dictionary = {}
 static var _troll_entry := Vector2.ZERO
+static var _troll_entries: Array[Vector2] = []
 static var _region_routes: Dictionary = {}
 static var _bounds: Dictionary = {}
 static var _paths: Dictionary = {}
@@ -97,6 +98,7 @@ static func _ensure() -> void:
 	_extra_reserved = []
 	_extra_objects = {}
 	_region_routes = {}
+	_troll_entries.clear()
 	_open_gates.clear()
 	_bounds = {}
 	_paths = {}
@@ -129,6 +131,7 @@ static func _ensure() -> void:
 	for terrain: String in ["hill","lava"]:
 		_build_fortress_annex(terrain)
 	_lava_pocket = Rect2(site_center("lava")+Vector2(288,-176),Vector2(192,288))
+	_build_optional_objects()
 	_build_ending_shelter()
 	_build_reservation_index()
 
@@ -452,6 +455,184 @@ static func _reserve_wing(terrain: String,at: Vector2,half := Vector2(416,416)) 
 		_paths[terrain].append(PackedVector2Array([center+Vector2(0,576),Vector2(at.x,center.y+576),at]))
 
 
+static func _build_optional_objects() -> void:
+	var sides := {
+		"side_patrol":["plains","新巡守","watchman",0,["station_camp","station_forest"]],
+		"side_herbalist":["forest","草药师的学徒","herbalist",0,["medicine","patient","station_reserve"]],
+		"side_hunter":["plains","老猎人","hunter",1,["warning_sign"]],
+		"side_scholar":["hill","碑文学者","scholar",0,["shortcut_gate"]],
+		"side_merchant":["swamp","迟归的货商","merchant",0,["crate","station_near","station_outer"]],
+		"side_watchman":["hill","候班瞭望者","watchman",1,["watch_near","watch_high"]],
+		"side_letter":["snow","护信人","keeper",0,["letter_case","recipient"]],
+		"side_troll":["forest","旧旗守望者","hunter",1,["room_runes","room_gate","room_record","rune_leaf","rune_stone","rune_lamp"]],
+	}
+	var offsets := [Vector2(-192,224),Vector2(0,32),Vector2(192,-160),Vector2(192,224),
+		Vector2(-192,-192),Vector2(0,-192),Vector2(192,32),Vector2(-192,32),Vector2(0,224),Vector2(-320,-64)]
+	for chain: String in sides:
+		var config: Array = sides[chain]
+		var terrain: String = config[0]
+		var at := site_center(terrain)+Vector2(-1152,-768 if int(config[3])==1 else 256)
+		if terrain == "plains":
+			at = site_center(terrain)+Vector2(-1408,-640 if int(config[3])==1 else 416)
+		if chain == "side_troll":
+			at = _snap(BiomeMap.farthest_patch("forest")["center"])+Vector2(-1152,1024)
+			_extra_reserved.append(Rect2(at-Vector2(416,416),Vector2(832,832)))
+			_troll_entry = at+Vector2(-640,512)
+			# 分开的作者接近垫使一个后来迁入的营地不能同时占住全部落点。
+			_troll_entries.assign([_troll_entry,at+Vector2(-1568,512),at+Vector2(-640,1440),at+Vector2(288,1440)])
+			for pad: Vector2 in _troll_entries:
+				_extra_reserved.append(Rect2(pad-Vector2(112,112),Vector2(224,224)))
+				_paths.forest.append(PackedVector2Array([pad,Vector2(pad.x,at.y+512),at+Vector2(-640,512),at+Vector2(-192,224)]))
+		else:
+			_reserve_wing(terrain,at)
+		var suffixes: Array = ["giver","record","target","resolution"]
+		suffixes.append_array(config[4])
+		for index in suffixes.size():
+			var suffix: String = suffixes[index]
+			var kind := "record"
+			var title := str(config[1])+"的记录"
+			if suffix == "giver":
+				kind = "npc"
+				title = str(config[1])
+			elif suffix == "resolution":
+				kind = "record"
+				title = str(config[1])+"的抉择"
+			elif suffix in ["target","crate","medicine","letter_case"]:
+				kind = "cargo" if suffix != "medicine" else "aid"
+				title = {"target":"待回收的故事物件","crate":"遗落的专用货箱","medicine":"一份两用的药","letter_case":"冻结的信筒"}[suffix]
+			elif suffix == "patient":
+				kind = "injured"
+				title = "受伤的学徒伙伴"
+			elif suffix == "recipient":
+				kind = "npc"
+				title = "等候回信的亲人"
+			elif suffix.ends_with("gate"):
+				kind = "gate"
+				title = "遗迹机关门"
+			elif suffix.begins_with("rune_"):
+				kind = "rune"
+				title = {"rune_leaf":"树叶符记","rune_stone":"石块符记","rune_lamp":"灯火符记"}[suffix]
+			elif suffix.begins_with("station_") or suffix.begins_with("watch_") or suffix == "warning_sign":
+				kind = "flag"
+				title = {"station_camp":"家园新巡守席","station_forest":"林间新巡守席","station_reserve":"站点药物储备","station_near":"近路补给台","station_outer":"外环补给台","watch_near":"近路瞭望旗","watch_high":"高地瞭望旗","warning_sign":"临路警示牌"}.get(suffix,"候选驻站")
+			_register_object(chain+":"+suffix,terrain,title,kind,at+offsets[index],{"portrait":config[2],"initial_hidden":false})
+		if chain == "side_patrol":
+			_extra_objects[chain+":station_camp"]["position"] = BiomeMap.spawn_pos()+Vector2(160,128)
+			_extra_objects[chain+":station_forest"]["position"] = site_center("forest")+Vector2(-320,576)
+			_extra_objects[chain+":station_forest"]["terrain"] = "forest"
+			_extra_objects[chain+":station_forest"]["site"] = SITE_IDS.forest
+		if chain == "side_troll":
+			_extra_objects[chain+":target"]["position"] = at+Vector2(-256,-160)
+		if chain in ["side_hunter","side_watchman","side_troll"]:
+			_extra_objects[chain+":target"]["kind"] = "survey"
+			_extra_objects[chain+":target"]["title"] = "现场核对点"
+		if chain == "side_merchant":
+			_extra_objects[chain+":station_near"]["position"] = site_center("swamp")+Vector2(192,-224)
+			_extra_objects[chain+":station_outer"]["position"] = site_center("swamp")+Vector2(-576,32)
+		if chain == "side_watchman":
+			# 旧旗确实被岩脊遮住；两处新增旗位绕开旧遮挡，各自保留真实视线。
+			_register_object("side_watchman:old_flag",terrain,"岩脊后的旧旗","flag",at+Vector2(192,-288))
+			for y in [32,64,96]: _geometry[_cell(at+Vector2(-64,y))]="boulder"
+		if chain in ["side_scholar","side_troll"]:
+			var gate_id := chain+ (":shortcut_gate" if chain=="side_scholar" else ":room_gate")
+			var target_id := chain+ (":shortcut_exit" if chain=="side_scholar" else ":room_record")
+			if chain == "side_scholar":
+				_register_object(target_id,terrain,"碑文后的近道","survey",at)
+				_extra_objects[chain+":target"]["position"] = at+Vector2(-256,-160)
+			var room_center := at+Vector2(192,-160)
+			_build_small_room(room_center,gate_id,target_id)
+	var specific_titles := {
+		"side_patrol":["旧巡逻名册","旧巡逻队徽记","新巡守派驻案"],
+		"side_herbalist":["学徒用药记录","学徒遗漏的药方","专用药的去向"],
+		"side_hunter":["昨日猎数登记","猎场实况观测桩","收起的悬赏"],
+		"side_scholar":["残碑位置记录","遗失的拓印","铭文保留或拆取"],
+		"side_merchant":["漏签的货运单","遗落的签收牌","这一箱送往哪里"],
+		"side_watchman":["缺旗巡查记录","山口视线观察桩","换岗安排图"],
+		"side_letter":["寄信登记","收信人的姓名牌","冻结信件交接"],
+		"side_troll":["巨魔旧旗残记","旧旗遗址现场","遗留房间铭文"],
+	}
+	for chain: String in specific_titles:
+		for i in 3:
+			_extra_objects[chain+":"+["record","target","resolution"][i]]["title"] = specific_titles[chain][i]
+	_extra_objects["side_troll:room_runes"]["title"] = "树叶、石块与灯的铭文"
+	_extra_objects["side_troll:room_record"]["title"] = "房间内的驻守日记"
+	_register_object("side_troll:departure","forest","旧旗远征接引员","npc",site_center("forest")+Vector2(288,576),{"portrait":"hunter","initial_hidden":true})
+	for terrain: String in TERRAINS:
+		var chain := "region_"+terrain
+		var at := site_center(terrain)+Vector2(1152,64)
+		if terrain == "plains":
+			at = site_center(terrain)+Vector2(-1408,1472)
+		_reserve_wing(terrain,at,Vector2(480,480))
+		var entries := {
+			"survey_a":["来路现场观测桩","survey",Vector2(-256,256)],
+			"survey_b":["彼端现场观测桩","survey",Vector2(256,-256)],
+			"choice":["路线施工图","record",Vector2(0,256)],
+			"work_near":["近线施工点","valve",Vector2(-256,-64)],
+			"work_outer":["外环施工点","parts",Vector2(256,64)],
+			"station":["新路线接应台","beacon",Vector2(0,-320)],
+		}
+		for suffix: String in entries:
+			var row: Array = entries[suffix]
+			_register_object(chain+":"+suffix,terrain,row[0],row[1],at+row[2])
+		if terrain == "forest":
+			_register_object("region_forest:guide",terrain,"林缘巡线员","npc",at+Vector2(-320,352),{"portrait":"hunter"})
+		if terrain in ["swamp","hill"]:
+			var barrier: Array[Vector2i] = []
+			for y in range(-4,5):
+				var cell := _cell(at)+Vector2i(-4,y)
+				_geometry[cell] = "rock" if absi(y)<=1 else "castle"
+				if absi(y)<=1:
+					barrier.append(cell)
+			_barrier_cells[chain+":near_barrier"] = barrier
+		_region_routes[terrain] = {
+			"near":PackedVector2Array([at+Vector2(0,256),at+Vector2(0,-320)]),
+			"outer":PackedVector2Array([at+Vector2(0,256),at+Vector2(384,256),at+Vector2(384,-384),at+Vector2(0,-320)]),
+		}
+		if terrain == "hill":
+			var gate: Array[Vector2i] = []
+			for x in range(-3,4):
+				var cell := _cell(at)+Vector2i(x,0)
+				if absi(x)<=1:
+					gate.append(cell)
+				else:
+					_geometry[cell] = "castle"
+			_gate_cells[chain+":shortcut_gate"] = gate
+			_register_object(chain+":shortcut_gate",terrain,"岩脊旧道机关门","gate",at+Vector2(0,96))
+		if terrain == "snow":
+			for offset: Vector2 in [Vector2(288,192),Vector2(448,64),Vector2(288,-96),Vector2(448,-256)]:
+				_geometry[_cell(at+offset)] = "ice"
+		if terrain == "lava":
+			var center := site_center("lava")
+			_extra_objects[chain+":survey_a"]["position"] = center+Vector2(224,-32)
+			_extra_objects[chain+":survey_b"]["position"] = center+Vector2(544,-32)
+			_region_routes[terrain] = {
+				"near":PackedVector2Array([center+Vector2(224,-32),center+Vector2(224,-256),center+Vector2(544,-256),center+Vector2(544,-32)]),
+				"outer":PackedVector2Array([center+Vector2(224,-32),center+Vector2(192,288),center+Vector2(640,288),center+Vector2(640,-32)]),
+			}
+		for route: PackedVector2Array in _region_routes[terrain].values():
+			_paths[terrain].append(route)
+
+
+static func _build_small_room(center: Vector2,gate_id: String,target_id: String) -> void:
+	var gate: Array[Vector2i] = []
+	var walls: Array[Vector2i] = []
+	for y in range(-4,5):
+		for x in range(-4,5):
+			if absi(x)!=4 and absi(y)!=4:
+				continue
+			var cell := _cell(center)+Vector2i(x,y)
+			# 学者机关是南北贯通的真正近道，旧旗故事的房间仍只有原南门。
+			if gate_id=="side_scholar:shortcut_gate" and y==-4 and absi(x)<=1: continue
+			walls.append(cell)
+			if y==4 and absi(x)<=1:
+				gate.append(cell)
+			else:
+				_geometry[cell] = "castle"
+	_gate_cells[gate_id] = gate
+	if gate_id=="side_troll:room_gate":
+		_register_sealed_room(gate_id,walls)
+	_extra_objects[gate_id]["position"] = center+Vector2(0,192)
+	_extra_objects[target_id]["position"] = center+Vector2(0,-224) if gate_id=="side_scholar:shortcut_gate" else center
 
 
 
@@ -527,7 +708,7 @@ static func entry_candidates(terrain: String) -> Array[Vector2]:
 		var at := site_center("plains")+Vector2(-576,1472)
 		return [at+Vector2(0,-224),at+Vector2(-352,-224),at+Vector2(352,-224),at+Vector2(352,160)]
 	if terrain == "side_troll":
-		return [_troll_entry,_troll_entry+Vector2(-96,0),_troll_entry+Vector2(0,96),_troll_entry+Vector2(96,0)]
+		return _troll_entries.duplicate()
 	if terrain == "plains":
 		return [entry(terrain),OutpostLayout.checkpoint_position(),OutpostLayout.center()+Vector2(-352,416)]
 	if not _sites.has(terrain):

@@ -145,6 +145,7 @@ func _test_physics() -> void:
 	_check(world.object_node("c2:aid_cache").taken and world.object_node("c2:beacon").repaired,"箱子与灯火由持久快照投影")
 	for cell: Vector2i in CampaignLayout.gate_cells("c2:forest_gate"):
 		_check(layer.get_cell_source_id(cell) == -1 and nav.get_cell_source_id(cell) >= 0,"机关同步移除可见墙并开放导航")
+	await _test_lava_body(scene,layer,player)
 	scene.queue_free()
 	await _step(3)
 
@@ -182,7 +183,55 @@ func _test_extended_routes(seedv: int) -> void:
 		_check(positions.size()==4,"两个结局各有四个新增人物去向")
 		for position: Vector2 in positions.values():
 			_check(not ObstacleField.blocks(position,12) and ObstacleField.liquid_kind_at(position)=="","结局人物实际安全站位")
+	var troll := CampaignLayout.entry_for_object("side_troll:giver")
+	_check(troll.distance_to(BiomeMap.farthest_patch("forest").center)>2000,"巨魔支线远征安全接近点")
+	_check(not ObstacleField.blocks(troll,12) and ObstacleField.liquid_kind_at(troll)=="","巨魔支线落点通行安全")
+	var snow_routes := CampaignLayout.region_routes("snow")
+	_check(_route_length(snow_routes.outer)>_route_length(snow_routes.near)*1.5,"雪原外环确实更长")
+	for route: PackedVector2Array in snow_routes.values():
+		for i in range(route.size()-1):
+			_check(_walkable(route[i],route[i+1]),"雪原遮蔽物不堵已标道路")
 	var hazard := CampaignLayout.hazard_footprint()
 	_check(CampaignLayout.liquid_kind(hazard.get_center())=="lava","作者熔河有唯一几何真源")
 	_check(ObstacleField.liquid_kind_at(hazard.get_center())=="lava","%d 可见熔河与环境伤害同源" % seedv)
+	for route: PackedVector2Array in CampaignLayout.region_routes("lava").values():
+		for i in range(route.size()-1):
+			_check(_walkable(route[i],route[i+1]),"熔岩两条绕行路线均有身体净空")
 	ObstacleField.restore_destroyed([])
+
+func _route_length(points: PackedVector2Array) -> float:
+	var length := 0.0
+	for i in range(points.size()-1):
+		length += points[i].distance_to(points[i+1])
+	return length
+
+func _test_lava_body(scene: Node2D,layer: ObstacleTileLayer,player: Player) -> void:
+	var center := CampaignLayout.site_center("lava")
+	var chunk := Vector2i(floori(center.x/512),floori(center.y/512))
+	for y in range(-2,3):
+		for x in range(-2,3):
+			layer._on_chunk_ready((chunk+Vector2i(x,y))*512)
+	while not layer._lay_queue.is_empty():
+		layer._process(0)
+	player.teleport_to(CampaignLayout.hazard_footprint().get_center())
+	await _step(3)
+	player.current_hp = player.stats.max_hp()
+	var before := player.current_hp
+	player._physics_process(0.51)
+	_check(player.current_hp<before,"真正玩家物理循环站熔河会失血")
+	var path: PackedVector2Array = CampaignLayout.region_routes("lava").near
+	player.teleport_to(path[0])
+	player.current_hp = player.stats.max_hp()
+	before = player.current_hp
+	await _step(3)
+	var reached := true
+	for i in range(path.size()-1):
+		var steps := maxi(1,ceili(path[i].distance_to(path[i+1])/8.0))
+		for n in range(1,steps+1):
+			var point := path[i].lerp(path[i+1],float(n)/steps)
+			var collision := player.move_and_collide(point-player.global_position)
+			if collision != null:
+				reached = false
+			player._physics_process(0.05)
+	_check(reached and player.global_position.distance_to(path[-1])<1,"真正角色沿安全绕行线实际移动无墙卡住")
+	_check(is_equal_approx(player.current_hp,before),"实际绕行熔河不吃环境伤害")

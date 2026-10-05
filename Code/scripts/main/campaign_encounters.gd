@@ -113,6 +113,12 @@ static func sanitize(value: Variant, seed_value: int) -> Dictionary:
 		if id != out.active and out.instances[id].status == "active":
 			out.instances[id].status = "closed"
 			out.instances[id].outcome = "inactive_record"
+	# Per-instance timestamps are independent witnesses. Losing an index cannot bypass either cooldown.
+	for row: Dictionary in out.instances.values():
+		out.last_issue_tick=maxi(int(out.last_issue_tick),int(row.issued_tick))
+		if row.status=="closed":
+			row.closed_tick=maxi(int(row.closed_tick),int(row.issued_tick))
+			out.last_closed[row.template_id]=maxi(int(out.last_closed.get(row.template_id,0)),int(row.closed_tick))
 	return out
 
 func configure(sim: EcologySim, seed_value: int, saved: Dictionary = {}, facts: CampaignWorldFacts = null) -> void:
@@ -300,7 +306,7 @@ func accept(preview: Dictionary, context: Dictionary) -> bool:
 	if fresh.is_empty(): return false
 	# A changed ecology target must be shown again, never silently substituted under an old button.
 	var old_proof: Dictionary = preview.get("proof",{})
-	for key: String in ["species","nest_key","target_ids","cost_item","cost_count"]:
+	for key: String in ["species","nest_key","target_ids","cost_item","cost_count","migration","region_id","origin"]:
 		if old_proof.get(key) != fresh.proof.get(key): return false
 	var row := {"id":id,"template_id":template,"seed":_seed,"ordinal":ordinal,"version":VERSION,
 		"status":"active","issued_tick":_sim.tick_count,"closed_tick":0,"object_ids":fresh.object_ids,

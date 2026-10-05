@@ -7,7 +7,8 @@ signal changed
 const Data := preload("res://scripts/main/campaign_quest_data.gd")
 const Catalog := preload("res://scripts/main/campaign_catalog.gd")
 const Inventory := preload("res://scripts/main/camp_quest_inventory.gd")
-const ENABLED_BATCH := 2
+const ENABLED_BATCH := 3
+var _optional: CampaignOptional
 var _main: CampaignMain
 var _mutating := false
 var _actions: Dictionary = {}
@@ -27,6 +28,9 @@ func _ready() -> void:
 	_main = preload("res://scripts/main/campaign_main.gd").new()
 	_main.setup(self)
 	add_child(_main)
+	_optional = preload("res://scripts/main/campaign_optional.gd").new()
+	_optional.setup(self)
+	add_child(_optional)
 	_publish()
 
 func ledger() -> Dictionary:
@@ -96,6 +100,9 @@ func _available_object_actions(object_id: String) -> Array:
 
 func object_payload(object_id: String) -> Dictionary:
 	if object_id=="side_troll:departure" and ENABLED_BATCH>=3: return departure_payload(object_id,_object_title(object_id))
+	if _optional != null and _optional.handles_object(object_id):
+		var payload: Dictionary = _optional.object_payload(object_id)
+		return _troll_departure_menu(payload) if object_id=="side_troll:giver" and _at_origin(object_id) else payload
 	if not _at_object(object_id): return _info("请走到物件身旁，确认没有墙体遮挡后再交互")
 	var object_chapter := _chapter_for_object(object_id)
 	if not object_chapter.is_empty() and _paused(str(object_chapter["id"])):
@@ -133,6 +140,7 @@ func object_action(object_id: String, choice: String = "") -> String:
 	return perform_action(str(actions[0]["id"]), choice)
 
 func perform_action(action_id: String, choice: String = "") -> String:
+	if _optional != null and _optional.handles_action(action_id): return _optional.perform_action(action_id,choice)
 	if _mutating: return ""
 	var a: Dictionary = _actions.get(action_id, {})
 	if a.is_empty(): return "未识别的战役行动"
@@ -217,7 +225,7 @@ func claim(stage_id: String) -> String:
 	if _mutating or not owns(stage_id) or not Data.ready(ledger(), stage_id): return "尚未完成这段行动"
 	var stage: Dictionary = _stage_cache[stage_id]
 	var last: Dictionary = stage["actions"][-1]
-	var claim_object := str(last["object"])
+	var claim_object := _optional.action_object(last) if _optional != null and _optional.handles_action(str(last["id"])) else str(last["object"])
 	if not _at_object(claim_object): return "请到这一段的交付物件或联络员身旁领取"
 	_mutating = true
 	GameState.begin_world_reward()
@@ -240,6 +248,7 @@ func snapshot(stage_id: String) -> Dictionary:
 	var ready := Data.ready(ledger(), stage_id)
 	if next.is_empty(): next = stage["actions"][-1]
 	var object_id := str(next["object"])
+	if _optional != null and _optional.handles_action(str(next["id"])): object_id=_optional.action_object(next)
 	if next["kind"] == "puzzle" and not ready:
 		var progress: Array = ledger().get("puzzle_progress", {}).get(next["id"], [])
 		var objects: Array = next.get("puzzle_objects", [])
@@ -255,6 +264,12 @@ func snapshot(stage_id: String) -> Dictionary:
 		if cursor < points.size():
 			pos = points[cursor]
 			target_title = ("返回已确认的" if route_state.get("needs_anchor",false) else "") + ("浅滩近路" if route=="near" else "枯木外缘") + "路标 %d/%d"%[cursor+1,points.size()]
+	if _optional != null and _optional.handles_action(str(next["id"])) and not ready:
+		var navigation: Dictionary = _optional.next_target(next)
+		if not navigation.is_empty():
+			object_id=str(navigation.get("object_id",object_id))
+			pos=navigation.get("position",pos)
+			target_title=str(navigation.get("label",target_title))
 	var progress_count := 0
 	for id: String in stage["required"]:
 		if _proof_exists(id): progress_count += 1
@@ -273,11 +288,29 @@ static func open_gates_from(q: Dictionary) -> Array[String]:
 		result.append("c2:forest_gate")
 	if q.get("quests",{}).get("watch_c4_hill:s2",{}).get("evidence",{}).has("watch_c4_hill:s2:winch"): result.append("c4:archive_gate")
 	if q.get("quests",{}).get("watch_c6_lava:s2",{}).get("evidence",{}).has("watch_c6_lava:s2:passage"): result.append("c6:core_gate")
+	# 可选机关也必须在Player.ready前读取同一持久化证据；否则已开的旧房间会被误判封闭。
+	var actions:=Catalog.actions(int(q.get("seed",0)))
+	for stage_id: String in q.get("quests",{}):
+		for action_id: String in q["quests"][stage_id].get("evidence",{}):
+			var a: Dictionary=actions.get(action_id,{})
+			if a.is_empty() or a.get("stage","")!=stage_id or not str(a.get("chapter","")).is_empty(): continue
+			if not a.has("opens") and not a.has("opens_choice"): continue
+			if int(Catalog.chain(str(a.get("chain",""))).get("batch",99))>ENABLED_BATCH: continue
+			var gate:=open_gate_for_action(q,a)
+			if not gate.is_empty() and gate not in result: result.append(gate)
 	return result
+
+## 冷启动与运行时视觉共用目录的开门语义；只消费已经验证保存的行动证据和选择。
+static func open_gate_for_action(q: Dictionary,a: Dictionary) -> String:
+	if not q.get("quests",{}).get(a.get("stage",""),{}).get("evidence",{}).has(a.get("id","")): return ""
+	var by_choice: Dictionary=a.get("opens_choice",{})
+	return str(by_choice.get(Data.choice(q,a),a.get("opens","")))
 
 func visual_state() -> Dictionary:
 	var state := {"enabled_batch":ENABLED_BATCH,"open_gates":open_gates_from(ledger()),"evidence":{},"rescued":{},"repaired":{},"taken":{},"placements":{},"services":{},"active_runes":[]}
 	for a: Dictionary in _actions.values():
+		# 非主线的分支物件只能由专属运行层投影，不能把目录默认目标也冒记为已修复。
+		if str(a.get("chapter", "")).is_empty(): continue
 		if not _proof_exists(a["id"]): continue
 		state["evidence"][a["id"]] = true
 		if a["kind"] == "rescue": state["rescued"][a["object"]] = true
@@ -297,6 +330,18 @@ func visual_state() -> Dictionary:
 		state["rescued"].merge(extra["rescued"],true)
 		state["placements"].merge(extra["placements"],true)
 		state["ending"] = extra["ending"]
+	for helper: Node in [_optional]:
+		if helper == null: continue
+		var patch: Dictionary = helper.visual_state()
+		for key: String in patch:
+			if patch[key] is Dictionary:
+				if not state.has(key): state[key]={}
+				state[key].merge(patch[key],true)
+			elif patch[key] is Array:
+				if not state.has(key): state[key]=[]
+				for value: Variant in patch[key]:
+					if not value in state[key]: state[key].append(value)
+			else: state[key]=patch[key]
 	return state
 
 func _station_origins() -> Array:
@@ -371,6 +416,10 @@ func request_travel(terrain: String, origin_id: String = "home:patrol") -> Strin
 	return ""
 
 func _on_travel_completed(terrain: String) -> void:
+	if terrain.begins_with("worldsite:") or terrain.begins_with("watchnet:"):
+		_save()
+		EventBus.hint_requested.emit("已抵达已获线索的安全接近处，请亲自核实现场；生态保持连续")
+		return
 	if not ledger().has("travel"): ledger()["travel"] = {"visited":[]}
 	if not ledger()["travel"].has("visited"): ledger()["travel"]["visited"] = []
 	if not terrain in ledger()["travel"]["visited"]: ledger()["travel"]["visited"].append(terrain)
@@ -391,6 +440,7 @@ func action(action_id: String) -> String:
 				var pages: Array[String] = epilogue_pages()
 				var index := int(parts[2])
 				if index>=0 and index<pages.size(): EventBus.npc_dialogue.emit({"kind":"info","giver":"《断开的守望》后记","text":pages[index],"back_action":"campaign|epilogue_menu"})
+		"optional": return _optional.action(parts) if _optional!=null else ""
 		"act": return perform_action(str(parts[2]), str(parts[3]) if parts.size()>3 else "") if parts.size()>2 else ""
 		"sequence": return _main.sequence(str(parts[2]),str(parts[3])) if parts.size()>3 and _main!=null else ""
 		"claim": return claim(str(parts[2])) if parts.size()>2 else ""
@@ -535,7 +585,7 @@ func epilogue() -> String:
 		if Data.ready(ledger(),str(chain["id"])+":s2"): sides+=1
 	for chain: Dictionary in Catalog.regional_arcs():
 		if Data.ready(ledger(),str(chain["id"])+":s3"): regions+=1
-	lines.append("六章联络已经重建。你仍可沿已修复的线路探望队员，在原世界继续探索。")
+	lines.append("另已收尾%d条人物故事、修复%d处区域工程；没有完成的故事仍留在原处。"%[sides,regions])
 	lines.append("旧前哨巡逻员继续守在原处，既有检查点和回城仍保留。生态继续运行，已完成的故事与奖励不会倒退。")
 	return "\n".join(lines)
 
@@ -551,6 +601,18 @@ func epilogue_payload() -> Dictionary:
 	for i in titles.size():
 		options.append({"label":titles[i],"action":"campaign|epilogue|"+str(i),"enabled":true,"utility":true,"consequence":"读取实际完成记录","risk":"不会改写选择或重新支付"})
 	return {"kind":"camp_choice","giver":"《断开的守望》· 后记","text":completed_summary(ledger()),"options":options}
+
+
+func _troll_departure_menu(story: Dictionary) -> Dictionary:
+	var options: Array = story.get("options",[]).duplicate(true)
+	if story.get("kind","")=="camp_action" and story.has("action"):
+		options.append({"label":story.get("confirm_text","继续遗迹故事"),"action":story["action"],"enabled":true,
+			"consequence":"按上方说明继续这处人物故事","risk":"仍需原有现场证据；奖励不会重复支付"})
+	options.append({"label":"返回林地联络站","action":"campaign|depart|forest|side_troll:giver","enabled":true,
+		"consequence":"沿已经取得的远征线路返回","risk":"生命、精力、冷却与生态仍连续"})
+	options.append({"label":"返回家园营地","action":"campaign|depart|home|side_troll:giver","enabled":true,
+		"consequence":"明确选择返回家园","risk":"不会回复生命或精力"})
+	return {"kind":"camp_choice","giver":story.get("giver","遗迹守望者"),"text":story.get("text","遗迹记录仍保留"),"origin":_world_position("side_troll:giver"),"options":options}
 
 
 ## 出发交谈核验实际营地巡守，不能用原始摆放坐标替代已经避障/移动的居民。

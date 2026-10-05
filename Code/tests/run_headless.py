@@ -14,10 +14,17 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "campaign_open_room_restore": (["res://tests/campaign_open_room_restore_test.tscn", "--quit-after", "10000"], "=== CAMPAIGN OPEN ROOM RESTORE PASS"),
     "mobile_clipping": (["res://tests/mobile_clipping_test.tscn", "--quit-after", "10000"], "=== MOBILE CLIPPING PASS"),
     "mobile_scroll": (["res://tests/mobile_scroll_test.tscn", "--quit-after", "15000"], "=== MOBILE SCROLL PASS"),
     "campaign_resume_navigation": (["res://tests/campaign_resume_navigation_test.tscn", "--quit-after", "10000"], "=== CAMPAIGN RESUME NAVIGATION PASS"),
 
+    "campaign_optional_adversarial": (["res://tests/campaign_optional_adversarial_test.tscn", "--quit-after", "100000"], "=== CAMPAIGN OPTIONAL ADVERSARIAL PASS"),
+    "campaign_optional_lifecycle": ([str(PROJECT / "tests/run_campaign_optional_lifecycle_test.py")], "=== CAMPAIGN OPTIONAL LIFECYCLE PASS"),
+    "campaign_optional_outcomes": ([str(PROJECT / "tests/run_campaign_optional_outcomes_test.py")], "=== CAMPAIGN OPTIONAL OUTCOMES LIFECYCLE PASS"),
+    "campaign_optional_geometry": (["res://tests/campaign_optional_geometry_test.tscn", "--quit-after", "100000"], "=== CAMPAIGN OPTIONAL GEOMETRY PASS"),
+    "campaign_optional_placements": (["-s", "tests/campaign_optional_placements_test.gd"], "=== CAMPAIGN OPTIONAL PLACEMENTS PASS"),
+    "campaign_service_receipts": (["-s", "tests/campaign_service_receipts_test.gd"], "CAMPAIGN_SERVICE_RECEIPTS_TEST PASS"),
     "campaign_story_lifecycle": ([str(PROJECT / "tests/run_campaign_story_lifecycle_test.py")], "=== CAMPAIGN STORY LIFECYCLE PASS"),
     "campaign_reward_contract": (["-s", "tests/campaign_reward_contract_test.gd"], "CAMPAIGN_REWARD_CONTRACT_TEST PASS"),
     "campaign_ledger": (["-s", "tests/campaign_ledger_test.gd"], "CAMPAIGN_LEDGER_TEST PASS"),
@@ -126,9 +133,9 @@ def unexpected_errors(case: str, output: str) -> list[str]:
 
 def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str],
              godot: str, logs: Path, timeout: int) -> bool:
-    if name == "campaign_story_lifecycle":
+    if name in {"campaign_story_lifecycle", "campaign_optional_lifecycle", "campaign_optional_outcomes"}:
         timeout = max(timeout, 1800)  # 六章实走、双路线和双结局的独立进程链。
-    command = ([sys.executable, args[0], godot] if name in {"save_lifecycle", "quest_lifecycle", "exploration_lifecycle", "camp_pilot_lifecycle", "outpost_chapter_lifecycle", "outpost_live_targets_lifecycle", "campaign_lifecycle", "campaign_story_lifecycle"}
+    command = ([sys.executable, args[0], godot] if args[0].endswith(".py")
                else [godot, "--headless", "--path", str(PROJECT), *args])
     print(f"[{name}] 开始", flush=True)
     with subprocess.Popen(command, env=env, stdout=subprocess.PIPE,

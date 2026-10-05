@@ -212,10 +212,13 @@ func _on_chunk_ready(origin: Vector2i) -> void:
 			"atlas": art["atlas"], "alternative": art["alternative"], "r": c["r"]})
 
 
-## 开门是机关结果，不是玩家破坏事件；同步清理排队格与实际碰撞。
+## 机关快照改变不是玩家破坏事件；开门与恢复关门均同步瓦片、队列和实际碰撞。
 func _on_campaign_geometry_changed(cells: Array) -> void:
 	for cell: Vector2i in cells:
-		if not ObstacleField.sample_cell(cell).is_empty(): continue
+		var obstacle := ObstacleField.sample_cell(cell)
+		if not obstacle.is_empty():
+			_restore_campaign_cell(cell, obstacle)
+			continue
 		erase_cell(cell)
 		for registry: Dictionary in [_bodies, _laying]:
 			for entry: Dictionary in registry.values():
@@ -236,3 +239,24 @@ func _on_campaign_geometry_changed(cells: Array) -> void:
 					add_child(entry["body"])
 					_bodies[origin] = {"body": entry["body"], "shapes": entry["shapes"]}
 					_laying.erase(origin)
+
+
+func _restore_campaign_cell(cell: Vector2i, obstacle: Dictionary) -> void:
+	var origin := Vector2i(cell.x >> 4, cell.y >> 4) * 512
+	var entry: Dictionary = _bodies.get(origin, _laying.get(origin, {}))
+	if entry.is_empty(): return  # 窗外只改真源，进窗时按当前快照生成。
+	var art: Dictionary = VISUAL_RULES.appearance(cell, str(obstacle["kind"]))
+	for item: Dictionary in _lay_queue:
+		if item["cell"] == cell and item["origin"] == origin:
+			item.merge({"source":art["source"], "atlas":art["atlas"], "alternative":art["alternative"], "r":obstacle["r"]}, true)
+			return
+	set_cell(cell, art["source"], art["atlas"], art["alternative"])
+	var shapes: Dictionary = entry["shapes"]
+	if shapes.has(cell):
+		(shapes[cell] as CollisionShape2D).shape = _shared_circle(float(obstacle["r"]))
+		return
+	var shape := CollisionShape2D.new()
+	shape.shape = _shared_circle(float(obstacle["r"]))
+	shape.position = (Vector2(cell) + Vector2(0.5, 0.5)) * ObstacleField.CELL
+	(entry["body"] as StaticBody2D).add_child(shape)
+	shapes[cell] = shape

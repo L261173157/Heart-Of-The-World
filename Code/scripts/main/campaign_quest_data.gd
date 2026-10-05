@@ -20,7 +20,7 @@ const REWARD_V1 := {"gold_base": 12, "gold_target": 6, "gold_level": 3, "xp_base
 static func create(seed: int) -> Dictionary:
 	return {"id": ID, "version": VERSION, "seed": seed, "chapter1_proof": {}, "chapters": {},
 		"quests": {}, "random_used": {}, "active_random": "", "history": [], "paused_chains": [],
-		"puzzle_progress": {}, "main_routes": {}, "main_kills": {}, "optional_routes": {}, "optional_route_steps": {}, "optional_route_reanchor": {}, "optional_targets": {},
+		"puzzle_progress": {}, "main_routes": {}, "main_kills": {}, "optional_routes": {}, "optional_route_steps": {}, "optional_route_reanchor": {}, "optional_targets": {}, "optional_bindings": {},
 		"world_facts": Facts.sanitize({}, seed), "encounters": Encounters.sanitize({}, seed),
 		"dynamic_runtime": {"known_objects": {}, "route_steps": {}, "relief_needs": {}, "bindings": {}}, "travel": {"visited": [], "unlocked": ["plains"], "arrivals": {}}, "services": {}, "service_receipts": {}, "flags": {}, "ending": ""}
 
@@ -33,6 +33,7 @@ static func sanitize(value: Variant, seed: int) -> Dictionary:
 	q["world_facts"] = Facts.sanitize(raw.get("world_facts", {}), seed)
 	q["encounters"] = Encounters.sanitize(raw.get("encounters", {}), seed)
 	q["dynamic_runtime"] = _dynamic_state(raw.get("dynamic_runtime", {}), seed)
+	q["optional_bindings"] = _optional_bindings(raw.get("optional_bindings", {}), seed)
 	authorize_chapter1(q, raw.get("chapter1_proof", {}))
 	var contracts: Dictionary = raw.get("chapters", {}) if raw.get("chapters") is Dictionary else {}
 	for chapter: Dictionary in Catalog.main_chapters():
@@ -484,7 +485,10 @@ static func _world_unlocked(q: Dictionary, chain_id: String, memo: Dictionary = 
 	if chain_id == "world_relief":
 		# 完成需求确认后，服务被使用也不会撤销已经获得的世界调查资格。
 		if q.get("quests", {}).get(chain_id + ":s1", {}).get("accepted", false): return true
-		var visited: Array = q.get("travel", {}).get("visited", [])
+		# 第一章就在平原；历史目的地表可能重复，且不得把世界调查点当成新地形。
+		var visited: Dictionary = {"plains": true} if chapter1_complete(q) else {}
+		for terrain: Variant in q.get("travel", {}).get("visited", []):
+			if str(terrain) in ["plains", "forest", "swamp", "hill", "snow", "lava"]: visited[str(terrain)] = true
 		var needs: Dictionary = q.get("dynamic_runtime", {}).get("relief_needs", {})
 		var stations: Array = []
 		for id: String in ["world_relief:need_a", "world_relief:need_b"]:
@@ -560,6 +564,8 @@ static func _restore_progress(q: Dictionary, raw: Dictionary) -> void:
 			var points: Array = a.get("route_by_choice", {}).get(selected, a.get("route_waypoints", []))
 			var count := _integer(corners.get(a["id"]), -1)
 			var limit := int(a.get("route_corner_count_by_choice", {}).get(selected, 0))
+			if a["id"] == "region_forest:s3:walk" and selected == "near" and q.get("optional_bindings", {}).has("region_forest"):
+				limit = q["optional_bindings"]["region_forest"]["near_route"].size()
 			if count >= 0 and count <= limit: q["optional_route_steps"][a["id"]] = count
 			var visited: Variant = optional_routes.get(a["id"])
 			if not visited is Array or visited.size() > points.size(): continue
@@ -691,3 +697,26 @@ static func mark_service_claimed(q: Dictionary, service_id: String) -> bool:
 	q["services"][service_id]["claimed"] = true
 	q["services"][service_id]["status"] = "claimed"
 	return true
+
+
+static func _optional_bindings(value: Variant, seed: int) -> Dictionary:
+	if not value is Dictionary: return {}
+	var raw: Variant = value.get("region_forest")
+	if not raw is Dictionary or _integer(raw.get("seed"),-1)!=seed or raw.get("source","")!="region_forest:guide": return {}
+	if not raw.get("target_key") is String or raw["target_key"].get_slice_count("|")!=2: return {}
+	var camp := _position(raw.get("camp"))
+	if camp.is_empty() or not raw.get("positions") is Dictionary or not raw.get("near_route") is Array: return {}
+	var positions := {}
+	var center := Vector2(float(camp[0]),float(camp[1]))
+	for id: String in ["region_forest:survey_a","region_forest:work_near","region_forest:choice"]:
+		var point := _position(raw["positions"].get(id))
+		if point.is_empty() or Vector2(float(point[0]),float(point[1])).distance_to(center)>512.0: return {}
+		positions[id]=point
+	var route: Array = []
+	if raw["near_route"].size()<2 or raw["near_route"].size()>128: return {}
+	for item: Variant in raw["near_route"]:
+		var point := _position(item)
+		if point.is_empty() or Vector2(float(point[0]),float(point[1])).distance_to(center)>7200.0: return {}
+		route.append(point)
+	if route[0] != positions["region_forest:work_near"]: return {}
+	return {"region_forest":{"seed":seed,"source":"region_forest:guide","target_key":raw["target_key"].left(180),"camp":camp,"positions":positions,"near_route":route}}

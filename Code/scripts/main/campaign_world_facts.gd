@@ -19,6 +19,7 @@ var _state: Dictionary = {}
 var _regions_by_id: Dictionary = {}
 var _positions_by_id: Dictionary = {}
 var _flushing := false
+var _position_poll := 0.0
 
 static func _integer(value: Variant, fallback := 0) -> int:
 	if typeof(value) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(value)):
@@ -196,6 +197,19 @@ func _disconnect() -> void:
 		[_sim.instance_died,_on_died],[_sim.nest_changed,_on_nest_changed],[_sim.tick_completed,_on_tick]]:
 		if (pair[0] as Signal).is_connected(pair[1]): (pair[0] as Signal).disconnect(pair[1])
 
+func _physics_process(delta: float) -> void:
+	if _sim==null: return
+	_position_poll+=delta
+	if _position_poll<0.12: return
+	_position_poll=0.0
+	# Keep the last real loaded position before migration listeners relocate the actor.
+	# This is internal provenance, not player knowledge and never a new world event.
+	for actor: Node in get_tree().get_nodes_in_group("monsters"):
+		if not actor is Node2D or actor.is_queued_for_deletion(): continue
+		var inst: Variant=actor.get("inst")
+		if inst is MonsterInstance and inst.is_alive and _regions_by_id.get(inst.id,"")==inst.region_id:
+			_positions_by_id[inst.id]=actor.global_position
+
 func _exit_tree() -> void:
 	_disconnect()
 
@@ -342,6 +356,12 @@ func _flush_extinctions(emit_change := true) -> void:
 static func inst_id_from(event: Dictionary) -> int:
 	return int(event.get("instance_id",0))
 
+func _current_known_position(inst: MonsterInstance) -> Vector2:
+	if is_inside_tree():
+		for actor: Node in get_tree().get_nodes_in_group("monsters"):
+			if actor is Node2D and actor.get("inst")==inst and not actor.is_queued_for_deletion(): return actor.global_position
+	return inst.spawn_pos
+
 func _population() -> Dictionary:
 	var totals := {}
 	for inst: MonsterInstance in _sim.instances.values():
@@ -384,7 +404,8 @@ func _on_tick(summary: Dictionary) -> void:
 				"cause":"sustained_decline","source":"EcologySim.tick_completed","events":deaths}
 			for witness: MonsterInstance in _sim.instances.values():
 				if witness.is_alive and witness.species.species_name==name and witness.region_id==run.region_id and witness.spawn_pos.is_finite():
-					_state.triggers.world_decline.position=[witness.spawn_pos.x,witness.spawn_pos.y]
+					var witness_position:=_current_known_position(witness)
+					_state.triggers.world_decline.position=[witness_position.x,witness_position.y]
 					_state.triggers.world_decline.witness_instance_id=witness.id
 					break
 	_pin_migration()
