@@ -2994,7 +2994,8 @@ func _show_dialogue_options() -> void:
 		var summary := _readable_label("选择：%s\n结果：%s\n风险：%s\n\n确认后才执行；返回不会提交选择。" % [option.get("label", ""), option.get("consequence", ""), option.get("risk", "")], 17)
 		summary.add_theme_color_override("font_color", Color("291c10"))
 		_dialogue_option_box.add_child(summary)
-		_dialogue_yes_label.text = "确认：" + str(option.get("label", "选择"))
+		# 完整对象/去向已在上方预览区展示，固定拇指按钮不重复长标题而溢出到返回键。
+		_dialogue_yes_label.text = "确认此选择"
 		_dialogue_yes_label.add_theme_font_size_override("font_size", 15)
 	else:
 		for option: Dictionary in _dialogue_options:
