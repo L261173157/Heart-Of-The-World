@@ -122,6 +122,12 @@ func _interact(id: String, confirm := true) -> void:
 	_check(prop != null, "使用真实道具：" + id)
 	if prop == null: return
 	_hud._close_dialogue()
+	if prop.get("taken") == true:
+		_check(not prop.visible and not prop.can_interact() and not prop.get("_near"), id + "已取散落物整体隐藏且无交互高亮")
+		prop.interact()
+		await _frames()
+		_check(not _hud._dialogue_panel.visible, id + "已取物件不重开领取对话")
+		return
 	prop.interact()
 	await _frames()
 	_check(_hud._dialogue_panel.visible, id + "打开真实阅读对话")

@@ -5,6 +5,7 @@ extends Node2D
 
 var state: Dictionary = {}
 var objects_by_id: Dictionary = {}
+var _ground: OutpostGround
 
 
 func _ready() -> void:
@@ -12,6 +13,7 @@ func _ready() -> void:
 	add_to_group("outpost_world")
 	y_sort_enabled = true
 	var ground := OutpostGround.new()
+	_ground = ground
 	ground.position = OutpostLayout.center()
 	ground.z_index = -1
 	add_child(ground)
@@ -50,15 +52,29 @@ func _ready() -> void:
 		add_child(prop)
 		objects_by_id[prop.outpost_id] = prop
 	EventBus.outpost_state_changed.connect(refresh_state)
+	EventBus.quest_list_changed.connect(_on_quest_list_changed)
 	refresh_state(state)
 
 
-## 完成后节点不销毁：巡守、修复路标、已取空的位置都在原地留下永久结果。
+## 巡守、路标与可读记录保留；已取走的散落物整件隐藏，底座不再伪装成拾取目标。
 func refresh_state(next_state: Dictionary) -> void:
 	state = next_state.duplicate(true)
-	var evidence: Dictionary = state.get("evidence", state)
+	if is_instance_valid(_ground): _ground.refresh_state(state.get("evidence", state))
 	for prop: OutpostObject in objects_by_id.values():
-		prop.refresh_state(evidence)
+		prop.refresh_state(state)
+
+
+func _on_quest_list_changed(quests: Array, tracked_id: String) -> void:
+	var previous := str(state.get("target_object_id", ""))
+	var target_id := ""
+	for quest: Dictionary in quests:
+		if quest.get("id", "") == tracked_id and quest.get("kind", "") == "outpost":
+			target_id = str(quest.get("target_object_id", ""))
+	if previous == target_id: return
+	state["target_object_id"] = target_id
+	# 跟踪变化只刷新新旧目标，不重建全部场景或重复投影世界几何。
+	for id: String in [previous, target_id]:
+		if objects_by_id.has(id): objects_by_id[id].refresh_state(state)
 
 
 func object_node(id: String) -> Node2D:
@@ -72,11 +88,15 @@ class OutpostObject extends Node2D:
 	const BED := preload("res://assets/ts/structures_baked/bed.png")
 	var outpost_id := ""
 	var title := ""
+	var context_title := ""
 	var kind := ""
 	var interaction_label := "调查"
 	var rescued := false
 	var repaired := false
 	var taken := false
+	var read := false
+	var affordance_state := "available"
+	var _tracked := false
 	var state: Dictionary = {}
 	var _label: Label
 	var _patrol: AnimatedSprite2D
@@ -106,13 +126,20 @@ class OutpostObject extends Node2D:
 		add_child(_label)
 		refresh_state({})
 
-	func refresh_state(evidence: Dictionary) -> void:
+	func refresh_state(snapshot: Dictionary) -> void:
+		var evidence: Dictionary = snapshot.get("evidence", snapshot)
 		state = evidence.duplicate(true)
 		title = str(OutpostLayout.OBJECTS[outpost_id]["title"])
 		interaction_label = str(OutpostLayout.OBJECTS[outpost_id]["interaction_label"])
 		rescued = bool(evidence.get("rescued", false))
 		repaired = bool(evidence.get("signpost_repaired", false))
 		taken = bool(evidence.get("aid_taken" if kind == "aid" else "tools_taken", false)) if kind in ["aid", "tools"] else false
+		var read_key: String = {"patrol_record":"patrol_read", "entrance_record":"entrance_read", "supply_record":"supply_read"}.get(outpost_id, "")
+		read = not str(read_key).is_empty() and bool(evidence.get(read_key, false))
+		affordance_state = str(snapshot.get("object_states", {}).get(outpost_id, "taken" if taken else ("read" if read else "available")))
+		_tracked = str(snapshot.get("target_object_id", "")) == outpost_id
+		visible = not taken
+		if taken: _near = false
 		if kind == "patrol":
 			title = "前哨巡守" if rescued else "受伤的前哨巡守"
 			interaction_label = "交谈" if rescued or not evidence.get("aid_taken", false) else "救治巡守"
@@ -124,23 +151,29 @@ class OutpostObject extends Node2D:
 		elif kind == "signpost":
 			title = "前哨路标 · 已修复" if repaired else "损坏的前哨路标"
 			interaction_label = "查看路标" if repaired else "修复路标"
-		elif taken:
-			title = "急救包已取" if kind == "aid" else "维修工具已取"
-			interaction_label = "查看记录"
+		elif read:
+			title += " · 已读"
+			interaction_label = "重读"
+		context_title = title.get_slice(" · ", 0)
+		if affordance_state == "ready": title += " · 待领取"
+		elif affordance_state == "claimed": title += " · 已领取"
+		elif _tracked and not taken and not read: title = "! " + title
 		if _label != null:
 			_label.text = title
 		queue_redraw()
 
 	func _process(delta: float) -> void:
+		if not visible: return
 		_poll += delta
 		if _poll < 0.16:
 			return
 		_poll = 0.0
 		var player := get_tree().get_first_node_in_group("player") as Node2D
 		var nearby := player != null and player.visible and global_position.distance_to(player.global_position) < 260.0
+		var label_was_visible := _label.visible
 		_label.visible = nearby and is_observed(player.global_position)
 		var now_near := can_interact()
-		if now_near != _near:
+		if now_near != _near or label_was_visible != _label.visible:
 			_near = now_near
 			queue_redraw()
 
@@ -177,6 +210,7 @@ class OutpostObject extends Node2D:
 			EventBus.outpost_interaction_requested.emit(outpost_id)
 
 	func _draw() -> void:
+		if taken: return
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2(1, 0.38))
 		draw_circle(Vector2.ZERO, 20 if kind == "patrol" else 15, Color(0.08, 0.12, 0.11, 0.24))
 		draw_set_transform(Vector2.ZERO)
@@ -215,7 +249,9 @@ class OutpostObject extends Node2D:
 				draw_line(Vector2(0, -18), Vector2(0, 18), Color("d0b981"), 2.0)
 				draw_circle(Vector2.ZERO, 4, Color("657b72"))
 		if _near:
-			draw_arc(Vector2(0, 8), 28, 0, PI, 16, Color("ead29a"), 2.0)
+			draw_arc(Vector2(0, 8), 28, 0, PI, 16, Color("a2bbb0") if read else Color("ead29a"), 2.0)
+		if _tracked and _label != null and _label.visible:
+			draw_arc(Vector2(0, 8), 32, 0, TAU, 24, Color("ead29a"), 1.5)
 
 	func _draw_sign() -> void:
 		draw_rect(Rect2(-4, -48 if repaired else -25, 8, 48 if repaired else 25), Color("765641"))
@@ -257,6 +293,17 @@ class StationDressing extends Node2D:
 
 
 class OutpostGround extends Node2D:
+	var aid_taken := false
+	var tools_taken := false
+
+	func refresh_state(evidence: Dictionary) -> void:
+		aid_taken = bool(evidence.get("aid_taken", false))
+		tools_taken = bool(evidence.get("tools_taken", false))
+		queue_redraw()
+
+	func supply_pad_visible(id: String) -> bool:
+		return not (aid_taken if id == "aid_bag" else tools_taken)
+
 	const FLOOR := preload("res://assets/ts/structures_baked/interior_floor.png")
 
 	func _draw() -> void:
@@ -277,6 +324,8 @@ class OutpostGround extends Node2D:
 		]:
 			_draw_path(line[0], line[1])
 		for local: Vector2 in [Vector2(448,-320), Vector2(448,320), Vector2(-352,-192), Vector2(256,96)]:
+			if local == Vector2(448,-320) and not supply_pad_visible("aid_bag"): continue
+			if local == Vector2(448,320) and not supply_pad_visible("repair_tools"): continue
 			for y in range(-1, 2):
 				for x in range(-1, 2):
 					draw_texture_rect(FLOOR, Rect2(local + Vector2(x * 24 - 12, y * 24 - 12), Vector2(24,24)), false, Color(0.85,0.91,0.87,0.75))

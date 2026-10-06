@@ -453,7 +453,10 @@ func _done(a: Dictionary) -> bool:
 	return _q().get("quests",{}).get(a.get("stage",""),{}).get("evidence",{}).has(a.get("id",""))
 
 func _can(a: Dictionary) -> bool:
-	return _enabled() and _world_sites_ready(str(a.get("chain",""))) and not str(a.get("chain","")) in _q().get("paused_chains",[]) and Data.can_record(_q(),str(a.stage),str(a.id))
+	# 大多数目录行动尚未接取；先按保存状态排除，再检查真实现场的可达性。
+	var stage: Dictionary = _q().get("quests", {}).get(a.get("stage", ""), {})
+	if not stage.get("accepted", false) or stage.get("evidence", {}).has(a.get("id", "")): return false
+	return _enabled() and not str(a.get("chain","")) in _q().get("paused_chains",[]) and Data.can_record(_q(),str(a.stage),str(a.id)) and _world_sites_ready(str(a.get("chain","")))
 
 func _stage_object(stage: Dictionary) -> String:
 	if stage.get("family","") == "random": return str(stage.id)+":giver"
@@ -921,11 +924,14 @@ func _network_payload(a: Dictionary,id: String) -> Dictionary:
 	return {"kind":"camp_choice","giver":_title(id),"origin":_position(id),"text":str(a.text),"options":options}
 
 func _service_payload(id: String, service: String) -> Dictionary:
-	var options: Array = [{"label":"领取一次驻站补给","action":"campaign|dynamic|supply|"+id,"enabled":true,"consequence":"此服务整档一次饭团，99上限时整份待领","risk":"不会消耗恢复预设"}]
+	var claimed := Data.service_claimed(_q(), service)
+	var options: Array = []
+	if not claimed:
+		options.append({"label":"领取驻站补给","action":"campaign|dynamic|supply|"+id,"enabled":true,"consequence":"饭团×1","risk":"放不下的补给存入背包→待领取"})
 	if Data.ready(_q(),"world_watchnet:s3"):
 		for node: String in selected_nodes():
 			options.append({"label":"前往"+str(Catalog.chain(node.trim_suffix("_station")).get("title",node)),"action":"campaign|dynamic|travel|"+id+"|"+node,"enabled":true,"consequence":"前往已安装且真实可用的区域接应节点","risk":"需要脱离战斗，周围生态风险仍然存在"})
-	return {"kind":"camp_choice","giver":_title(id),"origin":_position(id),"text":"此新增驻站已有实际接应服务。","options":options}
+	return {"kind":"camp_choice","giver":_title(id),"origin":_position(id),"text":"驻站补给已领取。" if claimed else "驻站已恢复，可领取饭团×1。","options":options}
 
 func claim_service(id: String) -> String:
 	if _mutating: return "正在提交此项交付"
@@ -933,7 +939,7 @@ func claim_service(id: String) -> String:
 	var service := str(visual_state().services.get(id,""))
 	if service.is_empty() or not _q().get("services",{}).get(service,{}).get("enabled",false): return "此服务尚未恢复"
 	if Data.service_claimed(_q(),service): return "这份驻站补给已经领取"
-	if not Inventory.can_apply({}, {"onigiri":1}): return "背包已满，整份补给保留待领"
+	if not Inventory.can_apply({}, {"onigiri":1}): return "当前无法记录补给，尚未领取；请确认存档可写后重试"
 	_mutating = true
 	GameState.begin_world_reward()
 	_q().services[service].claimed = true
@@ -966,7 +972,7 @@ func travel_node(origin: String, service: String) -> String:
 	return ""
 
 func visual_state() -> Dictionary:
-	var state := {"active_encounter":"","placements":{},"services":{},"taken":{},"rescued":{},"repaired":{},"active_runes":[]}
+	var state := {"active_encounter":"","placements":{},"services":{},"taken":{},"read":{},"object_states":{},"object_actions":{},"rescued":{},"repaired":{},"active_runes":[]}
 	if not _enabled(): return state
 	state.active_encounter = str(_q().get("encounters",{}).get("active",""))
 	for id: String in _runtime().bindings: state.placements[id] = {"position":_runtime().bindings[id].position}
@@ -980,7 +986,9 @@ func visual_state() -> Dictionary:
 	for a: Dictionary in _actions.values():
 		if not handles_action(str(a.id)) or not _done(a): continue
 		var id := str(a.object)
+		state.object_states[id] = "taken" if a.kind == "recover" else ("read" if a.kind == "read" else "completed")
 		if a.kind == "recover": state.taken[id] = true
+		if a.kind == "read": state.read[id] = true
 		if a.kind == "rescue": state.rescued[id] = true
 		if a.kind in ["repair","deliver","route"]: state.repaired[id] = true
 		if a.kind == "puzzle": state.active_runes.append_array(a.get("puzzle_objects",[]))
@@ -1002,10 +1010,32 @@ func visual_state() -> Dictionary:
 		if Data.ready(_q(),"world_watchnet:s3"):
 			state.services[id] = "world_watchnet_station"
 			state.placements[id].service = "节点远征"
+	for a: Dictionary in _actions.values():
+		if not handles_action(str(a.id)) or not _can(a): continue
+		var id := str(a.object)
+		state.object_states[id] = "available"
+		state.object_actions[id] = str(a.get("verb", "调查"))
+		for rune: String in a.get("puzzle_objects", []):
+			state.object_states[rune] = "available"
+			state.object_actions[rune] = "触碰符记"
+	for id: String in state.services:
+		state.object_states[id] = "claimed" if Data.service_claimed(_q(), str(state.services[id])) else "ready"
+		state.object_actions[id] = "驻站服务"
 	return state
 
 ## 指引只使用已登记现场或眼前真实活体；绝不把隐藏个体当前位置透给地图。
 func next_target(a: Dictionary) -> Dictionary:
+	var guide := _next_target(a)
+	var id := str(guide.get("object_id", ""))
+	var title := str(_objects.get(id, {}).get("title", "登记现场"))
+	guide["target_title"] = title
+	guide["next_action"] = str(guide.get("label", "")) if a.get("kind", "") == "route" or a.has("ecology_mode") or a.get("kind", "") == "puzzle" else str(a.get("verb", "调查")) + " · " + title
+	if a.get("kind", "") == "route":
+		var visits: Array = _q().get("optional_routes", {}).get(a.get("id", ""), [])
+		guide["step_progress"] = "路线 %d/%d" % [visits.size(), a.get("route_waypoints", []).size()]
+	return guide
+
+func _next_target(a: Dictionary) -> Dictionary:
 	var id := str(a.get("object",""))
 	var label := _title(id)
 	if a.get("kind","") == "puzzle" and not _done(a):
@@ -1019,9 +1049,9 @@ func next_target(a: Dictionary) -> Dictionary:
 		var visits: Array = _q().get("optional_routes",{}).get(a.get("id",""),[])
 		var points: Array = a.get("route_waypoints",[])
 		if _route_reentry.get(a.get("id",""),false) and not visits.is_empty():
-			return {"object_id":"","position":_route_anchor(a,visits),"label":"返回最后核实的近道位置，已走记录保留"}
+			return {"object_id":"","position":_route_anchor(a,visits),"label":"返回最后核实的近道位置，接续验收"}
 		elif not visits.is_empty() and int(_runtime().route_steps.get(a.get("id",""),0))<1:
-			return {"object_id":"","position":_rock_gap(a),"label":"实际穿过这次破开的岩缝；外侧旧路不计新近道验收"}
+			return {"object_id":"","position":_rock_gap(a),"label":"穿过新破开的岩缝"}
 		elif visits.size()<points.size():
 			id = str(points[visits.size()])
 			label = "从登记碎岩沿近道实际走到另一端" if visits.is_empty() else "沿已开缺口走到近道另一端"

@@ -368,10 +368,12 @@ func buy_item(id: String) -> bool:
 	begin_world_reward()
 	gold -= price
 	inventory[id] = count_item(id) + 1
+	var received_total := count_item(id)
 	_equipment_bump()
 	_queue_save()
 	EventBus.gold_changed.emit(gold)
 	EventBus.item_gained.emit(id, 1, count_item(id))
+	EventBus.item_reward_received.emit(id, 1, 0, received_total)
 	EventBus.inventory_changed.emit()
 	EventBus.equipment_offer_changed.emit()
 	end_world_reward()
@@ -1406,16 +1408,23 @@ func apply_inventory_transaction(costs: Dictionary, rewards: Dictionary, source 
 		var remaining := count_item(id) - int(costs[id])
 		if remaining > 0: inventory[id] = remaining
 		else: inventory.erase(id)
+	var received := {}
 	for id: String in rewards:
-		var total := count_item(id) + int(rewards[id])
+		var before := count_item(id)
+		var total := before + int(rewards[id])
 		inventory[id] = mini(ITEM_MAX, total)
 		if total > ITEM_MAX: _store_pending_item(id, total - ITEM_MAX, source if not source.is_empty() else "reward:%d" % (pending_item_sequence + 1))
 		if total == 0: inventory.erase(id)
+		received[id] = {"stored": count_item(id) - before, "pending": maxi(0, total - ITEM_MAX), "total": count_item(id)}
 	if not costs.is_empty() or not rewards.is_empty():
 		_equipment_bump()
 		_queue_save()
 		for id: String in rewards:
-			if int(rewards[id]) > 0: EventBus.item_gained.emit(id, int(rewards[id]), count_item(id))
+			if int(rewards[id]) > 0:
+				EventBus.item_gained.emit(id, int(rewards[id]), count_item(id))
+				# 同步监听器可能继续消费库存；仍广播这笔已完成结算的快照。
+				var receipt: Dictionary = received[id]
+				EventBus.item_reward_received.emit(id, int(receipt["stored"]), int(receipt["pending"]), int(receipt["total"]))
 		EventBus.inventory_changed.emit()
 		EventBus.equipment_offer_changed.emit()
 	end_world_reward()

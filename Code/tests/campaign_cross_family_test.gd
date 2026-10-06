@@ -123,9 +123,23 @@ func _prepare_mixed() -> void:
 	_check(_cq().get("active_random","")==id,"正常宿主接取有限遭遇，无注入实例")
 	if _cq().get("active_random","")!=id: return
 	if not await _dyn_action(id+":request") or not await _dyn_action(id+":medicine"): return
+	var acquired: Dictionary = _cq().quests[id].evidence.duplicate(true)
+	var slots: Dictionary = _cq().encounters.counts.duplicate(true)
+	var quota: int = int(_cq().encounters.instances[id].proof.get("quota", 0))
+	var ordinary := GameState.inventory.duplicate(true)
+	var pending := GameState.pending_items.duplicate(true)
+	var rewards := _wallet()
 	_campaign.abandon(id)
+	# 空箱不再承担领取或继续入口；仍先验证旧点击失效，再实走回同一实例的发布者继续。
 	await _ci(id+":parts")
-	_check(not "random_medicine" in _cq().paused_chains,"部分物资到手后原地暂停/继续遭遇保留名额")
+	_check("random_medicine" in _cq().paused_chains, "空箱没有残留继续按钮，也不暗中恢复故事")
+	if not await _cw(id+":giver"): return
+	await _ci(id+":giver")
+	_check(not "random_medicine" in _cq().paused_chains, "部分物资到手后从保留发布者继续同一遭遇")
+	_check(_cq().active_random == id and _cq().encounters.active == id and _same(slots, _cq().encounters.counts)
+		and quota == int(_cq().encounters.instances[id].proof.get("quota", 0)), "暂停及现场继续保留原实例、有限名额与配额")
+	_check(_same(acquired, _cq().quests[id].evidence) and ordinary == GameState.inventory
+		and pending == GameState.pending_items and rewards == _wallet(), "继续不重取物资、不丢证据、不改库存或奖励")
 	_campaign.abandon("region_snow:s3")
 	if not await _cw("region_snow:station"): return
 	await _ci("region_snow:station")
@@ -267,13 +281,24 @@ func _read_final() -> void:
 	for service: String in ["world_relief_station","patrol_station","region_snow_station"]:
 		_check(_campaign_data.service_claimed(_cq(),service),"最终冷读保持唯一服务墓碑 "+service)
 	var wallet:=_wallet()
+	var pending := GameState.pending_items.duplicate(true)
 	var stable:=_stable_families()
 	var objects: Array=["region_snow:station"] if ending=="distributed" else ["side_patrol:station_camp","world_relief:coordination_post"]
 	for id: String in objects:
 		if not await _cw(id): return
 		var family: String="dynamic" if id.begins_with("world_") else "optional"
-		if not await _choice_ui(id,"campaign|"+family+"|supply|"+id): return
-		_check(_wallet()==wallet,"终局独立冷读后实际重复领取不发第二份 "+id)
+		# 已领菜单应展示收据并移除领取选项，不再要求点一个本不该存在的旧按钮。
+		if not await _ci(id, false): return
+		_check(_hud._dialogue_text.text.contains("已领取") and _option("campaign|"+family+"|supply|"+id) == null,
+			"终局独立冷读后真实菜单已领取且没有领取按钮 " + id)
+		if family == "optional":
+			var shop := _option("campaign|optional|shop|" + id)
+			_check(shop != null and shop.visible and not shop.disabled, "已领补给仍保留真实站点商店 " + id)
+		_hud._close_dialogue()
+		# 仍重放旧请求，验证保存收据阻止过时回调重复发奖。
+		if family == "dynamic": _dynamic.claim_service(id)
+		else: _optional.claim_service(id)
+		_check(_wallet()==wallet and GameState.pending_items == pending,"终局独立冷读后旧领取回调不增加余额、库存或待领取 "+id)
 	_intact(stable,"终局冷读后重试三个家族服务")
 
 func _run() -> void:

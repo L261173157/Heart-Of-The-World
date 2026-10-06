@@ -453,7 +453,7 @@ func claim(quest_id: String) -> String:
 			return "材料不足：%d/%d，尚未交付" % [quest["progress"], quest["need"]]
 		if not _complete(quest):
 			_push_hud()
-			return "奖励物品已达99上限，请先腾出空间；材料和全部奖励仍保留"
+			return "当前无法结算，请稍后重试；材料和奖励仍保留"
 		_push_hud()
 		GameState._queue_save()
 		return "交付成功 · 奖励已到账"
@@ -620,7 +620,10 @@ func _push_hud() -> void:
 		GameState._queue_save()
 	var views: Array = []
 	for quest: Dictionary in active:
-		views.append(Presentation.snapshot(quest))
+		if str(quest.get("id", "")) == selected_id:
+			views.push_front(Presentation.snapshot(quest))
+		else:
+			views.append(Presentation.snapshot(quest))
 	EventBus.quest_list_changed.emit(views, selected_id)
 	if selected.is_empty():
 		if not active.is_empty():

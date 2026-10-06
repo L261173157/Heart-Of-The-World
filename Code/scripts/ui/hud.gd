@@ -61,6 +61,9 @@ const DAY_TOAST_MAX := 4
 @onready var passive_cards: Array = [%PassiveCard0, %PassiveCard1, %PassiveCard2]
 
 var _toast_timer := 0.0
+var _toast_is_receipt := false
+var _toast_backlog: Array[Dictionary] = []
+var _receipt_backdrop: StyleBoxFlat
 ## 战斗播报位（击杀/商店反馈专用通道）
 var _combat_toast: Label = Label.new()
 var _combat_toast_timer := 0.0
@@ -109,6 +112,8 @@ var _task_rows: VBoxContainer
 var _task_snapshot: Array = []
 var _tracked_quest_id := ""
 var _pending_abandon_id := ""
+var _task_details_open: Dictionary = {}
+var _pending_items_hint_shown := false
 var _guard_state := "idle"
 var _guard_charge := 0
 var _guard_strength := 0.0
@@ -203,7 +208,7 @@ func _ready() -> void:
 	%BtnVigor.pressed.connect(func() -> void: _try_buy("vigor"))
 	%BtnBag.pressed.connect(_toggle_inventory)
 	# v7 物品：拾取播报 + 背包变化刷新快捷槽/物品栏（lambda 无捕获，安全）
-	EventBus.item_gained.connect(_on_item_gained)
+	EventBus.item_reward_received.connect(_on_item_reward_received)
 	EventBus.equipment_offer_changed.connect(_on_equipment_offer_changed)
 	EventBus.inventory_changed.connect(func() -> void:
 		_refresh_quick_slot()
@@ -213,6 +218,7 @@ func _ready() -> void:
 	EventBus.bounty_updated.connect(_on_bounty_updated)
 	# 任务行（世界 v5 地标 NPC 委托）：空串隐藏（无任务时不占行高）
 	EventBus.quest_updated.connect(_on_quest_updated)
+	EventBus.quest_completed.connect(_on_quest_completed)
 	# 任务行只打开小列表，跟踪与放弃为两个明确动作。
 	EventBus.quest_list_changed.connect(_on_quest_list_changed)
 	quest_label.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -845,6 +851,7 @@ func _setup_hud_hierarchy() -> void:
 	toast_label.offset_right = 246
 	toast_label.offset_top = 24
 	toast_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	toast_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_combat_toast.add_theme_color_override("font_outline_color", Color("16242d"))
 	_combat_toast.add_theme_constant_override("outline_size", 4)
 	%BtnEco.position = Vector2(362, 18)
@@ -1082,6 +1089,9 @@ func _process(delta: float) -> void:
 		if _toast_timer > 0.0:
 			_toast_timer -= delta
 			toast_label.modulate.a = clampf(_toast_timer / TOAST_FADE, 0.0, 1.0)
+		if _toast_timer <= 0.0 and not _toast_backlog.is_empty():
+			var next_toast: Dictionary = _toast_backlog.pop_front()
+			_show_toast(str(next_toast["message"]), bool(next_toast["receipt"]))
 		if _combat_toast_timer > 0.0:
 			_combat_toast_timer -= delta
 			_combat_toast.modulate.a = clampf(_combat_toast_timer / COMBAT_TOAST_FADE, 0.0, 1.0)
@@ -1529,26 +1539,9 @@ func _on_quest_updated(text: String) -> void:
 	for quest: Dictionary in _task_snapshot:
 		if str(quest.get("id", "")) != _tracked_quest_id:
 			continue
-		var objective := str(quest.get("ui_objective", ""))
-		if quest.get("kind", "") == "camp_ecology":
-			match str(quest.get("camp_stage", "")):
-				"investigate":
-					objective = "前往%s据点 · 靠近后调查" % str(quest.get("species", "目标"))
-				"choose":
-					objective = "已调查 · 选择处理方式"
-				"act":
-					objective = " · ".join(objective.split(" · ").slice(0, 2))
-				"return":
-					objective = "返回营地巡守 · 交付领奖"
-		elif quest.get("kind", "") == "outpost":
-			# 段落前缀不是下一步动作；不能沿用旧委托的首段截取而只剩「第二段」。
-			var separator := objective.find(" · ")
-			if objective.begins_with("第") and separator >= 0:
-				objective = objective.substr(separator + 3)
-			objective = objective.get_slice("；", 0)
-		else:
-			objective = objective.get_slice(" · ", 0)
-		quest_label.text = "%s  %d/%d\n%s" % [quest.get("title", "当前委托"), int(quest.get("progress", 0)), int(quest.get("need", 1)), objective]
+		var objective := QuestPresentation.next_action(quest)
+		var progress := str(quest.get("step_progress", "%d/%d" % [int(quest.get("progress", 0)), int(quest.get("need", 1))]))
+		quest_label.text = "%s  %s\n%s" % [quest.get("ui_title", quest.get("title", "当前委托")), progress, objective]
 		return
 	if _task_snapshot.is_empty():
 		var campaign_summary := CampaignQuest.completed_summary(GameState.campaign_quest, true)
@@ -1561,6 +1554,11 @@ func _on_quest_updated(text: String) -> void:
 		return
 	if _task_snapshot.is_empty() and not text.is_empty():
 		quest_label.text = "暂无进行中的委托\n与附近居民交流 · 点击查看"
+
+
+func _on_quest_completed(receipt: String) -> void:
+	# 完成信号必须抵达真实 HUD；任务列表刷新不能吞掉自动结算收据。
+	_toast_receipt(receipt)
 
 
 func _on_quest_label_input(event: InputEvent) -> void:
@@ -1735,7 +1733,30 @@ func _sell_item(id: String) -> void:
 ## 拾取播报：主 toast 通道（与装备掉落同位——战斗播报位留给击杀行，
 ## 0.4s 短窗合并让连杀+连拾自然拼行）
 func _on_item_gained(item_id: String, count: int, total: int) -> void:
-	_toast("拾取 %s ×%d（共 %d）" % [ItemCatalog.name_of(item_id), count, total])
+	_on_item_reward_received(item_id, count, 0, total)
+
+
+func _on_item_reward_received(item_id: String, stored_count: int, pending_count: int, total: int) -> void:
+	var show_hint := pending_count > 0 and not _pending_items_hint_shown
+	var message := _item_reward_message(item_id, stored_count, pending_count, total, show_hint)
+	if show_hint:
+		_pending_items_hint_shown = true
+	if not message.is_empty():
+		if pending_count > 0:
+			_toast_receipt(message, {"item_id":item_id, "stored_count":stored_count,
+				"pending_count":pending_count, "total":total, "show_hint":show_hint})
+		else:
+			_toast(message)
+
+
+func _item_reward_message(item_id: String, stored_count: int, pending_count: int, total: int, show_hint: bool) -> String:
+	var item_name := ItemCatalog.name_of(item_id)
+	var message := "已入背包：%s ×%d（共%d）" % [item_name, stored_count, total] if stored_count > 0 else ""
+	if pending_count > 0:
+		message += ("；待领取 ×%d" % pending_count) if stored_count > 0 else ("已存待领取：%s ×%d" % [item_name, pending_count])
+		if show_hint:
+			message += "\n菜单→背包→待领取"
+	return message
 
 
 ## 物品栏弹层（阅读型，照图鉴口径：打开暂停世界 + 清触屏队列；
@@ -1955,6 +1976,15 @@ func _on_kill(xp_reward: int, gold_reward: int, monster_name: String, _species_n
 
 
 func _toast(message: String) -> void:
+	if _toast_is_receipt and _toast_timer > 0.0:
+		if not get_tree().paused:
+			_queue_normal_toast(message)
+			return
+		# 菜单保存结果仍须立即可见；此前收据返回游戏后重新完整展示。
+		_toast_backlog.push_front({"message":toast_label.text,"receipt":true})
+		_toast_timer = 0.0
+	_toast_is_receipt = false
+	_set_receipt_backdrop(false)
 	# 短窗合并：上一条刚显示不到 0.4s 时拼行，否则整条替换——
 	# 保证同帧连发的多条播报（进区提示+引导+警告）都看得见；
 	# 拼行封顶 TOAST_MAX_LINES，持续事件流不再无限增高
@@ -1967,6 +1997,65 @@ func _toast(message: String) -> void:
 		toast_label.text = message
 	toast_label.modulate.a = 1.0
 	_toast_timer = TOAST_DURATION
+
+
+func _show_toast(message: String, receipt: bool) -> void:
+	toast_label.text = message
+	toast_label.modulate.a = 1.0
+	_toast_timer = TOAST_DURATION
+	_toast_is_receipt = receipt
+	_set_receipt_backdrop(receipt)
+
+
+func _set_receipt_backdrop(enabled: bool) -> void:
+	# 收据与世界姓名隔离；直接使用 Label 背景，继承相同淡出且不添加输入层。
+	if not enabled:
+		toast_label.remove_theme_stylebox_override("normal")
+		return
+	if _receipt_backdrop == null:
+		_receipt_backdrop = StyleBoxFlat.new()
+		_receipt_backdrop.bg_color = Color(0.065, 0.105, 0.14, 0.96)
+		_receipt_backdrop.border_color = Color("8f8a65")
+		_receipt_backdrop.set_border_width_all(1)
+		_receipt_backdrop.set_corner_radius_all(4)
+		for side: int in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+			_receipt_backdrop.set_content_margin(side, 0)
+			_receipt_backdrop.set_expand_margin(side, 10)
+	toast_label.add_theme_stylebox_override("normal", _receipt_backdrop)
+
+
+func _queue_normal_toast(message: String) -> void:
+	# 低优先级提示只保留一个最新三行组，不积攒过时的生态/教学播报。
+	for pending: Dictionary in _toast_backlog:
+		if not pending["receipt"]:
+			var lines := (str(pending["message"]) + "\n" + message).split("\n")
+			pending["message"] = "\n".join(lines.slice(maxi(0, lines.size() - TOAST_MAX_LINES)))
+			return
+	var lines := message.split("\n")
+	_toast_backlog.append({"message":"\n".join(lines.slice(maxi(0, lines.size() - TOAST_MAX_LINES))),"receipt":false})
+
+
+func _toast_receipt(message: String, item_receipt: Dictionary = {}) -> void:
+	# 完成/溢出收据不得被同帧掉落和宝箱摘要挤掉；超出三行时排队展示。
+	if _toast_is_receipt and _toast_timer > 0.0:
+		# 同类连续满仓掉落合并为精确数量，每种物品最多一张待播收据。
+		if not item_receipt.is_empty():
+			for pending: Dictionary in _toast_backlog:
+				if str(pending.get("item_id", "")) != str(item_receipt["item_id"]): continue
+				pending["stored_count"] += int(item_receipt["stored_count"])
+				pending["pending_count"] += int(item_receipt["pending_count"])
+				pending["total"] = item_receipt["total"]
+				pending["show_hint"] = bool(pending["show_hint"]) or bool(item_receipt["show_hint"])
+				pending["message"] = _item_reward_message(str(pending["item_id"]), int(pending["stored_count"]), int(pending["pending_count"]), int(pending["total"]), bool(pending["show_hint"]))
+				return
+		if _toast_timer > TOAST_DURATION - TOAST_MERGE_WINDOW and toast_label.text.count("\n") + message.count("\n") + 2 <= TOAST_MAX_LINES:
+			_show_toast(toast_label.text + "\n" + message, true)
+		else:
+			var entry := item_receipt.duplicate()
+			entry.merge({"message":message,"receipt":true})
+			_toast_backlog.append(entry)
+		return
+	_show_toast(message, true)
 
 
 # --- 选择前的实际收益（CharacterStats 的只读快照，展示层不重算养成公式） ---
@@ -2167,44 +2256,20 @@ func _refresh_task_list() -> void:
 	for child: Node in _task_rows.get_children():
 		_task_rows.remove_child(child)
 		child.queue_free()
-	# Automatic bounties retain their existing settlement rules and have no
-	# new tracking/abandon actions. They stay readable even with no NPC quests.
-	var bounty_section := VBoxContainer.new()
-	bounty_section.name = "AutomaticBountySection"
-	bounty_section.add_theme_constant_override("separation", 6)
-	_task_rows.add_child(bounty_section)
-	var bounty_title := _readable_label("自动赏金（达成自动结算）", 18)
-	bounty_title.add_theme_color_override("font_color", HotwTheme.GOLD)
-	bounty_section.add_child(bounty_title)
-	var bounty_text := bounty_label.text
-	if bounty_text.is_empty():
-		bounty_text = "附近暂无合适赏金 · 继续探索"
-	if not GameState.bounty.is_empty():
-		bounty_text += "\n奖励基数：%d 金币 · %d 经验" % [int(GameState.bounty.get("gold", 0)), int(GameState.bounty.get("xp", 0))]
-	var bounty_detail := _readable_label(bounty_text, 16)
-	bounty_detail.name = "AutomaticBountyDetail"
-	bounty_section.add_child(bounty_detail)
-	_task_rows.add_child(HSeparator.new())
 	if _task_snapshot.is_empty():
-		_task_rows.add_child(_readable_label("暂无进行中的委托\n寻找头顶「!」标记的居民，靠近后点击独立的交互按钮交流。"))
-		return
-	for quest: Dictionary in _task_snapshot:
+		_task_rows.add_child(_readable_label("暂无进行中的委托\n寻找「!」标记的居民或线索，靠近后点击交互。"))
+	var ordered := _task_snapshot.duplicate()
+	ordered.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return str(a.get("id", "")) == _tracked_quest_id and str(b.get("id", "")) != _tracked_quest_id)
+	for quest: Dictionary in ordered:
 		var id := str(quest.get("id", ""))
 		var row := VBoxContainer.new()
 		row.name = "QuestRow_" + id
 		_task_rows.add_child(row)
 		var status := str(quest.get("ui_status", "可交付" if int(quest.get("progress", 0)) >= int(quest.get("need", 1)) else "进行中"))
-		row.add_child(_readable_label("【%s】%s  %d/%d" % [status, quest.get("title", "委托"),
-				int(quest.get("progress", 0)), int(quest.get("need", 1))]))
-		var objective := str(quest.get("ui_objective", ""))
-		if not objective.is_empty():
-			row.add_child(_readable_label(objective, 16))
-		var reward := str(quest.get("ui_reward", ""))
-		if not reward.is_empty():
-			row.add_child(_readable_label(reward, 16))
-		for detail: String in ["history", "live_facts"]:
-			if not str(quest.get(detail, "")).is_empty():
-				row.add_child(_readable_label(str(quest[detail]), 16))
+		var progress := str(quest.get("step_progress", "%d/%d" % [int(quest.get("progress", 0)), int(quest.get("need", 1))]))
+		row.add_child(_readable_label("【%s】%s  %s" % ["当前跟踪 · " + status if id == _tracked_quest_id else status, quest.get("title", "委托"), progress]))
+		row.add_child(_readable_label(QuestPresentation.next_action(quest), 16))
 		var actions := HBoxContainer.new()
 		actions.add_theme_constant_override("separation", 12)
 		row.add_child(actions)
@@ -2239,6 +2304,41 @@ func _refresh_task_list() -> void:
 				_refresh_task_list()
 				_sync_modal_focus())
 			row.add_child(cancel)
+
+		var detail_toggle := Button.new()
+		detail_toggle.name = "DetailsToggle_" + id
+		detail_toggle.custom_minimum_size = Vector2(112, 56)
+		detail_toggle.text = "收起详情" if _task_details_open.get(id, false) else "查看详情"
+		actions.add_child(detail_toggle)
+		var details := VBoxContainer.new()
+		details.name = "QuestDetails_" + id
+		details.visible = _task_details_open.get(id, false)
+		row.add_child(details)
+		for field: String in ["ui_objective", "ui_reward", "history", "live_facts"]:
+			if not str(quest.get(field, "")).is_empty():
+				details.add_child(_readable_label(str(quest[field]), 16))
+		detail_toggle.pressed.connect(func() -> void:
+			details.visible = not details.visible
+			_task_details_open[id] = details.visible
+			detail_toggle.text = "收起详情" if details.visible else "查看详情")
+	# Automatic bounties retain their existing settlement rules and have no
+	# new tracking/abandon actions. They stay readable even with no NPC quests.
+	var bounty_section := VBoxContainer.new()
+	bounty_section.name = "AutomaticBountySection"
+	bounty_section.add_theme_constant_override("separation", 6)
+	_task_rows.add_child(bounty_section)
+	var bounty_title := _readable_label("自动赏金（达成自动结算）", 18)
+	bounty_title.add_theme_color_override("font_color", HotwTheme.GOLD)
+	bounty_section.add_child(bounty_title)
+	var bounty_text := bounty_label.text
+	if bounty_text.is_empty():
+		bounty_text = "附近暂无合适赏金 · 继续探索"
+	if not GameState.bounty.is_empty():
+		bounty_text += "\n奖励基数：%d 金币 · %d 经验" % [int(GameState.bounty.get("gold", 0)), int(GameState.bounty.get("xp", 0))]
+	var bounty_detail := _readable_label(bounty_text, 16)
+	bounty_detail.name = "AutomaticBountyDetail"
+	bounty_section.add_child(bounty_detail)
+	_task_rows.add_child(HSeparator.new())
 
 
 func _request_quest_action(id: String, abandon: bool) -> void:
@@ -2284,6 +2384,7 @@ var _more_page := "actions"
 var _more_skills: HBoxContainer
 var _more_items: VBoxContainer
 var _context_btn: Button
+var _context_target_label: Label
 var _context_payload: Dictionary = {}
 var _context_pressed_id := ""
 var _modal_stack: Array[Dictionary] = []
@@ -2311,6 +2412,16 @@ func _setup_six_button_hud() -> void:
 	_recovery_status = _action_status(_quick_btn)
 	_context_btn = _new_mobile_action("ContextBtn", ICON_CODEX, "交流")
 	_context_btn.visible = false
+	_context_target_label = _readable_label("", 16)
+	_context_target_label.name = "ContextTarget"
+	_context_target_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_context_target_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_context_target_label.add_theme_color_override("font_color", Color("fff0c5"))
+	_context_target_label.add_theme_color_override("font_outline_color", Color("102232"))
+	_context_target_label.add_theme_constant_override("outline_size", 4)
+	_context_target_label.position = Vector2(-120, -28)
+	_context_target_label.size = Vector2(280, 24)
+	_context_btn.add_child(_context_target_label)
 	_context_btn.button_down.connect(func() -> void: _context_pressed_id = str(_context_payload.get("target_id", "")))
 	_context_btn.pressed.connect(_request_context_action)
 	if EventBus.has_signal("context_interaction_changed"):
@@ -2338,6 +2449,7 @@ func _setup_six_button_hud() -> void:
 	quest_label.add_theme_color_override("font_color", Color("fff0c5"))
 	quest_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	quest_label.clip_text = true
+	quest_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	quest_label.max_lines_visible = 3
 	# The embedded iOS font includes 三, while U+2630 would rely on unavailable system fallback.
 	%PauseBtn.text = "三"
@@ -2755,6 +2867,7 @@ func _refresh_six_action_feedback() -> void:
 
 func _on_context_changed(payload: Dictionary) -> void:
 	_context_payload = payload.duplicate(true)
+	_context_target_label.text = str(payload.get("target_title", ""))
 	(_context_btn.get_node("Caption") as Label).text = str(payload.get("label", "交流"))
 	_refresh_six_action_feedback()
 

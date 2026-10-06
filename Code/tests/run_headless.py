@@ -14,6 +14,10 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "reward_feedback": (["res://tests/reward_feedback_test.tscn", "--quit-after", "1000"], "=== REWARD FEEDBACK PASS"),
+    "chest_transaction": ([str(PROJECT / "tests/run_chest_transaction_test.py")], "=== CHEST TRANSACTION LIFECYCLE PASS ==="),
+    "pickup_affordance": ([str(PROJECT / "tests/run_pickup_affordance_lifecycle_test.py")], "=== PICKUP AFFORDANCE LIFECYCLE PASS ==="),
+    "quest_guidance_feedback": (["res://tests/quest_guidance_feedback_test.tscn", "--quit-after", "10000"], "=== QUEST GUIDANCE FEEDBACK PASS"),
     "equipment_earned_budget": ([str(PROJECT / "tests/run_equipment_earned_budget_test.py")], "=== EQUIPMENT EARNED BUDGET PASS ==="),
     "equipment_exploration_migration": (["res://tests/equipment_exploration_migration_test.tscn", "--quit-after", "1000"], "=== EQUIPMENT EXPLORATION MIGRATION PASS"),
     "equipment_attack_sources": (["res://tests/equipment_attack_sources_test.tscn", "--quit-after", "10000"], "=== EQUIPMENT ATTACK SOURCES PASS"),
@@ -165,7 +169,7 @@ def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str]
         timeout = max(timeout, 1800)  # 六章实走、双路线和双结局的独立进程链。
     command = ([sys.executable, args[0], godot] if args[0].endswith(".py")
                else [godot, "--headless", "--path", str(PROJECT), *args])
-    if name in {"campaign_cross_family", "campaign_earned_budget", "equipment_earned_budget", "equipment_persistence"}:
+    if name in {"campaign_cross_family", "campaign_earned_budget", "equipment_earned_budget", "equipment_persistence", "chest_transaction"}:
         command += ["--log-dir", str(logs / name)]
     print(f"[{name}] 开始", flush=True)
     with subprocess.Popen(command, env=env, stdout=subprocess.PIPE,

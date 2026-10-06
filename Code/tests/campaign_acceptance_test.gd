@@ -189,6 +189,16 @@ func _ci(id: String, confirm := true) -> bool:
 		_check(false, "实际战役交互物缺失：" + id)
 		return false
 	_hud._close_dialogue()
+	# 已取空物件没有新的现场行动或服务时，旧点击必须失效；不能要求重开领取模态。
+	if prop.get("taken") == true and not bool(prop.get("_has_current_action")) and str(prop.get("service")).is_empty():
+		var is_container: bool = str(prop.get("kind")) in ["aid", "parts", "cargo"]
+		_check(prop.visible if is_container else not prop.visible, id + "已取容器保留为空箱，散页整体隐藏")
+		_check(str(prop.get("title")).contains("已取空" if is_container else "已取"), id + "已取状态文字明确")
+		_check(not prop.can_interact() and not bool(prop.get("_near")), id + "已取物件无领取入口或拾取高亮")
+		prop.interact()
+		await _frames()
+		_check(not _hud._dialogue_panel.visible and not get_tree().paused, id + "再次点击不打开领取模态")
+		return true
 	prop.interact()
 	await _frames()
 	_check(_hud._dialogue_panel.visible and get_tree().paused, id + "实际阅读层暂停世界")

@@ -22,6 +22,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - suite: quest_pickup_feedback
+            tests: reward_feedback,chest_transaction,pickup_affordance,quest_guidance_feedback
           - suite: equipment_earned_budget
             tests: equipment_earned_budget
           - suite: equipment
@@ -90,6 +92,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y xvfb
           xvfb-run -a python3 Code/tests/run_equipment_visual_test.py "$GODOT" --log-dir test-results/equipment/rendered
+      - name: Render quest and pickup mobile feedback
+        if: matrix.suite == 'quest_pickup_feedback'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          xvfb-run -a python3 Code/tests/run_quest_pickup_visual_test.py "$GODOT" --log-dir test-results/quest_pickup_feedback/rendered
       - name: Preserve test logs
         if: always()
         uses: actions/upload-artifact@v4
