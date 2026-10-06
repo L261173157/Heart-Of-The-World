@@ -177,16 +177,23 @@ func object_payload(object_id: String) -> Dictionary:
 			return _action_payload(a)
 	var effects := visual_state()
 	if effects.get("services", {}).has(object_id):
-		var text := "这里是你实际恢复的新增站点，服务已可使用。"
+		var service_id := str(effects["services"][object_id])
+		var claimed := Data.service_claimed(_q(), service_id)
+		var text := "驻站补给已领取。站点商店仍可使用。" if claimed else "驻站已恢复，可领取饭团×1。"
 		if chain_id == "region_plains" and _q().get("quests", {}).get("region_plains:s2", {}).get("choice", "") == "outer":
-			text += "接应站与外缘补给台共享同一份专用饭团；在任一处领取，另一处也会显示已领取。"
+			text += "接应站与外缘补给台共享这份补给。"
 		if chain_id == "side_watchman":
 			var branch := str(_q().get("quests", {}).get("side_watchman:s2", {}).get("choice", ""))
 			var point := Layout.entry("hill") if branch == "near" else Layout.object_position("region_hill:survey_b")
 			text += "新旗的粗略线索：从这里向%s，是%s。旧路线不证明远方现在有活体或安全。" % [_direction(_position(object_id), point), "丘陵接近点" if branch == "near" else "岩脊旧道另一端"]
-		return {"kind": "camp_choice", "giver": _title(object_id), "origin": _position(object_id), "text": text, "options": [{"label": "领取驻站补给", "action": "campaign|optional|supply|" + object_id, "enabled": true, "consequence": "此站一次性提供一份饭团，整档只领取一次", "risk": "背包99上限时整份保留待领"}, {"label": "站点商店", "action": "campaign|optional|shop|" + object_id, "enabled": true, "consequence": "按现有商店价格购买物品", "risk": "仍需明确选择并支付；不会自动消耗任务物资"}]}
+		var options: Array = []
+		if not claimed:
+			options.append({"label":"领取驻站补给", "action":"campaign|optional|supply|" + object_id, "enabled":true, "consequence":"饭团×1", "risk":"放不下的补给存入背包→待领取"})
+		options.append({"label":"站点商店", "action":"campaign|optional|shop|" + object_id, "enabled":true, "consequence":"查看物品与价格", "risk":"购买前明确选择并支付"})
+		return {"kind":"camp_choice", "giver":_title(object_id), "origin":_position(object_id), "text":text, "options":options}
 	for a: Dictionary in _actions():
-		if _done(a) and object_id == action_object(a): return _info(str(a.get("text", "")) + "\n这项行动已记入档案，不会重复发奖。", object_id)
+		if _done(a) and object_id == action_object(a):
+			return _info(("已读 · " if a.get("kind", "") == "read" else "已完成 · ") + str(a.get("text", "")), object_id)
 	return _info("请按这条故事当前的线索继续；这里的物件不会因读档重新发放", object_id)
 
 func action(parts: Variant) -> String:
@@ -662,7 +669,7 @@ func _liquid_boundary(center: Vector2) -> Dictionary:
 	return counts
 
 func visual_state() -> Dictionary:
-	var state := {"open_gates": [], "placements": {}, "services": {}, "taken": {}, "rescued": {}, "repaired": {}, "active_runes": []}
+	var state := {"open_gates": [], "placements": {}, "services": {}, "taken": {}, "read": {}, "object_states": {}, "object_actions": {}, "rescued": {}, "repaired": {}, "active_runes": []}
 	for id: String in _q().get("optional_bindings", {}).get("region_forest", {}).get("positions", {}):
 		state["placements"][id] = {"position": _q()["optional_bindings"]["region_forest"]["positions"][id]}
 	for a: Dictionary in _actions():
@@ -671,7 +678,9 @@ func visual_state() -> Dictionary:
 		var chain := str(a.get("chain", ""))
 		var kind := str(a.get("kind", ""))
 		var branch := _choice(a)
+		state["object_states"][object_id] = "taken" if kind == "recover" else ("read" if kind == "read" else "completed")
 		if kind == "recover": state["taken"][object_id] = true
+		if kind == "read": state["read"][object_id] = true
 		if kind in ["repair", "deliver", "route"]: state["repaired"][object_id] = true
 		if kind == "rescue" or (chain == "side_herbalist" and kind == "deliver" and branch == "patient"): state["rescued"][object_id] = true
 		var opens := CampaignQuest.open_gate_for_action(_q(),a)
@@ -700,6 +709,26 @@ func visual_state() -> Dictionary:
 		for symbol: String in _q()["puzzle_progress"][aid]:
 			var index := order.find(symbol)
 			if index >= 0 and index < objects.size() and objects[index] not in state["active_runes"]: state["active_runes"].append(objects[index])
+	var unlock_memo: Dictionary = {}
+	for chain_id: String in _chain_cache:
+		if not _enabled(chain_id) or _paused(chain_id): continue
+		var stage := _next_stage(chain_id)
+		if stage.is_empty() or _q().get("quests", {}).get(stage["id"], {}).get("accepted", false) or not Data._stage_unlocked(_q(), stage, unlock_memo): continue
+		var origin := _start_object(stage)
+		state["object_states"][origin] = "available"
+		state["object_actions"][origin] = "接取委托"
+	# 当前动作可复用先前取空的位置；只有这个新动作或真实服务允许继续交互。
+	for a: Dictionary in _actions():
+		if not _can(a): continue
+		var id := action_object(a)
+		state["object_states"][id] = "available"
+		state["object_actions"][id] = str(a.get("verb", "调查"))
+		for rune: String in a.get("puzzle_objects", []):
+			state["object_states"][rune] = "available"
+			state["object_actions"][rune] = "触碰符记"
+	for id: String in state["services"]:
+		state["object_states"][id] = "claimed" if Data.service_claimed(_q(), str(state["services"][id])) else "ready"
+		state["object_actions"][id] = "驻站服务"
 	return state
 
 func _base_title(object_id: String) -> String:
@@ -763,7 +792,7 @@ func claim_service(object_id: String) -> String:
 	if service.get("claimed", false) or _q().get("service_receipts", {}).get(service_id, {}).get("claimed", false): return "本站的专用补给已经领取，不会因读档再次发放"
 	var item := str(service.get("stock_item", "onigiri"))
 	if item != "onigiri": return "本站物资编号不符合当前服务合同"
-	if not Inventory.can_apply({}, {item: 1}): return "饭团已到99上限；整份驻站补给保留，腾出空间再来"
+	if not Inventory.can_apply({}, {item: 1}): return "当前无法记录补给，尚未领取；请确认存档可写后重试"
 	_mutating = true
 	GameState.begin_world_reward()
 	var prior_service := service.duplicate(true)
@@ -798,10 +827,27 @@ func _clear_route_segment(from: Vector2, to: Vector2) -> bool:
 	return true
 
 func next_target(a: Dictionary) -> Dictionary:
+	var guide := _next_target(a)
+	if a.get("kind", "") == "puzzle" and not _done(a):
+		var progress: Array = _q().get("puzzle_progress", {}).get(a.get("id", ""), [])
+		var runes: Array = a.get("puzzle_objects", [])
+		if not runes.is_empty():
+			var rune := str(runes[mini(progress.size(), runes.size() - 1)])
+			guide = {"object_id":rune, "position":_position(rune), "label":_base_title(rune), "step_progress":"符记 %d/%d" % [progress.size(), runes.size()]}
+	var id := str(guide.get("object_id", ""))
+	var title := _base_title(id) if not id.is_empty() else "实地路线"
+	guide["target_title"] = title
+	guide["next_action"] = str(guide.get("label", "")) if a.get("kind", "") == "route" else str(a.get("verb", "调查")) + " · " + title
+	if a.get("kind", "") == "route":
+		var visits: Array = _q().get("optional_routes", {}).get(a.get("id", ""), [])
+		guide["step_progress"] = "路线 %d/%d" % [visits.size(), _route_points(a).size()]
+	return guide
+
+func _next_target(a: Dictionary) -> Dictionary:
 	var id := action_object(a)
 	if a.get("kind", "") != "route" or _done(a): return {"object_id": id, "position": _position(id), "label": _title(id)}
 	if _q().get("optional_route_reanchor", {}).get(a.get("id", ""), false):
-		return {"object_id": "", "position": _route_anchor(a), "label": "返回最后核实点，实走一步接续；已走进度保留"}
+		return {"object_id": "", "position": _route_anchor(a), "label": "返回最后核实点，实走一步接续"}
 	var visits: Array = _q().get("optional_routes", {}).get(a.get("id", ""), [])
 	var points := _route_points(a)
 	if visits.is_empty() and not points.is_empty():
@@ -818,7 +864,7 @@ func next_target(a: Dictionary) -> Dictionary:
 		if passage.kind == "barrier": approach.y -= 32.0
 		var player := get_tree().get_first_node_in_group("player") as Node2D
 		var at_start := player != null and player.global_position.distance_to(approach) <= 48.0
-		return {"object_id":"","position":approach + passage.direction * 192.0 if at_start else approach,"label":"亲自穿过已修开的缺口或机关门；外侧绕行不计验收"}
+		return {"object_id":"","position":approach + passage.direction * 192.0 if at_start else approach,"label":"穿过新修开的缺口或机关门"}
 	return {"object_id": id, "position": _position(id), "label": "抵达接应站并确认验收"}
 
 func _segment_near(from: Vector2, to: Vector2, point: Vector2, radius: float) -> bool:

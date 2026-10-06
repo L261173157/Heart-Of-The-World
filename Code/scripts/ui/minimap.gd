@@ -257,7 +257,7 @@ func _select_target(candidates: Array[Dictionary]) -> Dictionary:
 		best["precise"] = true
 		_seen_targets[id] = best.duplicate(true)
 		return best
-	if kind == "outpost" and guide_mode == "hunt" and _seen_targets.has(id):
+	if ((kind == "outpost" and guide_mode == "hunt") or kind == "hunt") and _seen_targets.has(id):
 		# 只保留确实看见过的坐标；不拿当前隐藏演员位置刷新箭头，也不把
 		# 稳定巢址伪装成那只离巢个体的最后目击位置。
 		var last_seen: Dictionary = _seen_targets[id].duplicate(true)
@@ -276,9 +276,11 @@ func _select_target(candidates: Array[Dictionary]) -> Dictionary:
 				clue = [giver_pos.x, giver_pos.y]
 	if clue is Array and clue.size() == 2:
 		var position := Vector2(float(clue[0]), float(clue[1]))
-		var visible := _is_visible_position(position)
+		# 看见区域中心不等于看见目标；搜索区始终只报大致方位。
+		var area_clue := guide_mode == "hunt_area"
+		var visible := not area_clue and _is_visible_position(position)
 		var remembered := str(quest.get("ui_knowledge", "npc_intel")) == "last_seen" or _seen_targets.has(id)
-		var label := str(quest.get("target_name", "前哨线索")) if kind in ["outpost", "campaign"] else ("返回营地" if returning or stage == "return" else "调查据点")
+		var label := str(quest.get("target_name", "前哨线索")) if kind in ["outpost", "campaign", "hunt"] else ("返回营地" if returning or stage == "return" else "调查据点")
 		return {"id": "quest_clue:" + id, "kind": "clue", "name": label,
 			"category": "当前视野 · 委托" if visible else ("最后所见 · 线索" if remembered else "居民情报 · 区域"),
 			"pos": position, "distance_px": _player_pos.distance_to(position), "precise": visible,

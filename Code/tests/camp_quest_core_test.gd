@@ -164,6 +164,9 @@ func _test_camp_ledger() -> void:
 	var raw := {"id": Data.ID, "active": true, "stage": "act", "investigated": true, "choice": "hunt",
 		"target": {"region_id": "test", "species": "地精矿工", "pos": [3000, 3000]}, "kills": [10], "surveys": ["test|地精矿工"], "history": ["真实调查记录"]}
 	GameState.camp_quest = Data.sanitize(raw)
+	var view := _qm._camp.snapshot()
+	_check(view["next_action"].contains("地精矿工据点") and view["step_progress"] == "狩猎 1/2",
+		"旧营地链也提供实际目标和当前猎杀计数，不把章节0/1当下一步进度")
 	var before := GameState.camp_quest.duplicate(true)
 	_check(_qm.camp_investigate().contains("抵达"), "异地不能登记现场调查")
 	_check(GameState.camp_quest == before, "失败调查不篡改历史")
@@ -176,6 +179,9 @@ func _test_camp_ledger() -> void:
 	_check(GameState.tracked_quest_id == "__untracked__" and GameState.camp_quest["active"], "取消追踪不会自动回选或放弃")
 	GameState.camp_quest["stage"] = "return"
 	GameState.camp_quest["outcome"] = "survey"
+	view = _qm._camp.snapshot()
+	_check(view["next_action"] == "返回营地巡守交付领奖" and view["target_title"] == "营地巡守" and view["step_progress"] == "待交付",
+		"行动结束后结构化指引明确回到实际交付人")
 	GameState.inventory["onigiri"] = 99
 	var gold := GameState.gold
 	var pending_before := _pending_total("onigiri")

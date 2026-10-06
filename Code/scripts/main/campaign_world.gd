@@ -34,6 +34,7 @@ func _ready() -> void:
 		add_child(prop)
 		objects_by_id[prop.campaign_id] = prop
 	EventBus.campaign_state_changed.connect(refresh_state)
+	EventBus.quest_list_changed.connect(_on_quest_list_changed)
 	refresh_state(state)
 
 
@@ -47,6 +48,19 @@ func refresh_state(next_state: Dictionary) -> void:
 		prop.refresh_state(state)
 	for ground: CampaignGround in sites_by_terrain.values():
 		ground.refresh_state(state)
+
+
+func _on_quest_list_changed(quests: Array, tracked_id: String) -> void:
+	var previous := str(state.get("target_object_id", ""))
+	var target_id := ""
+	for quest: Dictionary in quests:
+		if quest.get("id", "") == tracked_id and quest.get("kind", "") == "campaign":
+			target_id = str(quest.get("target_object_id", ""))
+	if previous == target_id: return
+	state["target_object_id"] = target_id
+	# 跟踪变化只刷新新旧目标，不重建全部场景或重复投影世界几何。
+	for id: String in [previous, target_id]:
+		if objects_by_id.has(id): objects_by_id[id].refresh_state(state)
 
 
 func object_node(id: String) -> Node2D:
@@ -69,11 +83,16 @@ class CampaignObject extends Node2D:
 	var campaign_id := ""
 	var definition: Dictionary = {}
 	var title := ""
+	var context_title := ""
 	var kind := ""
 	var interaction_label := "调查"
 	var rescued := false
 	var repaired := false
 	var taken := false
+	var read := false
+	var affordance_state := "available"
+	var _has_current_action := false
+	var _tracked := false
 	var activated := false
 	var gate_open := false
 	var service := ""
@@ -111,6 +130,10 @@ class CampaignObject extends Node2D:
 		rescued = bool(snapshot.get("rescued",{}).get(campaign_id,false))
 		repaired = bool(snapshot.get("repaired",{}).get(campaign_id,false))
 		taken = bool(snapshot.get("taken",{}).get(campaign_id,false))
+		read = bool(snapshot.get("read",{}).get(campaign_id,false))
+		affordance_state = str(snapshot.get("object_states",{}).get(campaign_id, "taken" if taken else ("read" if read else "available")))
+		_has_current_action = snapshot.get("object_actions",{}).has(campaign_id)
+		_tracked = str(snapshot.get("target_object_id", "")) == campaign_id
 		activated = campaign_id in snapshot.get("active_runes",[])
 		gate_open = campaign_id in snapshot.get("open_gates",[])
 		service = ""
@@ -138,23 +161,38 @@ class CampaignObject extends Node2D:
 		if kind == "injured" and rescued:
 			title = title.trim_prefix("受伤的").trim_prefix("负伤的")
 			interaction_label = "交谈"
+			title += " · 已获救"
 		if _actor != null:
 			var wounded := kind == "injured" and not rescued
 			_actor.rotation = -PI/2.0 if wounded else 0.0
 			_actor.position = Vector2(0,-12) if wounded else Vector2(0,-4)
 			_actor.scale = Vector2(1.65,1.65) if wounded else Vector2(2,2)
 			_actor.modulate = Color("c9b8ab") if wounded else Color.WHITE
+		context_title = title.get_slice(" · ", 0)
 		if repaired:
 			title += " · 已修复"
 			interaction_label = "查看驻站"
 		if taken:
-			title += " · 已取"
-			interaction_label = "查看记录"
+			title += " · 已取空" if kind in ["aid", "parts", "cargo"] else " · 已取"
+			interaction_label = ""
+		elif read:
+			title += " · 已读"
+			interaction_label = "重读"
 		if gate_open:
 			title += " · 已开启"
 		if not service.is_empty():
 			title += " · " + service
 			interaction_label = "驻站服务"
+		if _has_current_action:
+			interaction_label = str(snapshot.get("object_actions",{}).get(campaign_id, interaction_label))
+		if affordance_state == "ready": title = "? " + title + " · 待领取"
+		elif affordance_state == "claimed": title = "✓ " + title + " · 已领取"
+		elif affordance_state == "completed": title = "✓ " + title
+		elif _has_current_action and affordance_state == "available": title = "! " + title
+		# 空容器保留为空箱；已取纸页没有可读内容，只有真正后续行动才保留目标。
+		if taken and not _has_current_action and service.is_empty():
+			_near = false
+			if kind == "record": visible = false
 		if _label != null:
 			_label.text = title
 		queue_redraw()
@@ -171,9 +209,10 @@ class CampaignObject extends Node2D:
 			_label.visible = false
 			return
 		var nearby := player.visible and global_position.distance_squared_to(player.global_position) < 260.0 * 260.0
+		var label_was_visible := _label.visible
 		_label.visible = nearby and is_observed(player.global_position)
 		var now_near := nearby and can_interact()
-		if now_near != _near:
+		if now_near != _near or label_was_visible != _label.visible:
 			_near = now_near
 			queue_redraw()
 
@@ -192,6 +231,7 @@ class CampaignObject extends Node2D:
 		return true
 
 	func can_interact() -> bool:
+		if taken and not _has_current_action and service.is_empty(): return false
 		if not is_visible_in_tree() or is_queued_for_deletion():
 			return false
 		var player := get_tree().get_first_node_in_group("player") as Node2D
@@ -246,7 +286,9 @@ class CampaignObject extends Node2D:
 				draw_line(Vector2(-18,0),Vector2(18,0),Color("d0b981"),3)
 				draw_line(Vector2(0,-18),Vector2(0,18),Color("d0b981"),3)
 		if _near:
-			draw_arc(Vector2(0,8),28,0,PI,16,Color("ead29a"),2)
+			draw_arc(Vector2(0,8),28,0,PI,16,Color("a2bbb0") if read or affordance_state == "claimed" else Color("ead29a"),2)
+		if _tracked and _label != null and _label.visible and (not taken or _has_current_action):
+			draw_arc(Vector2(0,8),32,0,TAU,24,Color("ead29a"),1.5)
 
 	func _draw_crate() -> void:
 		draw_rect(Rect2(-28,-19,56,33),Color("705a42"))

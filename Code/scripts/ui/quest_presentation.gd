@@ -23,7 +23,7 @@ static func objective(quest: Dictionary) -> String:
 	if quest.get("kind", "") in ["camp_ecology", "outpost", "campaign"]:
 		return str(quest.get("ui_objective", "与营地巡守交谈"))
 	if quest.get("settlement_blocked", false):
-		return "奖励待发：请腾出%s空间，材料与奖励保留" % ItemCatalog.name_of(str(quest.get("blocked_item", "")))
+		return "奖励待发：当前无法结算，材料与奖励保留"
 	if state(quest) == "claimable":
 		return "返回%s，交付领奖" % quest.get("giver", "委托人")
 	match str(quest.get("kind", "")):
@@ -34,9 +34,9 @@ static func objective(quest: Dictionary) -> String:
 		"hunt":
 			if quest.get("hunt_waiting", false):
 				return "等待本地目标恢复 · 已有进度保留"
-			return "跟随雷达猎杀目标 · 达成自动领奖"
+			return "去%s寻找%s · 居民提供搜索区域，目视后雷达标记目标 · 达成自动领奖" % [hunt_area(quest), quest.get("species", "目标")]
 		"ransack":
-			return "跟随雷达捣毁巢穴 · 达成自动领奖"
+			return "寻找并捣毁巢穴 · 目视后雷达标记目标 · 达成自动领奖"
 		_:
 			return "发现尚未到访的地标 · 达成自动领奖"
 
@@ -57,7 +57,41 @@ static func snapshot(quest: Dictionary) -> Dictionary:
 	view["ui_status"] = "奖励待发" if quest.get("settlement_blocked", false) else ("可交付" if view["ui_state"] == "claimable" else "进行中")
 	view["ui_objective"] = objective(quest)
 	view["ui_reward"] = reward(quest)
+	view["next_action"] = next_action(quest)
+	view["step_progress"] = "%d/%d" % [int(quest.get("progress", 0)), int(quest.get("need", 1))]
+	view["target_title"] = str(quest.get("giver", "委托人")) if state(quest) == "claimable" else str(quest.get("species", ItemCatalog.name_of(str(quest.get("item", "")))))
+	if quest.get("kind", "") == "hunt":
+		view["ui_title"] = "猎杀委托"
+		# 线索只来自居民所指区域的中心，绝不读取隐藏个体的当前坐标。
+		var region := WorldSim.sim.get_region(str(quest.get("hunt_region", ""))) if WorldSim.sim != null else null
+		if region != null and not quest.get("hunt_waiting", false):
+			view["target_pos"] = [region.center.x, region.center.y]
+			view["target_name"] = region.display_name + "搜索区域"
+			view["ui_guide_mode"] = "hunt_area"
+			view["ui_knowledge"] = "npc_intel"
 	return view
+
+
+static func hunt_area(quest: Dictionary) -> String:
+	var region := WorldSim.sim.get_region(str(quest.get("hunt_region", ""))) if WorldSim.sim != null else null
+	return region.display_name if region != null else "委托人附近"
+
+
+## 下一步是独立数据；详情中的标点不承担结构，避免截去具体对象或返程提示。
+static func next_action(quest: Dictionary) -> String:
+	if quest.has("next_action"):
+		return str(quest["next_action"])
+	if quest.get("settlement_blocked", false):
+		return "稍后重试领取奖励"
+	if state(quest) == "claimable":
+		return "返回%s交付领奖" % quest.get("giver", "委托人")
+	match str(quest.get("kind", "")):
+		"collect": return "再收集%d个%s" % [maxi(0, int(quest.get("need", 1)) - int(quest.get("progress", 0))), ItemCatalog.name_of(str(quest.get("item", "")))]
+		"hunt":
+			return "等待本地目标恢复" if quest.get("hunt_waiting", false) else "去%s寻找%s" % [hunt_area(quest), quest.get("species", "目标")]
+		"ransack": return "寻找并捣毁巢穴"
+		"explore": return "发现尚未到访的地标"
+		_: return str(quest.get("ui_objective", "与委托人交谈"))
 
 
 static func npc_status(landmark_id: String) -> Dictionary:

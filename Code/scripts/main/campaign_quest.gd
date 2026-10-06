@@ -14,6 +14,7 @@ var _main: CampaignMain
 var _mutating := false
 var _actions: Dictionary = {}
 var _stage_cache: Dictionary = {}
+var _tracked_target_id := ""
 
 func _ready() -> void:
 	name = "CampaignQuest"
@@ -26,6 +27,7 @@ func _ready() -> void:
 	EventBus.camp_quest_action_requested.connect(_on_action)
 	EventBus.campaign_travel_completed.connect(_on_travel_completed)
 	EventBus.outpost_state_changed.connect(_on_outpost_changed)
+	EventBus.quest_list_changed.connect(_on_quest_targets_changed)
 	_main = preload("res://scripts/main/campaign_main.gd").new()
 	_main.setup(self)
 	add_child(_main)
@@ -40,6 +42,15 @@ func _ready() -> void:
 
 func ledger() -> Dictionary:
 	return GameState.campaign_quest
+
+
+func _on_quest_targets_changed(quests: Array, tracked_id: String) -> void:
+	# 复用管理器已经生成的快照；世界表现刷新不能再次计算所有任务/动态现场。
+	_tracked_target_id = ""
+	for quest: Dictionary in quests:
+		if quest.get("id", "") == tracked_id and quest.get("kind", "") == "campaign":
+			_tracked_target_id = str(quest.get("target_object_id", ""))
+			return
 
 func owns(stage_id: String) -> bool:
 	return _stage_cache.has(stage_id) and ledger().get("quests", {}).has(stage_id)
@@ -130,7 +141,7 @@ func object_payload(object_id: String) -> Dictionary:
 		if not _stage_cache.has(stage_id) or not Data.ready(ledger(), stage_id) or Data.paid(ledger(), stage_id): continue
 		var finish: Dictionary = _stage_cache[stage_id]["actions"][-1]
 		if str(finish["object"]) == object_id:
-			return _action_payload("现场工作已经完成。整笔奖励保留在此，请为补给留出空间后领取；重复确认不会再次支付。", "领取整笔奖励", "campaign|claim|" + stage_id, object_id)
+			return _action_payload("现场工作已完成，可领取奖励。背包放不下的补给会存入待领取。", "领取整笔奖励", "campaign|claim|" + stage_id, object_id)
 	if object_id in _station_origins(): return departure_payload(object_id, _object_title(object_id))
 	for a: Dictionary in _actions.values():
 		if str(a["object"]) == object_id and _proof_exists(str(a["id"])):
@@ -240,7 +251,7 @@ func claim(stage_id: String) -> String:
 	_save()
 	GameState.end_world_reward()
 	_mutating = false
-	return "整笔奖励已领取，收据已保存" if paid else "已领过，或奖励物品达到99上限；未领部分整笔保留"
+	return "奖励已领取，收据已保存" if paid else "已领取，或当前无法结算；未领取的奖励仍保留"
 
 func snapshots() -> Array:
 	var result: Array = []
@@ -262,6 +273,10 @@ func snapshot(stage_id: String) -> Dictionary:
 		if not objects.is_empty(): object_id = objects[mini(progress.size(), objects.size()-1)]
 	var pos := _world_position(object_id)
 	var target_title := _object_title(object_id)
+	var action_text := ""
+	var step_progress := ""
+	if next["kind"] == "puzzle" and not ready:
+		step_progress = "%s %d/%d" % ["符标" if not next.get("puzzle_objects", []).is_empty() else "排列", ledger().get("puzzle_progress", {}).get(next["id"], []).size(), next.get("puzzle_order", []).size()]
 	if next["kind"] == "route" and str(next.get("chapter","")) == "watch_c3_swamp" and not ready:
 		var route := str(ledger().get("quests",{}).get(stage_id,{}).get("choice",""))
 		var points: Array = CampaignLayout.route_waypoints(route)
@@ -271,29 +286,58 @@ func snapshot(stage_id: String) -> Dictionary:
 		if cursor < points.size():
 			pos = points[cursor]
 			target_title = ("返回已确认的" if route_state.get("needs_anchor",false) else "") + ("浅滩近路" if route=="near" else "枯木外缘") + "路标 %d/%d"%[cursor+1,points.size()]
+			action_text = ("返回" if route_state.get("needs_anchor",false) else "前往") + ("浅滩" if route == "near" else "枯木") + "路标%d" % [cursor + 1]
+			step_progress = "路标 %d/%d" % [route_state.get("visited", []).size(), points.size()]
 	if _optional != null and _optional.handles_action(str(next["id"])) and not ready:
 		var navigation: Dictionary = _optional.next_target(next)
 		if not navigation.is_empty():
 			object_id=str(navigation.get("object_id",object_id))
 			pos=navigation.get("position",pos)
 			target_title=str(navigation.get("label",target_title))
+			action_text=str(navigation.get("next_action", ""))
+			step_progress=str(navigation.get("step_progress",step_progress))
+			target_title=str(navigation.get("target_title",target_title))
 	if _dynamic != null and _dynamic.handles_action(str(next["id"])) and not ready:
 		var navigation: Dictionary = _dynamic.next_target(next)
 		if not navigation.is_empty():
 			object_id=str(navigation.get("object_id",object_id))
 			pos=navigation.get("position",pos)
 			target_title=str(navigation.get("label",target_title))
+			action_text=str(navigation.get("next_action", ""))
+			step_progress=str(navigation.get("step_progress",step_progress))
+			target_title=str(navigation.get("target_title",target_title))
 	var progress_count := 0
 	for id: String in stage["required"]:
 		if _proof_exists(id): progress_count += 1
 	var reward := Data.reward(ledger(), stage_id)
+	if action_text.is_empty():
+		action_text = _action_guidance(next, target_title)
+	if ready:
+		action_text = "到%s领取奖励" % _object_title(object_id)
+	if step_progress.is_empty():
+		step_progress = "%d/%d" % [progress_count, stage["required"].size()]
 	return {"id": stage_id, "kind": "campaign", "title": str(stage["title"]), "giver": _object_title(object_id),
+		"next_action":action_text,"target_title":target_title,"step_progress":step_progress,
 		"need": stage["required"].size(), "progress": progress_count, "claim_at_npc": true,
 		"chapter_stage": "claim" if ready else "act", "ui_state": "claimable" if ready else "in_progress",
-		"ui_status": "奖励待领取" if ready else "远征记录", "ui_objective": ("腾出补给空间后，到%s领取整笔奖励" % _object_title(object_id)) if ready else (str(next["verb"]) + " · " + target_title),
+		"ui_status": "奖励待领取" if ready else "远征记录", "ui_objective": ("到%s领取奖励，溢出补给存待领取" % _object_title(object_id)) if ready else (str(next["verb"]) + " · " + target_title),
 		"ui_reward": "+%d金币 +%d经验%s；每段一次，接章时冻结基础预算" % [reward.get("gold",0), reward.get("xp",0), " +"+ItemCatalog.name_of(str(reward["bonus"])) if not str(reward.get("bonus", "")).is_empty() else ""],
 		"gold":reward.get("gold",0),"xp":reward.get("xp",0),"bonus":reward.get("bonus",""),
 		"target_object_id":object_id,"target_name":target_title,"target_pos":[pos.x,pos.y] if pos.is_finite() else [],"ui_guide_mode":"object","ui_knowledge":"npc_intel", "history":str(stage["objective"])}
+
+
+static func _action_guidance(action: Dictionary, target: String) -> String:
+	match str(action.get("kind", "")):
+		"talk": return "与%s交谈" % target
+		"read": return "阅读%s" % target
+		"recover": return "取回%s" % target
+		"rescue": return "救助%s" % target
+		"repair": return "修复%s" % target
+		"puzzle": return ("触碰%s" if not action.get("puzzle_objects", []).is_empty() else "到%s排列记录") % target
+		"route": return "前往%s" % target
+		"choice": return "到%s选择方案" % target
+		"obstacle": return "清除%s" % target
+		_: return "%s · %s" % [action.get("verb", "调查"), target]
 
 static func open_gates_from(q: Dictionary) -> Array[String]:
 	var result: Array[String] = []
@@ -320,17 +364,37 @@ static func open_gate_for_action(q: Dictionary,a: Dictionary) -> String:
 	return str(by_choice.get(Data.choice(q,a),a.get("opens","")))
 
 func visual_state() -> Dictionary:
-	var state := {"enabled_batch":ENABLED_BATCH,"open_gates":open_gates_from(ledger()),"evidence":{},"rescued":{},"repaired":{},"taken":{},"placements":{},"services":{},"active_runes":[]}
+	var state := {"enabled_batch":ENABLED_BATCH,"open_gates":open_gates_from(ledger()),"evidence":{},"rescued":{},"repaired":{},"taken":{},"read":{},"object_states":{},"object_actions":{},"placements":{},"services":{},"active_runes":[]}
 	for a: Dictionary in _actions.values():
 		# 非主线的分支物件只能由专属运行层投影，不能把目录默认目标也冒记为已修复。
 		if str(a.get("chapter", "")).is_empty(): continue
-		if not _proof_exists(a["id"]): continue
+		if not _proof_exists(a["id"]):
+			if not _paused(str(a["chain"])) and Data.can_record(ledger(), str(a["stage"]), str(a["id"])):
+				state["object_states"][a["object"]] = "available"
+				state["object_actions"][a["object"]] = a["verb"]
+				for rune: String in a.get("puzzle_objects", []):
+					state["object_states"][rune] = "available"
+					state["object_actions"][rune] = "触碰符标"
+			continue
 		state["evidence"][a["id"]] = true
+		if not state["object_states"].has(a["object"]): state["object_states"][a["object"]] = "completed"
 		if a["kind"] == "rescue": state["rescued"][a["object"]] = true
 		if a["kind"] == "repair": state["repaired"][a["object"]] = true
 		if a["kind"] == "recover": state["taken"][a["object"]] = true
-		if a["kind"] == "puzzle": state["active_runes"].append_array(a.get("puzzle_objects", []))
+		if a["kind"] == "read": state["read"][a["object"]] = true
+		if a["kind"] == "puzzle":
+			state["active_runes"].append_array(a.get("puzzle_objects", []))
+			for rune: String in a.get("puzzle_objects", []): state["object_states"][rune] = "completed"
 		if a.has("service"): state["services"][a["service"]] = true
+	for stage_id: String in ledger().get("quests", {}):
+		if not _stage_cache.has(stage_id) or not Data.ready(ledger(), stage_id): continue
+		var last: Dictionary = _stage_cache[stage_id]["actions"][-1]
+		if str(last.get("chapter", "")).is_empty(): continue
+		if Data.paid(ledger(), stage_id):
+			if state["object_states"].get(last["object"], "") != "available": state["object_states"][last["object"]] = "claimed"
+			continue
+		state["object_states"][last["object"]] = "ready"
+		state["object_actions"][last["object"]] = "领取奖励"
 	for key: String in ledger().get("puzzle_progress", {}):
 		var a: Dictionary = _actions.get(key, {})
 		if a.is_empty(): continue
@@ -355,6 +419,7 @@ func visual_state() -> Dictionary:
 				for value: Variant in patch[key]:
 					if not value in state[key]: state[key].append(value)
 			else: state[key]=patch[key]
+	state["target_object_id"] = _tracked_target_id
 	return state
 
 func _station_origins() -> Array:

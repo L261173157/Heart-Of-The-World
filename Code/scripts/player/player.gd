@@ -1429,7 +1429,9 @@ func _current_context() -> Dictionary:
 			label = "交付" if status.get("state", "") == "claimable" else "交谈"
 		else:
 			label = "开启"
-		return {"available": true, "target_id": "npc:%d" % npc.get_instance_id(), "label": label}
+		var title := str(npc.get("title")) if npc.get("title") != null else ""
+		if npc.get("context_title") != null: title = str(npc.get("context_title"))
+		return {"available": true, "target_id": "npc:%d" % npc.get_instance_id(), "label": label, "target_title": title}
 	var manager := get_tree().get_first_node_in_group("quest_manager")
 	if manager != null and manager.has_method("outpost_context"):
 		var context: Dictionary = manager.outpost_context()

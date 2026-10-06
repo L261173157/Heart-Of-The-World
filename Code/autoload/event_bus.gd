@@ -119,8 +119,10 @@ signal fx_requested(kind: String, pos: Vector2, scale: float)
 
 # --- 物品系统（玩法 v7）：掉落/购买/使用 ---
 ## 获得物品（GameState.add_item 统一发出：击杀掉落/商店购买/任务奖励）；
-## count = 本次增量，total = 持有总量（HUD 战斗播报 "兽肉 ×2（共 5）" 用）
+## 兼容逻辑订阅：count 包括待领取，total 仅为可用库存；显示消费下方结构化收据。
 signal item_gained(item_id: String, count: int, total: int)
+## 本次结算的可用数量与暂存数量；显示层不从已满库存反推溢出。
+signal item_reward_received(item_id: String, stored_count: int, pending_count: int, total: int)
 ## 背包内容任何变化（获得/使用/售出后都发；HUD 物品栏/快捷槽的刷新源）
 signal inventory_changed
 ## 使用消耗品请求（HUD 快捷槽/物品栏发出）→ player 订阅：满血拦截与恢复

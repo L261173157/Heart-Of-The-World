@@ -838,10 +838,13 @@ class FxLayer extends Node2D:
 class DungeonChest extends Node2D:
 	## 大宝箱（v6 TS：bake_structures 合成件 44×32 ×1.2）；箱顶悬浮所需钥匙图标提示
 	const CHEST_TEX := preload("res://assets/ts/structures_baked/chest.png")
+	## 同步广播可流式重建另一个实体；跨节点保护不能依赖旧实体或场景键。
+	static var _opening_chest := false
 	var boss_name := ""
 	var key_id := ""
 	var locked := true
 	var taken := false
+	var _opening := false
 	## 表现态每次交互前向世界刷新；已开真源在 GameState，跨菜单/冷启动保留。
 	var refresh_state: Callable
 	var notify_taken: Callable
@@ -875,11 +878,16 @@ class DungeonChest extends Node2D:
 	## 封印只作视觉提示，不抢走 Boss 战的攻击键。候选查询现场刷新，
 	## 不等待流式节拍，避免 Boss 刚倒下/重生时仍使用上一帧交互资格。
 	func can_interact() -> bool:
+		if _opening_chest or _opening or GameState.equipment_read_only():
+			return false
 		if refresh_state.is_valid():
 			refresh_state.call(self)
 		return not locked and not taken
 
 	func interact() -> void:
+		# 扣钥匙广播期间收据尚未写入，先挡住刷新/重入，不能重置 taken。
+		if _opening_chest or _opening or GameState.equipment_read_only():
+			return
 		if refresh_state.is_valid():
 			refresh_state.call(self)
 		if taken:
@@ -892,12 +900,19 @@ class DungeonChest extends Node2D:
 				ItemCatalog.name_of(key_id),
 				"完成收集委托获得" if key_id == EconomyMath.KEY_GOLD else "击败精英怪有几率掉落"])
 			return
+		# 钥匙、收据、金币、双件物品及溢出待领取必须同档；信号中的保存延至整笔结束。
+		GameState.begin_world_reward()
+		_opening_chest = true
+		_opening = true
 		taken = true
+		if key_id != "" and not GameState.remove_item(key_id, 1):
+			taken = false
+			_opening = false
+			GameState.end_world_reward()
+			_opening_chest = false
+			return
 		if notify_taken.is_valid():
 			notify_taken.call()
-		# 已开标记先于库存/奖励信号提交，订阅者重入交互也不能重复领取。
-		if key_id != "":
-			GameState.remove_item(key_id, 1)
 		var gold: int = EconomyMath.bounty_gold(8, GameState.stats.level)
 		GameState.add_gold(gold)
 		# 双件物品奖励（hash 确定性，无 RNG）：补给 1 件 + 稀有材料 1 件
@@ -908,6 +923,9 @@ class DungeonChest extends Node2D:
 		var item2: String = rares[absi(h >> 8) % rares.size()]
 		GameState.add_item(item1, 1)
 		GameState.add_item(item2, 1)
+		GameState.end_world_reward()
+		_opening = false
+		_opening_chest = false
 		SfxManager.play("secret")
 		SfxManager.play("gold2")
 		EventBus.hint_requested.emit("📦 城塞宝箱 +%d 金币 +%s +%s" % [

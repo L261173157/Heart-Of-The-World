@@ -50,12 +50,19 @@ func visual_state() -> Dictionary:
 	state["stage"] = ledger().get("stage", "")
 	state["active"] = is_active()
 	state["id"] = Data.ID
+	state["target_object_id"] = _target_object() if is_active() and GameState.tracked_quest_id == Data.ID else ""
+	state["object_states"] = {}
+	for id: String in Layout.OBJECTS:
+		var key := str({"patrol_record":"patrol_read", "entrance_record":"entrance_read", "supply_record":"supply_read", "aid_bag":"aid_taken", "repair_tools":"tools_taken"}.get(id, ""))
+		if not key.is_empty() and evidence(key): state["object_states"][id] = "read" if key.ends_with("read") else "taken"
+	if evidence("signpost_repaired"):
+		state["object_states"]["signpost"] = "claimed" if ledger().get("receipts", {}).get("restoration", {}).get("paid", false) else "ready"
 	return state
 
 func offer(giver: String = "营地巡守") -> Dictionary:
-	var text := "前哨的巡逻队失联了。沿途找回巡逻记录，确认入口，再找留守巡逻员。\n随后从两条补给路线找回专用急救包和修理工具，亲手救援，再根据现场生态恢复路标。无需中途回营。\n"
+	var text := "前哨巡逻队失联了。先沿旧道寻找巡逻记录，再去前哨救援。\n"
 	var reserved := Data.valid_legacy(GameState.camp_quest) if ledger().is_empty() else bool(ledger().get("legacy_reserved", false))
-	text += "原「营地外的动静」奖励仍按原金额保留，旧单可单独交付；这次新增前哨行动不再重复发金币、经验或补给。旧生态结果可沿用，查线索、回收、救援和修路仍需亲自完成。" if reserved else "全章基础奖励合计39金币、44经验、饭团×1（养成加成照常生效）：调查6/8、救援9/12、修复24/24及饭团。各段只支付一次。"
+	text += "原营地调查奖励仍在旧单领取；前哨行动另记进度。" if reserved else "全章奖励：39金币、44经验、饭团×1，随调查、救援、修复分段领取。"
 	var q := ledger()
 	var action := "accept" if q.is_empty() else "resume"
 	var label := "接取失联前哨" if q.is_empty() else "继续前哨任务"
@@ -64,7 +71,7 @@ func offer(giver: String = "营地巡守") -> Dictionary:
 		action = "status"
 		label = "查看前哨记录"
 	elif is_active():
-		text = objective() + "\n" + reward_policy() + "\n" + history_text()
+		text = next_action() + "\n" + step_progress()
 		action = "status"
 		label = "查看当前进度"
 	if Data.valid_legacy(GameState.camp_quest):
@@ -105,7 +112,7 @@ func abandon() -> String:
 func reward_policy() -> String:
 	if ledger().get("legacy_reserved", false):
 		return "原调查奖励仍按原巢边条件在旧委托领取；本章新增行动不重复发数值奖励"
-	return "全章基础39金币、44经验、饭团×1（养成加成生效）；已付段落不再重付"
+	return "全章基础39金币、44经验、饭团×1（养成加成生效）。调查6金币/8经验，救援9金币/12经验，修复24金币/24经验/饭团；各段一次。"
 
 func object_state(id: String) -> Dictionary:
 	var known := false
@@ -119,7 +126,7 @@ func object_state(id: String) -> Dictionary:
 		"repair_tools": known = evidence("supply_read"); done = evidence("tools_taken")
 		"survey_marker": known = Data.rescue_done(ledger()); done = Data.has_ecology_result(ledger())
 		"signpost": known = evidence("entrance_read"); done = evidence("signpost_repaired")
-	return {"known": known, "done": done, "available": known and is_active(), "evidence": visual_state()}
+	return {"known": known, "done": done, "available": known and is_active() and not done, "evidence": visual_state()}
 
 func object_payload(id: String) -> Dictionary:
 	if not _at_object(id):
@@ -152,23 +159,27 @@ func object_payload(id: String) -> Dictionary:
 		"supply_record":
 			text = "补给记录：带红结的急救包放在北侧废棚后；绑着绳子的修理工具留在南侧拐角。两处都能从院内走到，要绕开各自的残墙。\n这是两件独立的任务物件，不能买卖，也不占普通补给上限。"
 		"aid_bag":
-			text = "红结急救包仍封着巡逻队的标记。取回后必须亲自回到受伤巡逻员身旁实施救援。\n任务物件不会进入普通库存，满背包也可取回。"
+			text = "红结急救包封着巡逻队的标记。取回后，回到受伤巡逻员身旁救治。"
 			confirm = "取回专用急救包"
 		"repair_tools":
-			text = "修理工具里有锤子、木钉和路标支架。取回工具不会自动修路，还需救援完成、生态有确实结果后，到倒下的路标旁动手。"
+			text = "工具里有锤子、木钉和路标支架。取回后，救援并核查周边，再到路标旁修复。"
 			confirm = "取回修理工具"
 		"survey_marker":
 			text = "在前哨院中核查周边活动痕迹。只记录当前亲眼核实的情况；若没有安全可行的处理对象，就提交现场勘察，不虚构猎杀或捣巢。"
 			confirm = "现场勘察"
 		"signpost":
 			if evidence("signpost_repaired"):
-				text = "路标已修好，前哨检查点已启用。\n" + ("饭团已达99上限，修复记录保留；腾出空间后确认领取整笔尾款。" if ledger()["stage"] == "claim" else "修复奖励已记录，不会再次发放。")
+				text = "路标已修好，前哨检查点已启用。\n" + ("修复尾款待领取。背包放不下的补给会存入背包→待领取。" if ledger()["stage"] == "claim" else "修复奖励已领取。")
 				confirm = "领取修复尾款"
 			else:
 				text = "倒下的路标需要专用工具。确认修复前，需先救援巡逻员，并取得真实生态处理或现场勘察结果。\n修好后这里才成为可用检查点，不会把到访误算成修复。"
 				confirm = "修复前哨路标"
 		_:
 			return {"kind": "info", "text": "未知前哨物件"}
+	var state := object_state(id)
+	if bool(state.get("done", false)) and id != "wounded_patrol" and not (id == "signpost" and ledger().get("stage", "") == "claim"):
+		var label := "已读" if id.ends_with("record") else "已完成"
+		return {"kind":"info", "giver":"前哨记录", "text":label + " · " + text}
 	return {"kind": "camp_action", "action": "outpost:" + id, "giver": "留守巡逻员" if id == "wounded_patrol" else "前哨调查",
 		"origin": Layout.object_position(id), "confirm_text": confirm, "text": text}
 
@@ -226,7 +237,7 @@ func object_action(id: String) -> String:
 	GameState.end_world_reward()
 	_mutating = false
 	_ensure_target()
-	return message + (" · 尾款待领取，先腾出一份饭团空间" if q["stage"] == "claim" else "")
+	return message + (" · 修复尾款待领取" if q["stage"] == "claim" else "")
 
 func claim() -> String:
 	if _mutating or not evidence("signpost_repaired") or not Data.has_ecology_result(ledger()):
@@ -239,7 +250,7 @@ func claim() -> String:
 	_save()
 	GameState.end_world_reward()
 	_mutating = false
-	return "修复尾款已完整领取 · " + str(ledger()["next_clue"]) if ledger()["receipts"]["restoration"]["paid"] else "饭团已达99上限；检查点和修复记录保留，全部尾款仍待领取"
+	return "修复尾款已完整领取 · " + str(ledger()["next_clue"]) if ledger()["receipts"]["restoration"]["paid"] else "修复尾款仍待领取，请重新确认；背包放不下的补给会存入背包→待领取"
 
 func _settle_ready(allow_restoration: bool = false) -> void:
 	var q := ledger()
@@ -610,7 +621,7 @@ func objective() -> String:
 	if ledger().is_empty(): return "与营地巡守交谈，接取失联前哨"
 	if _searching: return "第三段 · 正在核对真实生态线索与可达路线"
 	if ledger()["stage"] == "completed": return str(ledger().get("next_clue", "前哨已恢复，巡逻员仍在原处留守"))
-	if ledger()["stage"] == "claim": return "路标与检查点已恢复 · 到路标旁领取整笔尾款（饭团需留1份空间）"
+	if ledger()["stage"] == "claim": return "路标与检查点已恢复 · 到路标旁领取修复尾款"
 	match _target_object():
 		"patrol_record": return "第一段 · 沿旧道阅读巡逻记录"
 		"entrance_record": return "第一段 · 在前哨入口核对草图，找可步行进入的缺口"
@@ -628,6 +639,34 @@ func objective() -> String:
 			return "第三段 · 选择当前可行的有限狩猎或暂时捣巢"
 		_: return "第三段 · 到倒下的路标旁亲手修复，启用前哨检查点"
 
+## 章节计数保留原合同，界面另用正在执行的一组动作计数。
+func step_progress() -> String:
+	if not Data.investigation_done(ledger()):
+		return "调查 %d/2" % (int(evidence("patrol_read")) + int(evidence("entrance_read")))
+	if not Data.rescue_done(ledger()):
+		var count := 0
+		for key: String in ["wounded_found", "supply_read", "aid_taken", "rescued", "tools_taken"]:
+			count += int(evidence(key))
+		return "救援 %d/5" % count
+	if not Data.has_ecology_result(ledger()) and ledger().get("choice", "") == "hunt":
+		return "狩猎 %d/2" % mini(ledger().get("kills", []).size(), 2)
+	return "修复 %d/2" % (int(Data.has_ecology_result(ledger())) + int(evidence("signpost_repaired")))
+
+func next_action() -> String:
+	if ledger().get("stage", "") == "completed": return "与前哨巡守交谈，了解下一处线索"
+	if ledger().get("stage", "") == "claim": return "到前哨路标领取修复尾款"
+	if _searching: return "正在核对可达的生态线索"
+	match _target_object():
+		"patrol_record": return "沿旧道阅读巡逻记录"
+		"entrance_record": return "到前哨入口阅读入口草图"
+		"wounded_patrol": return "回到巡逻员旁救治" if evidence("wounded_found") else "到西侧棚屋查看巡逻员"
+		"supply_record": return "阅读院中的补给记录"
+		"aid_bag": return "到北侧废棚取急救包"
+		"repair_tools": return "到南侧拐角取修理工具"
+		"survey_marker": return "到院中勘察点核查现场"
+		"ecology": return objective().trim_prefix("第三段 · ")
+	return "到前哨路标旁修复"
+
 func snapshot() -> Dictionary:
 	if ledger().is_empty(): return {}
 	var t := target()
@@ -637,6 +676,7 @@ func snapshot() -> Dictionary:
 		"giver": "留守巡逻员", "need": 3, "progress": (1 if Data.investigation_done(ledger()) else 0) + (1 if Data.rescue_done(ledger()) else 0) + (1 if evidence("signpost_repaired") else 0),
 		"claim_at_npc": true, "chapter_stage": ledger()["stage"], "ui_state": "claimable" if ledger()["stage"] == "claim" else "in_progress",
 		"ui_status": "尾款待领取" if ledger()["stage"] == "claim" else "前哨章节", "ui_objective": objective(),
+		"next_action": next_action(), "target_title": t.get("name", ""), "step_progress": step_progress(),
 		"ui_reward": reward_policy(), "gold": reward["gold"], "xp": reward["xp"], "bonus": reward["bonus"],
 		"target_object_id": t.get("object_id", ""), "target_name": t.get("name", ""), "target_pos": [pos.x, pos.y] if pos.is_finite() else [],
 		"species": t.get("species", ""), "hunt_region": t.get("region_id", ""), "target_instance_ids": t.get("target_instance_ids", []),

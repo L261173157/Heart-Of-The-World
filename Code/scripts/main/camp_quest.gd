@@ -190,7 +190,7 @@ func claim() -> String:
 	var bonus := str(q.get("bonus", ""))
 	var rewards := {bonus: 1} if not bonus.is_empty() else {}
 	if not Inventory.can_apply({}, rewards):
-		return "补给已达99上限，请先使用一件再交付；记录与全部奖励保留"
+		return "当前存档只读，请更新游戏后领奖" if GameState.equipment_read_only() else "暂时无法结算，记录与奖励保留"
 	_paying = true
 	GameState.begin_world_reward()
 	q["paid"] = true
@@ -246,11 +246,42 @@ func snapshot() -> Dictionary:
 		"gold": q["gold"], "xp": q["xp"], "bonus": q["bonus"], "camp_stage": q["stage"],
 		"ui_state": "claimable" if done else "in_progress", "ui_status": "可交付" if done else "进行中",
 		"ui_objective": objective(), "history": history_text(), "live_facts": live_text() if _on_site() else "当前据点状态未在视野内；历史行动记录不代表现状",
+		"next_action": next_action(), "target_title": "营地巡守" if done else str(t.get("species", "")) + "据点",
+		"step_progress": step_progress(),
 		"target_pos": [WorldConfig.spawn_pos().x, WorldConfig.spawn_pos().y] if done else t.get("pos", []),
 		"species": "" if done else t.get("species", ""), "hunt_region": t.get("region_id", ""),
 		"ui_knowledge": "visible" if _on_site() else ("last_seen" if q.get("investigated", false) else "npc_intel")}
 	view["ui_reward"] = QuestPresentation.reward(view)
 	return view
+
+func next_action() -> String:
+	var q := ledger()
+	if q.is_empty(): return "与营地巡守交谈"
+	if _searching: return "正在核对可达线索"
+	if q["stage"] == "return": return "返回营地巡守交付领奖"
+	if q["stage"] == "completed": return "与营地巡守交谈，了解下一处线索"
+	var t: Dictionary = q.get("target", {})
+	if t.is_empty(): return "回营地巡守处复核线索"
+	var where := str(t["species"]) + "据点"
+	match str(q["stage"]):
+		"investigate": return "前往%s调查" % where
+		"choose": return "在%s选择处理方式" % where
+		"act":
+			var f := facts()
+			if _on_site() and (f["viable_count"] == 0 or not f["nest_active"] or (q["choice"] == "hunt" and not _hunt_possible(f))):
+				return "回%s重新核查" % where
+			return "在%s有限狩猎，保留巢穴" % where if q["choice"] == "hunt" else "捣毁%s巢穴" % t["species"]
+	return "与营地巡守交谈"
+
+func step_progress() -> String:
+	var q := ledger()
+	match str(q.get("stage", "")):
+		"investigate": return "调查 0/1"
+		"choose": return "调查 1/1"
+		"act": return "狩猎 %d/2" % mini(_hunt_progress(), 2) if q.get("choice", "") == "hunt" else "捣巢 0/1"
+		"return": return "待交付"
+		"completed": return "已领取"
+	return ""
 
 func objective() -> String:
 	var q := ledger()
@@ -306,7 +337,7 @@ func npc_status() -> Dictionary:
 		if ledger()["stage"] == "return":
 			var bonus := str(ledger().get("bonus", ""))
 			if bonus != "" and not Inventory.can_apply({}, {bonus: 1}):
-				return {"state": "pending", "marker": "· 补给已满 · 待交付", "color": QuestPresentation.PROGRESS_COLOR}
+				return {"state": "pending", "marker": "· 奖励待发", "color": QuestPresentation.PROGRESS_COLOR}
 			return {"state": "claimable", "marker": "? 可交付", "color": QuestPresentation.CLAIMABLE_COLOR}
 		return {"state": "in_progress", "marker": "· 调查进行中", "color": QuestPresentation.PROGRESS_COLOR}
 	if not ledger().is_empty():
