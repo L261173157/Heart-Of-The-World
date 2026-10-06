@@ -219,7 +219,7 @@ func _run() -> void:
 			inst.age = inst.lifespan
 	WorldSim.sim.tick()
 	_bounty()._process(BountyManager.EXTINCT_CHECK_INTERVAL)
-	# 首次真实击杀可以随机掉落并装备金币词条；期望必须包含结算时的实际倍率。
+	# 奖励期望包含结算时实际已穿装备倍率；掉落只入包，不应改变它。
 	var base_gold := floori(float(partial["original_gold"]) / int(partial["original_need"]))
 	var expected_gold := roundi(base_gold * gold_multiplier)
 	print("  BOUNTY_REWARD base=%d multiplier=%.6f actual=%d equips=%s" % [
@@ -384,7 +384,7 @@ func _isolate_reward_ticks() -> void:
 		inst.species = isolated[inst.species.species_name]
 
 
-## 原真实流程保留随机掉落；专项矩阵锁定四槽，让无/有加成每次都被执行。
+## 原真实流程保留随机掉落；专项矩阵显式装配六槽，让无/有加成每次都被执行。
 func _reward_equipment(bonus: bool) -> Dictionary:
 	var result := {}
 	for slot: String in GameState.EQUIP_SLOTS:
@@ -393,13 +393,14 @@ func _reward_equipment(bonus: bool) -> Dictionary:
 			affixes = {"gold": 0.15}
 		elif bonus and slot == "boots":
 			affixes = {"gold": 0.10}
-		result[slot] = {"slot": slot, "name": "赏金回归" + slot, "rarity": 1, "affixes": affixes}
+		result[slot] = EquipmentCatalog.legacy_item({"slot": slot, "name": "赏金回归" + slot, "rarity": 1, "affixes": affixes, "locked": true}, "bounty:" + slot, slot)
 	return result
 
 
 func _test_reward_matrix() -> void:
 	GameState.save_enabled = false
-	GameState.stats.equips.clear()
+	GameState.equipment_state = EquipmentInventory.empty_state()
+	GameState._sync_equipped_stats()
 	GameState.stats.passives.clear()
 	# 固定世界中寻找仍存活的普通据点；不硬编码随机实体 ID。
 	var groups := {}
@@ -421,11 +422,17 @@ func _test_reward_matrix() -> void:
 	var target: MonsterInstance = WorldSim.sim.instances[ids[0]]
 	for index in REWARD_CASES.size():
 		var test: Dictionary = REWARD_CASES[index]
-		GameState.stats.equips.clear()
-		GameState.pending_equipment.clear()
-		GameState.equipment_locks.clear()
+		GameState.equipment_state = EquipmentInventory.empty_state()
+		GameState._sync_equipped_stats()
+		# 奖励矩阵使用公开纯工厂构造有效装配；不靠随机掉落或更改实时战斗门槛。
 		for item: Dictionary in _reward_equipment(test["bonus"]).values():
-			_check(GameState.receive_equipment(item) == "equipped", "受控奖励装备进入空槽：%d/%s" % [index, item["slot"]])
+			var added := EquipmentInventory.add_item(GameState.equipment_state, item)
+			var context := {"gold": GameState.gold, "materials": GameState.inventory, "level": GameState.stats.level, "can_swap": true}
+			var offer := EquipmentInventory.preview(added["state"], "equip", {"id": item["id"]}, context)
+			var committed := EquipmentInventory.commit(added["state"], offer, context)
+			_check(committed.get("ok", false), "受控奖励装备原子装配：%d/%s" % [index, item["slot"]])
+			if committed.get("ok", false): GameState.equipment_state = committed["state"]
+		GameState._sync_equipped_stats()
 		GameState.gold = 100
 		GameState.bounty = {"species": target.species.species_name, "region_id": target.region_id,
 			"need": 4, "progress": 1 if test["depleted"] else 3, "gold": test["gold"], "xp": 1,
@@ -467,7 +474,7 @@ func _cold_reward(phase: String, index: int, expected_gold: int) -> void:
 	var saved_gold := GameState.gold
 	var saved_bounty := GameState.bounty.duplicate(true)
 	var expected_equips := _reward_equipment(test["bonus"])
-	_check(GameState.stats.equips == expected_equips
+	_check(_same_reward_equips(GameState.stats.equips, expected_equips)
 			and is_equal_approx(GameState.stats.gold_mult(), 1.25 if test["bonus"] else 1.0),
 			"冷读档保持受控装备与明确金币倍率")
 	for slot: String in GameState.EQUIP_SLOTS:
@@ -516,7 +523,7 @@ func _cold_reward(phase: String, index: int, expected_gold: int) -> void:
 		_check(GameState.bounty.is_empty() and _completed == 1
 				and _completion_gold - payout_before == int(test["paid"]),
 				"受控满额/耗尽奖励符合独立常数且只完成一次：%d" % index)
-		_check(GameState.stats.equips == expected_equips, "随机掉装不改变本次受控金币装备")
+		_check(_same_reward_equips(GameState.stats.equips, expected_equips), "随机掉装不改变本次受控金币装备")
 	else:
 		_check(saved_bounty.is_empty() and GameState.bounty.is_empty()
 				and _completed == 0 and GameState.gold == saved_gold and saved_gold == expected_gold,
@@ -539,3 +546,15 @@ func _cold_reward_finish(phase: String, index: int) -> void:
 	print("BOUNTY_COLD_BALANCE=%d" % GameState.gold)
 	print("=== BOUNTY COLD %s %d %s ===" % [phase, index, "PASS" if _fails == 0 else "FAIL"])
 	get_tree().quit(0 if _fails == 0 else 1)
+
+
+func _same_reward_equips(actual: Dictionary, expected: Dictionary) -> bool:
+	if actual.size() != expected.size(): return false
+	for slot: String in expected:
+		if not actual.has(slot): return false
+		for key: String in ["id", "name", "slot", "locked", "rarity"]:
+			if actual[slot].get(key) != expected[slot].get(key): return false
+		if actual[slot].get("affixes", {}).size() != expected[slot]["affixes"].size(): return false
+		for affix: String in expected[slot]["affixes"]:
+			if not is_equal_approx(float(actual[slot].get("affixes", {}).get(affix, -1)), float(expected[slot]["affixes"][affix])): return false
+	return true

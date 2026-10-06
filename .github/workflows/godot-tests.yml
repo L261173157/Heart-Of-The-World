@@ -22,6 +22,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - suite: equipment_earned_budget
+            tests: equipment_earned_budget
+          - suite: equipment
+            tests: equipment_exploration_migration,equipment_attack_sources,equipment_service,equipment_bag_ui,equipment_domain,equipment_drops,equipment_kill_integration,equipment_combat,equipment_particles,equipment_persistence
           - suite: logic
             tests: sim,frames,balance,warrior_motion_assets,material_rewards,pacing_controller
           - suite: visuals
@@ -80,6 +84,12 @@ jobs:
           echo "GODOT=$RUNNER_TEMP/godot/Godot_v4.7-stable_linux.x86_64" >> "$GITHUB_ENV"
       - name: Run ${{ matrix.suite }} regressions
         run: python3 Code/tests/run_headless.py --only '${{ matrix.tests }}' --log-dir 'test-results/${{ matrix.suite }}'
+      - name: Render equipment pixels and mobile layouts
+        if: matrix.suite == 'equipment'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          xvfb-run -a python3 Code/tests/run_equipment_visual_test.py "$GODOT" --log-dir test-results/equipment/rendered
       - name: Preserve test logs
         if: always()
         uses: actions/upload-artifact@v4

@@ -417,8 +417,9 @@ func _repair(pending := false) -> bool:
 	_check(_prop("signpost").get("repaired") and _prop("wounded_patrol").get("rescued"), "实际路标与常驻巡守表现同步永久章节结果")
 	_check(not str(_q().get("next_clue", "")).is_empty(), "修复后留下可读后续线索")
 	if pending:
-		_check(_wallet() == wallet and not _q().get("receipts", {}).get("restoration", {}).get("paid", false),
-			"库存99保留已经修复的世界状态，但终段整笔奖励保持未支付")
+		_assert_reward_delta(wallet, 24, 24, "满包修复")
+		_check(_q().get("receipts", {}).get("restoration", {}).get("paid", false) and _pending_total("onigiri") > 0
+			and _pending_sources_unique(), "库存99保留修复与已付状态，普通物品进入唯一待领取收据")
 	else:
 		_assert_reward_delta(wallet, 24, 24, "修复")
 		_check(_q().get("stage", "") == "completed" and _q().get("receipts", {}).get("restoration", {}).get("paid", false),
@@ -442,7 +443,7 @@ func _expected_path() -> String:
 	return GameState.SAVE_PATH + ".outpost_expected"
 
 func _write_chapter_expected() -> void:
-	_write_expected({"ledger": _q().duplicate(true), "wallet": _wallet(),
+	_write_expected({"ledger": _q().duplicate(true), "wallet": _wallet(), "pending_items": GameState.pending_items.duplicate(true),
 		"checkpoints": GameState.discovered_checkpoints.duplicate(),
 		"destroyed": ObstacleField.destroyed_list(), "patrol_text": _patrol_text})
 
@@ -451,6 +452,7 @@ func _assert_cold_expected(label: String) -> void:
 	_patrol_text = str(expected.get("patrol_text", ""))
 	_check(_same(_q(), expected["ledger"]), label + "：完整章节证据/里程碑支付记录冷恢复")
 	_check(_same(_wallet(), expected["wallet"]), label + "：金币/经验/普通库存冷恢复")
+	_check(_same(GameState.pending_items, expected.get("pending_items", {})) and _pending_sources_unique(), label + "：待领取逐项数量和唯一来源冷恢复")
 	_check(_same(GameState.discovered_checkpoints, expected["checkpoints"]), label + "：检查点冷恢复")
 	_check(_same(ObstacleField.destroyed_list(), expected["destroyed"]), label + "：真实路障摧毁覆盖层冷恢复")
 
@@ -463,18 +465,20 @@ func _death_preserves_chapter() -> void:
 func _claim_restoration() -> void:
 	if not await _walk_prop("signpost", Vector2(0, 64)): return
 	var wallet := _wallet()
+	var pending := GameState.pending_items.duplicate(true)
 	await _interact("signpost")
-	_check(_wallet() == wallet and not _q()["receipts"]["restoration"]["paid"], "冷恢复后仍不部分支付满99的最终奖励")
+	_check(_wallet() == wallet and _q()["receipts"]["restoration"]["paid"]
+		and GameState.pending_items == pending, "冷恢复后再次交互不重付满99时已完成的合同")
+	var remaining := _pending_total("onigiri")
 	GameState.remove_item("onigiri", 1)
-	wallet = _wallet()
-	await _interact("signpost")
-	_assert_reward_delta(wallet, 24, 24, "修复尾款")
+	_check(_claim_one_pending("onigiri") and _pending_total("onigiri") == remaining - 1, "腾出一格后显式领取已保存尾奖")
 	_check(_q()["receipts"]["restoration"]["paid"] and _q()["stage"] == "completed"
-		and GameState.count_item("onigiri") == 99, "腾出一格后在路标明确领取完整尾款且只补一件普通物品")
+		and GameState.count_item("onigiri") == 99 and GameState.gold == int(wallet["gold"]), "物品领取数量守恒且不重发金币经验")
 	wallet = _wallet()
+	pending = GameState.pending_items.duplicate(true)
 	await _interact("signpost")
 	_qm.outpost_action("signpost")
-	_check(_wallet() == wallet, "再次交互/重复回调不能重复支付终段奖励")
+	_check(_wallet() == wallet and GameState.pending_items == pending, "再次交互和重复回调不能复付或复制余量")
 	await _next_clue_contract()
 
 func _cold(phase: String) -> void:
@@ -535,10 +539,10 @@ func _cold(phase: String) -> void:
 		"--cold-repair":
 			_assert_cold_expected("修复前")
 			if not await _repair(true): return
-			_check(_save(), "已修复世界与库存99待付终段原子写盘")
+			_check(_save(), "已修复世界、已付合同与99溢出收据原子写盘")
 			_write_chapter_expected()
 		"--cold-claim":
-			_assert_cold_expected("修复后待领奖")
+			_assert_cold_expected("修复后待领取物品")
 			_check(_prop("signpost").get("repaired") and _prop("wounded_patrol").get("rescued"), "冷启动真实场景重建已修复路标与获救巡守")
 			await _claim_restoration()
 			_check(_save(), "最终已付收据与检查点真实写盘")
@@ -690,3 +694,27 @@ func _run() -> void:
 	await _natural_supply_contract()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(GameState.SAVE_PATH))
 	await _finish()
+
+
+func _pending_total(item_id: String) -> int:
+	var total := 0
+	for receipt: Dictionary in GameState.pending_items.values():
+		if receipt.get("item_id", "") == item_id: total += int(receipt.get("count", 0))
+	return total
+
+
+func _claim_one_pending(item_id: String) -> bool:
+	for receipt: Dictionary in GameState.pending_items.values():
+		if receipt.get("item_id", "") == item_id:
+			return bool(GameState.equipment_action("claim_pending", {"id": receipt["id"]}, GameState.equipment_revision()).get("ok", false))
+	return false
+
+
+func _pending_sources_unique() -> bool:
+	var sources := {}
+	for key: String in GameState.pending_items:
+		var receipt: Dictionary = GameState.pending_items[key]
+		var source := str(receipt.get("source", ""))
+		if source.is_empty() or sources.has(source) or receipt.get("id", "") != key or int(receipt.get("count", 0)) <= 0: return false
+		sources[source] = true
+	return true

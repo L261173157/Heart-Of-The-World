@@ -292,7 +292,7 @@ func _run() -> void:
 	EventBus.quest_list_changed.connect(_capture_list)
 	_cold_campaign_expected()
 	_cold_extra()
-	_check(CampaignQuest.ENABLED_BATCH==4 and GameState.SAVE_VERSION==17,"整部验收必须针对最终EN4/SAVE17")
+	_check(CampaignQuest.ENABLED_BATCH==4 and GameState.SAVE_VERSION==18,"整部验收必须针对最终EN4/SAVE18")
 	if _fails==0:
 		match args[0]:
 			"prepare": await _prepare_mixed()

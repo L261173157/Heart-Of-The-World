@@ -74,15 +74,19 @@ func _run() -> void:
 	GameState.outpost_quest = _ready_chapter()
 	GameState.inventory = {"onigiri": 99}
 	var gold := GameState.gold
+	var pending_before := _pending_total("onigiri")
 	_quest._settle_ready(true)
-	_check(GameState.gold == gold + 15 and GameState.outpost_quest["receipts"]["investigation"]["paid"] and GameState.outpost_quest["receipts"]["rescue"]["paid"], "前两段提交实际支付各自合同")
-	_check(GameState.outpost_quest["stage"] == "claim" and not GameState.outpost_quest["receipts"]["restoration"]["paid"] and GameState.count_item("onigiri") == 99, "饭团99阻止整个末段奖励，不撤销修复证据")
-	var once := GameState.gold
+	_check(GameState.gold == gold + 39 and GameState.outpost_quest["receipts"]["investigation"]["paid"]
+		and GameState.outpost_quest["receipts"]["rescue"]["paid"], "三段奖励各自合同一次精确提交")
+	_check(GameState.outpost_quest["stage"] == "completed" and GameState.outpost_quest["receipts"]["restoration"]["paid"]
+		and GameState.count_item("onigiri") == 99 and _pending_total("onigiri") == pending_before + 1, "饭团满99不阻塞末段，余量进入持久待领取")
+	var pending_snapshot := GameState.pending_items.duplicate(true)
 	_quest._settle_ready(true)
-	_check(GameState.gold == once, "容量阻塞重试不重复前两段金币")
+	_check(GameState.gold == gold + 39 and GameState.pending_items == pending_snapshot, "重复结算不重复前三段金币或奖品收据")
 	GameState.inventory["onigiri"] = 98
-	_quest._settle_ready(true)
-	_check(GameState.gold == gold + 39 and GameState.count_item("onigiri") == 99 and GameState.outpost_quest["stage"] == "completed", "空间释放后完整末段24金币24经验饭团提交")
+	_check(_claim_one_pending("onigiri") and GameState.count_item("onigiri") == 99
+		and _pending_total("onigiri") == pending_before, "空出一格后明确领取余量，物品总量守恒")
+	_check(_pending_sources_unique(), "前哨收据ID和来源唯一")
 	var done := GameState.outpost_quest.duplicate(true)
 	_quest._settle_ready(true)
 	_check(GameState.gold == gold + 39 and GameState.outpost_quest == done, "末段重入不重付也不改已付收据")
@@ -143,3 +147,27 @@ func _run() -> void:
 	_check(GameState.outpost_quest["legacy_contract"]["paid"], "原委托支付变更同步刷新备份收据，不留下可重付的旧未付副本")
 	print("=== OUTPOST LEDGER %s (%d checks, %d failures) ===" % ["PASS" if _fails == 0 else "FAIL", _checks, _fails])
 	get_tree().quit(0 if _fails == 0 else 1)
+
+
+func _pending_total(item_id: String) -> int:
+	var total := 0
+	for receipt: Dictionary in GameState.pending_items.values():
+		if receipt.get("item_id", "") == item_id: total += int(receipt.get("count", 0))
+	return total
+
+
+func _claim_one_pending(item_id: String) -> bool:
+	for receipt: Dictionary in GameState.pending_items.values():
+		if receipt.get("item_id", "") == item_id:
+			return bool(GameState.equipment_action("claim_pending", {"id": receipt["id"]}, GameState.equipment_revision()).get("ok", false))
+	return false
+
+
+func _pending_sources_unique() -> bool:
+	var sources := {}
+	for key: String in GameState.pending_items:
+		var receipt: Dictionary = GameState.pending_items[key]
+		var source := str(receipt.get("source", ""))
+		if source.is_empty() or sources.has(source) or receipt.get("id", "") != key or int(receipt.get("count", 0)) <= 0: return false
+		sources[source] = true
+	return true

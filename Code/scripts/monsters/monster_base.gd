@@ -11,6 +11,7 @@ const SpritePlayback := preload("res://scripts/animation/sprite_playback.gd")
 const ImpactFeedback := preload("res://scripts/combat/impact_feedback.gd")
 const EnemyAttackContext := preload("res://scripts/combat/enemy_attack_context.gd")
 const MonsterGuardHint := preload("res://scripts/monsters/monster_guard_hint.gd")
+const EquipmentDropLedger := preload("res://scripts/equipment/equipment_drops.gd")
 
 const S_PATROL := 0
 const S_CHASE := 1
@@ -63,6 +64,8 @@ const NAV_QUERY_INTERVAL_MS := 100
 const LOD_FAR_DIST := 900.0
 const LOD_STEP := 6
 var _reward_settling := false
+## 仅本次真实玩家攻击可携带装备奖励资格，不从仇恨、坐标或旧伤推断击杀者。
+var _equipment_kill_source: Dictionary = {}
 
 var _lod_skip := 0
 ## 当前处于远档（_far_tick 主导）：_nav_velocity_toward 走免导航直线分支。
@@ -335,6 +338,41 @@ func _get_player() -> Node2D:
 	if _player_ref == null or not is_instance_valid(_player_ref):
 		_player_ref = get_tree().get_first_node_in_group("player") as Node2D
 	return _player_ref
+
+
+## 换装战斗锁使用真实追击状态，不把缓存过玩家引用的远处巡逻怪当作交战。
+func is_engaged_with_player(player: Node2D) -> bool:
+	if not _is_authoritative_live_source() or not _is_live_reward_player(player):
+		return false
+	if _get_player() != player:
+		return false
+	return state == S_CHASE or state == S_ATTACK or state >= 10
+
+
+func _is_authoritative_live_source() -> bool:
+	return inst != null and inst.species != null and inst.is_alive and state != S_CORPSE \
+		and WorldSim.sim != null and WorldSim.sim.instances.get(inst.id) == inst
+
+
+func _is_live_reward_player(player: Node) -> bool:
+	return is_instance_valid(player) and player is Player and player.is_inside_tree() \
+		and player.is_in_group("player") and not player._is_dead and player.current_hp > 0.0
+
+
+## 物品等级来自来源所属区域；年龄、玩家等级、击杀时脚下地形都不参与。
+## actor/player ID 仅供服务层验证现场，绝不进入稳定 seed 或持久来源账本。
+func _equipment_source(player: Node) -> Dictionary:
+	if not _is_authoritative_live_source() or not _is_live_reward_player(player):
+		return {}
+	var region: SimRegion = WorldSim.sim.get_region(inst.region_id)
+	if region == null:
+		return {}
+	var kind := "boss" if inst.species.is_boss else "elite" if inst.is_elite else "ordinary"
+	var source := EquipmentDropLedger.create_source(GameState.world_seed, kind, inst.id, 0,
+		region.terrain, {"generation": inst.generation, "splits_on_death": inst.species.splits_on_death})
+	source["actor_instance_id"] = get_instance_id()
+	source["player_instance_id"] = player.get_instance_id()
+	return source
 
 
 ## 巡猎唯一资格入口：消费模拟归属与实际玩家位置，不改写实例/据点。
@@ -792,14 +830,22 @@ func _sync_growth_hp() -> void:
 ## 镜像进 MonsterInstance.hp_mirror 只为存档往返——读档恢复的怪带伤开局，
 ## 不再"白送满血回复"。走 EcologySim.report_hp 单点通道（与 report_killed 同构）
 func _sync_hp_mirror() -> void:
-	if WorldSim.sim != null:
+	if WorldSim.sim != null and inst != null and WorldSim.sim.instances.get(inst.id) == inst:
 		WorldSim.sim.report_hp(inst.id, current_hp)
 
 
 func take_damage(amount: float, from_position := Vector2.INF, p_heavy := false,
-		p_knock_mult := 1.0, p_effective := false) -> void:
-	if state == S_CORPSE:
+		p_knock_mult := 1.0, p_effective := false, player_source: Node = null) -> void:
+	if state == S_CORPSE or inst == null or not inst.is_alive or _reward_settling \
+			or not is_finite(amount) or amount <= 0.0:
 		return
+	_equipment_kill_source = _equipment_source(player_source)
+	if not _equipment_kill_source.is_empty():
+		_equipment_kill_source = GameState.notify_equipment_first_combat(_equipment_kill_source)
+		if not _equipment_kill_source.is_empty():
+			_equipment_kill_source["actor_instance_id"] = get_instance_id()
+			_equipment_kill_source["player_instance_id"] = player_source.get_instance_id()
+			_equipment_kill_source["player_kill"] = true
 	_sync_growth_hp()
 	var armor: float = clampf(inst.species.defense_reduction, 0.0, 0.8)
 	var dealt: float = maxf(1.0, amount * (1.0 - armor))
@@ -1087,6 +1133,11 @@ func _damage_context(player: Node2D, fallback_strength: float,
 	context["incoming_direction"] = incoming_direction.normalized() \
 		if not incoming_direction.is_zero_approx() else \
 		(global_position - player.global_position).normalized()
+	# 玩家实际接触/格挡这次攻击时才封存来源，不在前摇或追击时抢先锁偏好。
+	# 远程会把这份来源快照随弹道传递；抵达时服务层再次确认发射者仍为活体。
+	var source := _equipment_source(player)
+	if not source.is_empty():
+		context["equipment_source"] = source
 	return context
 
 
@@ -1193,10 +1244,14 @@ func _migrate_tick() -> void:
 
 func _die_by_player() -> void:
 	# 同步信号订阅者可能重入伤害或保存；先锁住本次死亡，防止重复奖励。
-	if state == S_CORPSE or _reward_settling:
+	if state == S_CORPSE or _reward_settling or current_hp > 0.0 or not _is_authoritative_live_source():
 		return
 	_reward_settling = true
 	GameState.begin_world_reward()
+	# 先登记来源收据/首 Boss 资格，再发放会同步通知观察者的奖励。
+	# 若观察者在回调中击杀另一只怪，首 Boss 的归属仍是先进入结算的活体来源。
+	if not _equipment_kill_source.is_empty():
+		GameState.settle_equipment_drop(_equipment_kill_source)
 	# 击杀奖励：经验走 MonsterInstance 真源，金币走 EconomyMath 纯逻辑层公式
 	# （策划：尸体拾取，M0 简化为自动）；精英/Boss 倍率在公式内
 	var xp := inst.xp_reward()
@@ -1214,37 +1269,8 @@ func _die_by_player() -> void:
 	if inst.species.is_boss:
 		GameState.add_item(EconomyMath.boss_bonus_item(GameState.world_seed, inst.id), 1)
 	elif inst.is_elite and randf() < 0.15:
-		# P1 银钥匙：精英怪 15%（hill 城塞宝箱的钥匙来源；与装备掉落同款表现层 RNG）
+		# P1 银钥匙：精英怪 15%，维持旧规则；与装备来源的独立 RNG 无关。
 		GameState.add_item(EconomyMath.KEY_SILVER, 1)
-	# 装备掉落：Boss 必掉史诗，精英 40% 稀有，普通 8% 精良；空槽装备并锁定，已占槽遵守玩家的锁定选择
-	var drop_rarity := -1
-	if inst.species.is_boss:
-		drop_rarity = 3
-	elif inst.is_elite and randf() < 0.4:
-		drop_rarity = 2
-	elif randf() < 0.08:
-		drop_rarity = 1
-	if drop_rarity >= 0:
-		# 槽位随机（武器/头盔/衣服/鞋子），各槽独立保留/自动换装
-		var slots: Array = GameState.EQUIP_SLOTS
-		var slot: String = slots[randi() % slots.size()]
-		var item := GameState.roll_equipment(drop_rarity, slot)
-		var had_prev: bool = not GameState.stats.equips.get(slot, {}).is_empty()
-		var disposition := GameState.receive_equipment(item)
-		if disposition == "equipped":
-			# 换装成功：旧装备按稀有度折金（金币计数器即时可见），首件装备则无折算
-			if had_prev:
-				EventBus.hint_requested.emit("✨ 换装 %s（%s）→ 旧装备已折算金币" % [
-					GameState.equip_description(item), GameState.SLOT_NAMES[slot]])
-			else:
-				EventBus.hint_requested.emit("✨ 装备 %s（%s，已锁定；背包可解锁）" % [
-					GameState.equip_description(item), GameState.SLOT_NAMES[slot]])
-		elif disposition == "pending":
-			EventBus.hint_requested.emit("✨ 待比较 %s（背包 O：选择换装或出售）" % GameState.equip_description(item))
-		else:
-			EventBus.hint_requested.emit("获得 %s（%s，已折算金币）" % [
-				GameState.equip_description(item),
-				"待比较位已占用，保留首件候选" if GameState.is_equipment_locked(slot) else "自动模式：词条总和未提高"])
 	# 打击感：击杀轻震，精英击杀重震 + 短顿帧（大怪倒下的"重量"）；Boss 战绩播报
 	if inst.species.is_boss:
 		EventBus.camera_shake_requested.emit(9.0)
@@ -1265,6 +1291,7 @@ func _die_by_player() -> void:
 		on_sim_death()
 	GameState.end_world_reward()
 	_reward_settling = false
+	_equipment_kill_source = {}
 
 
 ## 击杀爆裂：碎片小方块四散旋转淡出（颜色跟怪物 tint，精英金色；池化复用，

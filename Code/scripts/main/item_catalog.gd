@@ -8,6 +8,7 @@
 class_name ItemCatalog
 
 const ITEMS := {
+	"equipment-parts": {"name": "装备零件", "kind": "material", "icon": "res://assets/ts/icons/scroll_rock.png"},
 	# --- 消耗品（商店补给 + Boss 附加掉落；效果比例见 CharacterStats） ---
 	"onigiri": {"name": "饭团", "kind": "consumable", "icon": "res://assets/ts/icons/onigiri.png"},
 	"sushi": {"name": "寿司", "kind": "consumable", "icon": "res://assets/ts/icons/sushi.png"},
@@ -59,6 +60,7 @@ static func desc_of(id: String) -> String:
 		return "回复 %d%% 生命" % roundi(float(CharacterStats.ITEM_HP_FRAC[id]) * 100.0)
 	if CharacterStats.ITEM_MP_FRAC.has(id):
 		return "回复 %d%% 精力" % roundi(float(CharacterStats.ITEM_MP_FRAC[id]) * 100.0)
+	if id == "equipment-parts": return "6份零件加金币，可制作指定部位蓝装"
 	return "材料，可售予行商"
 
 

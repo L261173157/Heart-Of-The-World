@@ -19,6 +19,7 @@ func _run() -> void:
 	if GameState.gold != int(expected.get("gold", -1)) or not _inventory_matches(expected.get("inventory", {})):
 		print("OPTIONAL COLD WALLET expected=", expected.get("gold"), "/", expected.get("inventory"), " actual=", GameState.gold, "/", GameState.inventory)
 	_check(GameState.gold == int(expected.get("gold", -1)) and _inventory_matches(expected.get("inventory", {})), "磁盘恢复不增减钱包或库存")
+	_check(JSON.parse_string(JSON.stringify(GameState.pending_items)) == expected.get("pending_items", {}) and _pending_sources_unique(), "磁盘逐条恢复待领取数量、ID与唯一来源")
 	BiomeMap.configure(GameState.world_seed)
 	ObstacleField.restore_destroyed(GameState.destroyed_cells)
 	_world = World.new()
@@ -59,8 +60,9 @@ func _run() -> void:
 		var target := _optional.action_object(final)
 		await _go(target)
 		var inventory := GameState.inventory.duplicate(true)
+		var receipts := GameState.pending_items.duplicate(true)
 		_optional.claim_service(target)
-		_check(inventory == GameState.inventory, "服务领取收据阻止独立进程重复发放")
+		_check(inventory == GameState.inventory and receipts == GameState.pending_items, "服务领取收据阻止独立进程重复发放或创建余量")
 	if str(expected.get("suffix", "")) == "route_resume":
 		var a: Dictionary = Catalog.stage(sid)["actions"][0]
 		var retained: Array = GameState.campaign_quest.get("optional_routes", {}).get(a["id"], []).duplicate()

@@ -92,7 +92,7 @@ const GUARD_COUNTER_MULT := [1.4, 1.8, 2.2]
 
 
 func guard_strength() -> float:
-	return GUARD_STRENGTH_BASE + GUARD_STRENGTH_PER_POINT * strength
+	return (GUARD_STRENGTH_BASE + GUARD_STRENGTH_PER_POINT * strength) * (1.0 + equip_affix("guard"))
 
 
 static func guard_hit_cost(attack_strength: float) -> float:
@@ -248,32 +248,124 @@ func passive_mult(id: String, per_level: float) -> float:
 	return pow(per_level, passive_level(id))
 
 
-## --- 装备（四槽位：武器/头盔/衣服/鞋子，各自单件替换制） ---
-## equips: {槽位id: {"name", "rarity"(0~3), "element"(仅武器), "affixes": {词条id: 比例值}}}
+## --- 六槽装备：此处只保存账本装配出的缓存，唯一所有权在 EquipmentInventory ---
+const EquipmentData = preload("res://scripts/equipment/equipment_catalog.gd")
 var equips: Dictionary = {}
+const EQUIP_COMBO_ICD := 2.0
+const EQUIP_FOCUS_ICD := 1.6
+const EQUIP_SAFE_WAIT := 5.0
 
 
-## 词条值 = 全槽位求和（掉落比较与衍生属性都从这取）
+## 旧制在当前穿戴组合中的实际值原样保留；只限制新制能填补的剩余额度。
+## 不能保存一个永久旧值豁免，否则脱下旧件后仍能错误超帽。
 func equip_affix(id: String) -> float:
-	var total := 0.0
-	for slot in equips:
-		total += float(equips[slot].get("affixes", {}).get(id, 0.0))
-	return total
+	var canonical := "phys" if id == "atk" else id
+	var old_total := 0.0
+	var new_total := 0.0
+	for slot: Variant in equips:
+		var item: Variant = equips[slot]
+		if not item is Dictionary or bool(item.get("quarantined", false)):
+			continue
+		var affixes: Variant = item.get("affixes", {})
+		if not affixes is Dictionary:
+			continue
+		var legacy := bool(item.get("legacy", not item.has("base_id")))
+		var key := "atk" if legacy and canonical == "phys" else canonical
+		var value: Variant = affixes.get(key, 0.0)
+		if typeof(value) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(value)):
+			continue
+		if legacy:
+			# 沿用旧版读档器实际生效的单条词缀安全边界。
+			if key in EquipmentData.LEGACY_AFFIXES:
+				old_total += clampf(float(value), 0.0, 0.5)
+		else:
+			new_total += maxf(0.0, float(value))
+	var cap := float(EquipmentData.CAPS.get(canonical, 0.0))
+	return old_total + minf(new_total, maxf(0.0, cap - old_total))
 
 
-## 元素附魔只有武器槽会出（战斗侧消费单一来源）
+func equipment_affix_breakdown(id: String) -> Dictionary:
+	var canonical := "phys" if id == "atk" else id
+	var legacy := 0.0
+	var fresh := 0.0
+	for item: Variant in equips.values():
+		if not item is Dictionary or bool(item.get("quarantined", false)) or not item.get("affixes", {}) is Dictionary:
+			continue
+		var old := bool(item.get("legacy", not item.has("base_id")))
+		var key := "atk" if old and canonical == "phys" else canonical
+		var value: Variant = item["affixes"].get(key, 0.0)
+		if typeof(value) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(value)):
+			continue
+		if old and key in EquipmentData.LEGACY_AFFIXES:
+			legacy += clampf(float(value), 0.0, 0.5)
+		elif not old:
+			fresh += maxf(0.0, float(value))
+	var effective := equip_affix(id)
+	return {"legacy": legacy, "new_raw": fresh, "nominal": legacy + fresh, "effective": effective,
+		"cap": float(EquipmentData.CAPS.get(canonical, 0.0)), "suppressed": maxf(0.0, legacy + fresh - effective)}
+
+
+## 元素仅取当前武器，旧制元素不被迁移或新上限改写。
 func equip_element() -> String:
 	return str(equips.get("weapon", {}).get("element", ""))
 
 
-## 装备评分：各词条值直接求和（同量纲近似，用于掉落比较）
+## 仅供旧工具展示的兼容评分；背包绝不按此自动换装。
 func equip_score(item: Dictionary) -> float:
 	var total := 0.0
-	for key in item.get("affixes", {}):
-		total += absf(float(item["affixes"][key]))
+	var affixes: Variant = item.get("affixes", {})
+	if affixes is Dictionary:
+		for value: Variant in affixes.values():
+			if typeof(value) in [TYPE_INT, TYPE_FLOAT] and is_finite(float(value)):
+				total += absf(float(value))
 	if str(item.get("element", "")) != "":
 		total += 0.05
 	return total
+
+
+## 当前穿戴橙装机制的等级系数，无对应机制时为零。
+## 此处再次核对基底，避免非法预览凭空制造额外战斗效果。
+func equip_mechanism(id: String) -> float:
+	var result := 0.0
+	for item: Variant in equips.values():
+		if not item is Dictionary or bool(item.get("legacy", false)) or bool(item.get("quarantined", false)):
+			continue
+		var base_id := str(item.get("base_id", ""))
+		if int(item.get("rarity", -1)) != 4 or base_id not in EquipmentData.ORANGE_BASES:
+			continue
+		if str(item.get("mechanism", "")) != id or str(EquipmentData.BASES[base_id].get("mechanism", "")) != id:
+			continue
+		result = maxf(result, EquipmentData.level_factor(int(item.get("item_level", 1))))
+	return result
+
+
+func heavy_damage_mult() -> float:
+	return 0.9 if equip_mechanism("combo") > 0.0 else 1.0
+
+
+func equipment_bolt_damage_mult() -> float:
+	return 0.95 if equip_mechanism("focus") > 0.0 else 1.0
+
+
+func equipment_guard_hit_cost(attack_strength: float) -> float:
+	return guard_hit_cost(attack_strength) * (1.0 - equip_affix("block_cost"))
+
+
+func equipment_guard_counter_mult(charge: int) -> float:
+	return guard_counter_mult(charge) + (0.2 * equip_mechanism("shield") if charge >= 3 else 0.0)
+
+
+func equipment_guard_drain_per_sec() -> float:
+	return 5.0 if equip_mechanism("shield") > 0.0 else GUARD_DRAIN_PER_SEC
+
+
+func equipment_combo_heal() -> float:
+	return max_hp() * 0.01 * equip_mechanism("combo")
+
+
+func equipment_focus_refund(paid_mp: float) -> float:
+	return minf(equip_mechanism("focus"), maxf(0.0, paid_mp))
+
 
 ## --- 寿命（角色侧单位：游戏天，WorldSim 4 分钟/天；怪物侧为 tick） ---
 ## 策划：寿命随自然时间减少、能力提升延长、倒下缩短；到点永久死亡（鬼魂玩法）后置，
@@ -353,13 +445,13 @@ func hp_regen_per_sec() -> float:
 
 
 func max_mp() -> float:
-	return (50.0 + intellect * 10.0) * aging_decay()
+	return (50.0 + intellect * 10.0) * (1.0 + equip_affix("mp")) * aging_decay()
 
 
 func mp_regen_per_sec() -> float:
 	# 0.14/点（2026-09-03 数值统一设计）：智力可支撑 ~0.4 发/s 法弹持续输出，
 	# 同时全构筑技能手感 +27%（MP 是冲刺/重击/法弹/治疗/强化的共享资源）
-	return (1.2 + intellect * 0.14) * passive_mult("mp_regen", 1.25)
+	return (1.2 + intellect * 0.14) * passive_mult("mp_regen", 1.25) * (1.0 + equip_affix("mp_regen"))
 
 
 func physical_attack() -> float:
@@ -369,11 +461,11 @@ func physical_attack() -> float:
 
 func magic_attack() -> float:
 	return (8.0 + intellect * 2.0) * (1.0 + upgrade_staff * UPGRADE_BONUS) \
-			* passive_mult("magic", 1.1)
+			* passive_mult("magic", 1.1) * (1.0 + equip_affix("magic"))
 
 
 func heal_power() -> float:
-	return intellect * 2.0 * passive_mult("heal_power", 1.3)
+	return intellect * 2.0 * passive_mult("heal_power", 1.3) * (1.0 + equip_affix("heal_power"))
 
 
 ## 移速基准 2026-09-08 下调（230→175）：角色仅 ~38px 高，230px/s ≈ 每秒 6 身位，
@@ -429,7 +521,12 @@ func benefit_snapshot() -> Dictionary:
 		"heavy_cooldown": HEAVY_COOLDOWN * cooldown_mult(),
 		"lifesteal": lifesteal_per_hit(), "gold": gold_mult(),
 		"xp": passive_mult("xp", 1.1) * (1.0 + equip_affix("xp")),
-		"knock": knockback_mult(),
+		"knock": knockback_mult(), "guard": guard_strength(),
+		"guard_hit_cost": equipment_guard_hit_cost(20.0), "guard_drain": equipment_guard_drain_per_sec(),
+		"guard_counter": equipment_guard_counter_mult(3), "combo_heal": equipment_combo_heal(),
+		"heavy_damage": physical_attack() * HEAVY_MULT * heavy_damage_mult(),
+		"bolt_damage": magic_attack() * BOLT_MULT * bolt_damage_mult() * equipment_bolt_damage_mult(),
+		"focus_refund": equipment_focus_refund(BOLT_COST),
 		"sword_arc_bonus": rad_to_deg(sword_arc_bonus()) * 2.0,
 		"sword_damage_mult": sword_damage_mult(), "bolt_speed_mult": bolt_speed_mult(),
 		"bolt_damage_mult": bolt_damage_mult(), "bolt_seek": passive_level("bolt_seek"),
@@ -474,6 +571,22 @@ func _weapon_preview_text(id: String, after: CharacterStats) -> String:
 func preview_equipment(item: Dictionary) -> Dictionary:
 	var after := _preview_copy()
 	var slot := str(item.get("slot", "weapon"))
-	if slot in ["weapon", "helmet", "armor", "boots"] and not item.is_empty():
+	if slot in EquipmentData.SLOTS and not item.is_empty():
 		after.equips[slot] = item.duplicate(true)
-	return {"before": benefit_snapshot(), "after": after.benefit_snapshot()}
+	return _equipment_preview_result(after)
+
+
+func preview_loadout(loadout: Dictionary) -> Dictionary:
+	var after := _preview_copy()
+	after.equips = loadout.duplicate(true)
+	return _equipment_preview_result(after)
+
+
+func _equipment_preview_result(after: CharacterStats) -> Dictionary:
+	var details := {}
+	for id: String in EquipmentData.CAPS:
+		var before_value := equipment_affix_breakdown(id)
+		var after_value := after.equipment_affix_breakdown(id)
+		if before_value != after_value:
+			details[id] = {"before": before_value, "after": after_value}
+	return {"before": benefit_snapshot(), "after": after.benefit_snapshot(), "cap_details": details}

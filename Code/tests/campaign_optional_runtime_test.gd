@@ -378,14 +378,19 @@ func _test_service(object_id: String) -> void:
 	if not await _go(object_id): return
 	var service_id := str(_optional.visual_state().get("services", {}).get(object_id, ""))
 	GameState.inventory["onigiri"] = 99
+	var pending_before := _pending_total("onigiri")
 	_optional.claim_service(object_id)
-	_check(GameState.inventory["onigiri"] == 99 and not GameState.campaign_quest.get("services", {}).get(service_id, {}).get("claimed", false), "满包整份服务奖励保留待领")
+	_check(GameState.inventory["onigiri"] == 99 and GameState.campaign_quest.get("services", {}).get(service_id, {}).get("claimed", false)
+		and _pending_total("onigiri") == pending_before + 1, "满包服务一次结算，完整物资进入待领取")
+	var pending := GameState.pending_items.duplicate(true)
+	_optional.claim_service(object_id)
+	_check(GameState.pending_items == pending and _pending_sources_unique(), "重复服务入口不创建第二份物资或来源收据")
 	GameState.inventory["onigiri"] = 98
-	_optional.claim_service(object_id)
-	_check(GameState.inventory["onigiri"] == 99 and GameState.campaign_quest.get("services", {}).get(service_id, {}).get("claimed", false), "腾出空间后实际领取一份驻站物资")
+	_check(_claim_one_pending("onigiri") and _pending_total("onigiri") == pending_before, "腾出一格后显式领取一份余量")
 	_cold()
+	pending = GameState.pending_items.duplicate(true)
 	_optional.claim_service(object_id)
-	_check(GameState.inventory["onigiri"] == 99, "冷启动不能重复领取驻站补给")
+	_check(GameState.inventory["onigiri"] == 99 and GameState.pending_items == pending, "冷启动不能重复领取驻站补给或创建余量")
 	_service_damage_control(service_id, object_id)
 
 func _walk_safe(destination: Vector2) -> void:
@@ -571,6 +576,7 @@ func _capture_snapshot(stage_id: String, branch_set: int, suffix := "stage") -> 
 			"gate_open": node.get("gate_open"), "service": node.get("service"), "title": node.get("title")}
 	var expected := {"stage_id": stage_id, "branch": branch_set, "suffix": suffix, "ready": Data.ready(GameState.campaign_quest, stage_id),
 		"paid": Data.paid(GameState.campaign_quest, stage_id), "gold": GameState.gold, "inventory": GameState.inventory.duplicate(true),
+		"pending_items": GameState.pending_items.duplicate(true),
 		"state": _optional.visual_state(), "nodes": nodes, "destroyed": ObstacleField.destroyed_list(),
 		"optional_routes": GameState.campaign_quest.get("optional_routes", {}).duplicate(true),
 		"optional_route_steps": GameState.campaign_quest.get("optional_route_steps", {}).duplicate(true),
@@ -616,3 +622,27 @@ func _service_damage_control(service_id: String, object_id: String) -> void:
 		GameState.campaign_quest = prior
 		_refresh()
 		return
+
+
+func _pending_total(item_id: String) -> int:
+	var total := 0
+	for receipt: Dictionary in GameState.pending_items.values():
+		if receipt.get("item_id", "") == item_id: total += int(receipt.get("count", 0))
+	return total
+
+
+func _claim_one_pending(item_id: String) -> bool:
+	for receipt: Dictionary in GameState.pending_items.values():
+		if receipt.get("item_id", "") == item_id:
+			return bool(GameState.equipment_action("claim_pending", {"id": receipt["id"]}, GameState.equipment_revision()).get("ok", false))
+	return false
+
+
+func _pending_sources_unique() -> bool:
+	var sources := {}
+	for key: String in GameState.pending_items:
+		var receipt: Dictionary = GameState.pending_items[key]
+		var source := str(receipt.get("source", ""))
+		if source.is_empty() or sources.has(source) or receipt.get("id", "") != key or int(receipt.get("count", 0)) <= 0: return false
+		sources[source] = true
+	return true

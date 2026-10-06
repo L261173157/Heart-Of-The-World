@@ -34,6 +34,11 @@ var _ignore_rid := RID()
 var _seek_scans := 0
 var _seek_shape: CircleShape2D
 var _hit_shape: CircleShape2D
+## 根凭证仅随付费主弹传入；碎片创建不复制，池复用时完整复位。
+var _equipment_root_id := ""
+var _equipment_paid_mp := 0.0
+var _equipment_focus_f := 0.0
+var _player_source: WeakRef
 
 
 static func spawn(parent: Node, pos: Vector2, dir: Vector2, dmg: float,
@@ -60,6 +65,10 @@ static func clear_pool() -> void:
 func launch(dir: Vector2, dmg: float, p_element := "", effects: Dictionary = {}) -> void:
 	direction = dir.normalized() if not dir.is_zero_approx() else Vector2.RIGHT
 	_launch_direction = direction
+	_player_source = effects.get("player_source") as WeakRef
+	_equipment_root_id = str(effects.get("root_id", ""))
+	_equipment_paid_mp = maxf(0.0, float(effects.get("paid_mp", 0.0)))
+	_equipment_focus_f = clampf(float(effects.get("focus_f", 0.0)), 0.0, 1.0)
 	_seek = bool(effects.get("seek", false))
 	_split = bool(effects.get("split", false))
 	damage = dmg * (CharacterStats.BOLT_SPLIT_DAMAGE if _split else 1.0)
@@ -246,7 +255,8 @@ func _acquire_target() -> void:
 
 
 func _on_body_shape_entered(_body_rid: RID, body: Node2D, body_shape: int, _local_shape: int) -> void:
-	if _hit or is_queued_for_deletion():
+	if _hit or is_queued_for_deletion() or _spawn_epoch != _pool_epoch \
+			or get_parent() == null or get_parent().is_queued_for_deletion():
 		return
 	if body is CollisionObject2D and (body as CollisionObject2D).get_rid() == _ignore_rid:
 		return
@@ -270,6 +280,8 @@ func _on_body_shape_entered(_body_rid: RID, body: Node2D, body_shape: int, _loca
 	if (body.is_in_group("monsters") or body.is_in_group("nests")) and body.has_method("take_damage"):
 		if _is_corpse(body):
 			return
+		var live_enemy := body is MonsterBase and (body as MonsterBase)._is_authoritative_live_source() \
+			and (body as MonsterBase).current_hp > 0.0
 		var dealt := damage
 		var effective := false
 		var monster := body as MonsterBase
@@ -280,9 +292,19 @@ func _on_body_shape_entered(_body_rid: RID, body: Node2D, body_shape: int, _loca
 		if _split and _generation == 0:
 			var ignored := (body as CollisionObject2D).get_rid() if body is CollisionObject2D else RID()
 			_spawn_shards.call_deferred(get_parent(), global_position, direction, _split_damage,
-				player_element, ignored, _spawn_epoch)
+				player_element, ignored, _spawn_epoch, _player_source)
 		_release()  # 同步关闸，信号/死亡回调也不能重复命中或重复分裂
-		body.take_damage(dealt, global_position, false, 0.35 if _generation > 0 else 0.6, effective)
+		if monster != null:
+			monster.take_damage(dealt, global_position, false, 0.35 if _generation > 0 else 0.6,
+				effective, _player_source.get_ref() if _player_source != null else null)
+		else:
+			body.take_damage(dealt, global_position, false, 0.35 if _generation > 0 else 0.6, effective)
+		if live_enemy:
+			if _generation == 0 and _equipment_root_id != "":
+				EventBus.player_bolt_live_hit.emit(_equipment_root_id, _equipment_paid_mp,
+					_equipment_focus_f, global_position)
+			elif _generation == 0:
+				EventBus.equipment_particles_requested.emit("hit", global_position, direction)
 		EventBus.hit_stop_requested.emit(0.025)
 		_impact(effective)
 
@@ -294,13 +316,14 @@ func _impact(effective: bool) -> void:
 
 
 static func _spawn_shards(parent: Variant, pos: Vector2, dir: Vector2, dmg: float,
-		p_element: String, ignored: RID, epoch: int) -> void:
+		p_element: String, ignored: RID, epoch: int, player_source: WeakRef = null) -> void:
 	if epoch != _pool_epoch or not is_instance_valid(parent) or not parent.is_inside_tree() \
 			or parent.is_queued_for_deletion():
 		return
 	for side in [-1.0, 1.0]:
 		# 从撞点原地发出；绝不向前瞬移越过紧贴目标的墙。
-		var shard := spawn(parent, pos, dir.rotated(deg_to_rad(25.0) * side), dmg, p_element)
+		var shard := spawn(parent, pos, dir.rotated(deg_to_rad(25.0) * side), dmg, p_element,
+			{"player_source": player_source})
 		shard._generation = 1
 		shard._ignore_rid = ignored
 		shard._life = SHARD_LIFE_TIME

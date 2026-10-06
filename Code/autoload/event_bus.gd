@@ -129,3 +129,7 @@ signal item_use_requested(item_id: String)
 
 ## 单件装备候选变化：背包提示/比较面板刷新，不自动打断战斗。
 signal equipment_offer_changed
+
+## 装备附加粒子仅由已确认的战斗事件触发。
+signal equipment_particles_requested(kind: String, position: Vector2, direction: Vector2)
+signal player_bolt_live_hit(root_id: String, paid_mp: float, mechanism_f: float, position: Vector2)
