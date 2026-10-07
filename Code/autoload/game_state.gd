@@ -22,7 +22,8 @@ const SAVE_DEBOUNCE := 2.0
 ## v15 增加三至六章；旧批次凭最小读取版本保护后续收据。
 ## v16 启用人物与区域故事；较早批次不能覆盖这些新增收据。
 ## v18 唯一装备实例、六槽、来源掉落、保底与溢出收据。
-const SAVE_VERSION := 18
+## v19 无分支团聚确认使用 conclude 证据；v18 读者只读保护，旧档原字节备份后升级。
+const SAVE_VERSION := 19
 const GearCatalog = preload("res://scripts/equipment/equipment_catalog.gd")
 const GearInventory = preload("res://scripts/equipment/equipment_inventory.gd")
 const GearDrops = preload("res://scripts/equipment/equipment_drops.gd")

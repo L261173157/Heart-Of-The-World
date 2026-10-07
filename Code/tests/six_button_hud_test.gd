@@ -137,7 +137,8 @@ func reading_contracts() -> void:
 	hud._open_dialogue({"kind": "info", "giver": "巡守", "text": "请阅读调查线索。"})
 	check(get_tree().paused and GameState.dialogue_open, "reading dialogue pauses")
 	check(not hud._dialogue_panel.get_node("PortraitFrame").visible and not hud._dialogue_faceset.visible, "dialogue without a portrait never shows an empty frame")
-	check(hud._dialogue_text.position.x == 32, "portrait-free dialogue reclaims its text column")
+	await settle()  # ScrollContainer 在布局帧定位正文；验证真实渲染位置而非旧父级下的瞬时坐标。
+	check(hud._dialogue_text_scroll.position.x == 32 and hud._dialogue_text.get_parent() == hud._dialogue_text_scroll and hud._dialogue_text.position.x == 0, "portrait-free dialogue reclaims its actual scrollable text column")
 	check(not TouchInput.consume_attack() and not TouchInput.consume_heal(), "dialogue flushes buffered combat inputs")
 	var mouse := InputEventMouseButton.new()
 	mouse.button_index = MOUSE_BUTTON_LEFT
@@ -498,9 +499,10 @@ func outpost_choice_text_layout_contract() -> void:
 		root.size = size
 		hud._open_dialogue(payload)
 		await settle()
-		var bottom: float = hud._dialogue_text.position.y + hud._dialogue_text.get_minimum_size().y
-		check(bottom <= hud._dialogue_option_scroll.position.y - 4, "最长真实生态说明在%s不覆盖分支卡片" % size)
-		check(hud._dialogue_text.text.contains("不能据此断言当前现场存量"), "精简文案仍明确目视知识边界")
+		var bottom: float = hud._dialogue_text_scroll.get_global_rect().end.y
+		check(hud._dialogue_text_scroll.clip_contents and bottom <= hud._dialogue_option_scroll.get_global_rect().position.y - 4, "最长真实生态说明的可见正文在%s不覆盖分支卡片" % size)
+		var text: String = hud._dialogue_text.text
+		check(text.contains("24只") and text.contains("可见") and text.contains("视野外") and text.contains("不清楚") and not text.contains("共有24"), "显示真实可见24只并明确视野外未知，不冒充现场总存量")
 		hud._close_dialogue()
 	root.size = Vector2(1280, 720)
 	GameState.outpost_quest = {}

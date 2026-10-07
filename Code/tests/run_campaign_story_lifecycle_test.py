@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""真实完成前两章后，独立进程验证双路线、后四章及两个互斥结局。"""
+"""真实完成前两章后，独立进程验证双路线、后四章及唯一团聚终局。"""
 from __future__ import annotations
 
 import json
@@ -81,25 +81,19 @@ def main() -> int:
         restore(save, before_finale)
         if not run_story(godot, project, env, "c6_prepare_empty"):
             return 1
-        undecided = snapshot(save)
-        endings: dict[str, dict] = {}
-        for ending in ("distributed", "centralized"):
-            restore(save, undecided)
-            if not run_story(godot, project, env, "ending_" + ending):
-                return 1
-            endings[ending] = json.loads(save.read_bytes())
-            q = endings[ending]["campaign_quest"]["quests"]["watch_c6_lava:s4"]
-            if q.get("choice") != ending or not q.get("receipt", {}).get("paid"):
-                print("FAIL ending choice and one-time paid receipt were not persisted together")
-                return 1
-            before = save.read_bytes()
-            if not run_story(godot, project, env, "read_ending"):
-                return 1
-            if save.read_bytes() != before:
-                print("FAIL read-only cold ending verification changed saved rewards")
-                return 1
-        if endings["distributed"]["outpost_quest"] != endings["centralized"]["outpost_quest"]:
-            print("FAIL alternate endings changed the original chapter 1 contract")
+        if not run_story(godot, project, env, "ending_reunion"):
+            return 1
+        state = json.loads(save.read_bytes())["campaign_quest"]
+        q = state["quests"]["watch_c6_lava:s4"]
+        conclusion = q.get("evidence", {}).get("watch_c6_lava:s4:ending", {})
+        if state.get("ending") != "reunion" or q.get("choice") or conclusion.get("kind") != "conclude" or "choice" in conclusion or not q.get("receipt", {}).get("paid"):
+            print("FAIL single conclusion evidence and one-time paid receipt were not persisted together")
+            return 1
+        before = save.read_bytes()
+        if not run_story(godot, project, env, "read_ending"):
+            return 1
+        if save.read_bytes() != before:
+            print("FAIL read-only cold ending verification changed saved rewards")
             return 1
         print("=== CAMPAIGN STORY LIFECYCLE PASS ===", flush=True)
     return 0

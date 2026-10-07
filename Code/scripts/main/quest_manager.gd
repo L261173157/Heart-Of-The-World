@@ -83,22 +83,60 @@ func offer(landmark_id: String, quest_kind: String, giver: String) -> Dictionary
 		var view := Presentation.snapshot(q)
 		if view["ui_state"] == "claimable":
 			return {"kind": "claim", "state": "claimable", "quest": view,
-				"confirm_text": "交付领奖", "text": "材料已齐：%s（%d/%d）。交付后获得%s，确认交付吗？" % [
-					q["title"], q["progress"], q["need"], view["ui_reward"]]}
-		return {"kind": "info", "state": "in_progress",
-			"text": "进行中：%s（%d/%d）\n%s" % [q["title"], q["progress"], q["need"], view["ui_objective"]]}
+				"confirm_text": "交付材料", "text": "正是我等的这些。愿意把%s×%d交给我吗？报酬给你备好了。\n报酬：%s" % [
+					ItemCatalog.name_of(str(q.get("item", ""))), q["need"], view["ui_reward"]]}
+		return {"kind": "info", "state": "in_progress", "text": _npc_progress(q, view), "questions": _npc_questions(q), "rules": _npc_rules(q)}
 	if data["active"].size() >= MAX_ACTIVE:
-		return {"kind": "info", "state": "unavailable", "text": "任务栏已满（最多 %d 个），先完成几单吧" % MAX_ACTIVE}
+		return {"kind": "info", "state": "unavailable", "text": "你已经应下%d件事了。先把手头的忙完，我这边不催。" % MAX_ACTIVE}
 	var quest := _gen_quest(landmark_id, quest_kind, giver)
 	if quest.is_empty():
-		return {"kind": "info", "state": "unavailable", "text": "眼下没有合适的委托…"}
+		return {"kind": "info", "state": "unavailable", "text": "眼下没什么适合托付的事。路上多留心，别为我白跑。"}
 	var receipt: Dictionary = data.get("receipts", {}).get(landmark_id, {})
-	var previous := "上次委托已领奖。\n" if not receipt.is_empty() else ""
+	var previous := "上回多亏你了，报酬你已领过。\n" if not receipt.is_empty() else ""
 	return {"kind": "quest", "state": "completed" if not receipt.is_empty() else "available",
-		"quest": quest, "confirm_text": "接取委托",
-		"text": previous + "可接：%s\n奖励：%s。%s，接下吗？" % [
-			quest["title"], Presentation.reward(quest),
-			"收齐后回来交付" if Presentation.requires_claim(quest) else "达成自动领奖"]}
+		"quest": quest, "confirm_text": "我来帮忙",
+		"text": previous + _npc_request(quest), "questions": _npc_questions(quest), "rules": _npc_rules(quest)}
+
+
+## 日常委托仍消费原有目标与数值；居民只说自己托付的事，领取规则另列。
+func _npc_request(quest: Dictionary) -> String:
+	var need := int(quest.get("need", 0))
+	var giver := str(quest.get("giver", ""))
+	var text := ""
+	match str(quest.get("kind", "")):
+		"hunt":
+			text = "这附近的%s还得留心。我想请你处理%d只，够了就收手，别追着把整片猎场清空。" % [quest.get("species", ""), need]
+		"ransack":
+			text = "巢区挤着来路，我想请你捣毁%d处巢穴，给调查遗迹留一点空隙。它们往后还可能重建，经过时仍要小心。" % need
+		"collect":
+			text = "手边还缺%s×%d。你若找到了，先收好，再带回来交给我；这份材料的报酬我会备着。" % [ItemCatalog.name_of(str(quest.get("item", ""))), need]
+		_:
+			text = "我望得见近处，却看不清更远的路。替我找%d处还没发现过的地标，让这张图少留些空白。" % need if "瞭望" in giver or "了望" in giver else "泉边总有人问前面的路。你若能找到%d处还没发现过的地标，往后来的人也能多认一点方向。" % need
+	return text
+
+
+func _npc_progress(quest: Dictionary, _view: Dictionary) -> String:
+	if quest.get("settlement_blocked", false): return "答应的事你已经做完了。报酬暂时还没能交到你手上，先替你留着。"
+	var progress := int(quest.get("progress", 0))
+	var need := int(quest.get("need", 1))
+	var text := ""
+	match str(quest.get("kind", "")):
+		"hunt": text = "已经处理%d只，还差%d只。若附近踪迹变了，先看清再动手。" % [progress, maxi(0, need - progress)]
+		"ransack": text = "已经捣毁%d处，还剩%d处。留心巢区，别被围住了。" % [progress, maxi(0, need - progress)]
+		"collect": text = "目前凑到%d份，还差%d份。先放在你那里，齐了再交给我。" % [progress, maxi(0, need - progress)]
+		_: text = "已经添上%d处，还盼着另外%d处的消息。慢慢找，记住回来时的路。" % [progress, maxi(0, need - progress)]
+	return text
+
+
+func _npc_questions(quest: Dictionary) -> Array:
+	if quest.get("kind", "") != "hunt": return []
+	return [{"label": "去哪里找？", "answer": "先去%s看看。那是我能指给你的搜寻范围，到了再找%s的踪迹。" % [Presentation.hunt_area(quest), quest.get("species", "目标")]}]
+
+
+func _npc_rules(quest: Dictionary) -> String:
+	var policy := "收齐后回到委托人身旁，确认交付才扣除材料并领取报酬。" if Presentation.requires_claim(quest) else "达成后自动领取报酬，无需返回委托人。"
+	return "报酬：" + Presentation.reward(quest) + "\n" + policy + "\n" + Presentation.objective(quest)
+
 
 
 ## 确认接取（对话按"是"后调用）：offer 与 accept 分离保证生成确定性不漂移
@@ -403,7 +441,7 @@ func _on_track_requested(quest_id: String) -> void:
 		GameState._queue_save()
 		_push_hud()
 		return
-	if quest_id == Outpost.Data.ID and _outpost.is_active():
+	if quest_id == Outpost.Data.ID and (_outpost.is_active() or _outpost.guidance_pending()):
 		GameState.tracked_quest_id = quest_id
 		GameState._queue_save()
 		_push_hud()
@@ -603,7 +641,7 @@ func _push_hud() -> void:
 	var active: Array = GameState.quests["active"].duplicate()
 	if _camp != null and _camp.is_active():
 		active.append(_camp.snapshot())
-	if _outpost != null and _outpost.is_active():
+	if _outpost != null and (_outpost.is_active() or _outpost.guidance_pending()):
 		active.append(_outpost.snapshot())
 	if _campaign != null:
 		active.append_array(_campaign.snapshots())
@@ -682,7 +720,7 @@ func outpost_visual_state() -> Dictionary:
 func outpost_state() -> Dictionary:
 	return _outpost.visual_state()
 
-func legacy_camp_offer(giver: String = "营地巡守") -> Dictionary:
+func legacy_camp_offer(giver: String = "营地巡守周照") -> Dictionary:
 	var payload := _camp.offer(giver)
 	payload["back_action"] = "outpost:menu"
 	return payload

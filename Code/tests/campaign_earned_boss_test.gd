@@ -43,7 +43,7 @@ func _run() -> void:
 	elif args[0] == "read_complete":
 		_read_defeat()
 		_check(_campaign_data.ready(_cq(),C6+":s4"),"cold ordinary-build campaign retains all six chapters complete")
-		_verify_ending_world("distributed")
+		_verify_ending_world()
 	elif args[0] == "finish":
 		await _finish_story()
 	else:
@@ -377,7 +377,7 @@ func _finish_story() -> void:
 		await _ci(object_id)
 	_check(not _proof(C6+":s3",C6+":s3:core_order").is_empty(),"earned original Boss path physically unlocks core")
 	if not await _do_action(core[1]): return
-	await _ending("distributed")
+	await _ending()
 	print("EARNED_STORY_COMPLETE ",JSON.stringify({"ending":_cq().get("ending",{}),"level_after_legitimate_boss_xp":GameState.stats.level,"gold":GameState.gold,"inventory":GameState.inventory,"boss_kill":_cq().get("main_kills",{}).get("熔岩龟王",{})}))
 
 func _finish() -> void:

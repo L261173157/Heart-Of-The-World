@@ -159,7 +159,7 @@ func _test_legacy() -> void:
 		and _pending_total("gold-key") == pending_before, "实际委托同物品先扣再奖不会虚增溢出")
 
 func _test_camp_ledger() -> void:
-	_check(_qm.offer(Data.LANDMARK, "camp_ecology", "营地巡守")["kind"] == "info", "无真实世界目标不可在桌面生成有奖空单")
+	_check(_qm.offer(Data.LANDMARK, "camp_ecology", "营地巡守周照")["kind"] == "info", "无真实世界目标不可在桌面生成有奖空单")
 	_check(GameState.camp_quest.is_empty(), "仅打开NPC不创建调查证据")
 	var raw := {"id": Data.ID, "active": true, "stage": "act", "investigated": true, "choice": "hunt",
 		"target": {"region_id": "test", "species": "地精矿工", "pos": [3000, 3000]}, "kills": [10], "surveys": ["test|地精矿工"], "history": ["真实调查记录"]}
@@ -180,7 +180,7 @@ func _test_camp_ledger() -> void:
 	GameState.camp_quest["stage"] = "return"
 	GameState.camp_quest["outcome"] = "survey"
 	view = _qm._camp.snapshot()
-	_check(view["next_action"] == "返回营地巡守交付领奖" and view["target_title"] == "营地巡守" and view["step_progress"] == "待交付",
+	_check(view["next_action"] == "返回营地巡守周照交付领奖" and view["target_title"] == "营地巡守周照" and view["step_progress"] == "待交付",
 		"行动结束后结构化指引明确回到实际交付人")
 	GameState.inventory["onigiri"] = 99
 	var gold := GameState.gold

@@ -17,13 +17,13 @@ concurrency:
 jobs:
   headless:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: ${{ matrix.timeout || 35 }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - suite: quest_pickup_feedback
-            tests: reward_feedback,chest_transaction,pickup_affordance,quest_guidance_feedback
+            tests: campaign_lore_contract,campaign_narrative_contract,quest_narrative_ui,reward_feedback,chest_transaction,pickup_affordance,quest_guidance_feedback
           - suite: equipment_earned_budget
             tests: equipment_earned_budget
           - suite: equipment
@@ -48,6 +48,11 @@ jobs:
             tests: campaign_reward_contract,campaign_ledger,campaign_layout,campaign_acceptance,campaign_lifecycle
           - suite: campaign_story
             tests: campaign_story_lifecycle
+          - suite: campaign_reunion
+            tests: campaign_reunion_compatibility
+          - suite: campaign_complete_story
+            tests: campaign_complete_story
+            timeout: 90
           - suite: campaign_optional
             tests: campaign_optional_geometry,campaign_optional_placements,campaign_service_receipts,campaign_optional_adversarial
           - suite: campaign_optional_lifecycle
@@ -86,6 +91,12 @@ jobs:
           echo "GODOT=$RUNNER_TEMP/godot/Godot_v4.7-stable_linux.x86_64" >> "$GITHUB_ENV"
       - name: Run ${{ matrix.suite }} regressions
         run: python3 Code/tests/run_headless.py --only '${{ matrix.tests }}' --log-dir 'test-results/${{ matrix.suite }}'
+      - name: Render earned complete-story checkpoints
+        if: matrix.suite == 'campaign_complete_story'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          xvfb-run -a python3 Code/tests/run_campaign_complete_story_visual.py "$GODOT" --story-dir test-results/campaign_complete_story/campaign_complete_story --log-dir test-results/campaign_complete_story/rendered
       - name: Render equipment pixels and mobile layouts
         if: matrix.suite == 'equipment'
         run: |

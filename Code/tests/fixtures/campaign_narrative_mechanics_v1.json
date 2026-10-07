@@ -1,0 +1,3812 @@
+{
+  "source_tree": "24fa8381633150cc397ae631f050df2c0dca75bc",
+  "excluded_presentation_keys": [
+    "answer",
+    "consequence",
+    "label",
+    "objective",
+    "prompt",
+    "questions",
+    "risk",
+    "rules",
+    "text",
+    "title",
+    "verb"
+  ],
+  "chains": [
+    {
+      "id": "watch_c2_forest",
+      "terrain": "forest",
+      "family": "main",
+      "number": 2,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "watch_c2_forest:s1:herbalist",
+              "object": "c2:herbalist",
+              "kind": "talk",
+              "requires": [],
+              "stage": "watch_c2_forest:s1",
+              "chapter": "watch_c2_forest",
+              "chain": "watch_c2_forest"
+            },
+            {
+              "id": "watch_c2_forest:s1:old_pact",
+              "object": "c2:old_pact",
+              "kind": "read",
+              "requires": [
+                "watch_c2_forest:s1:herbalist"
+              ],
+              "stage": "watch_c2_forest:s1",
+              "chapter": "watch_c2_forest",
+              "chain": "watch_c2_forest"
+            }
+          ],
+          "id": "watch_c2_forest:s1",
+          "chain": "watch_c2_forest",
+          "chapter": "watch_c2_forest",
+          "family": "main",
+          "index": 0,
+          "terrain": "forest",
+          "previous": "",
+          "required": [
+            "watch_c2_forest:s1:herbalist",
+            "watch_c2_forest:s1:old_pact"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c2_forest:s2:route_marks",
+              "object": "c2:route_marks",
+              "kind": "read",
+              "requires": [],
+              "stage": "watch_c2_forest:s2",
+              "chapter": "watch_c2_forest",
+              "chain": "watch_c2_forest"
+            },
+            {
+              "id": "watch_c2_forest:s2:runes",
+              "object": "c2:forest_gate",
+              "kind": "puzzle",
+              "requires": [
+                "watch_c2_forest:s2:route_marks"
+              ],
+              "puzzle_order": [
+                "north",
+                "east",
+                "west"
+              ],
+              "puzzle_objects": [
+                "c2:rune_north",
+                "c2:rune_east",
+                "c2:rune_west"
+              ],
+              "opens": "c2:forest_gate",
+              "stage": "watch_c2_forest:s2",
+              "chapter": "watch_c2_forest",
+              "chain": "watch_c2_forest"
+            },
+            {
+              "id": "watch_c2_forest:s2:torn_record",
+              "object": "c2:torn_record",
+              "kind": "recover",
+              "requires": [
+                "watch_c2_forest:s2:runes"
+              ],
+              "stage": "watch_c2_forest:s2",
+              "chapter": "watch_c2_forest",
+              "chain": "watch_c2_forest"
+            }
+          ],
+          "id": "watch_c2_forest:s2",
+          "chain": "watch_c2_forest",
+          "chapter": "watch_c2_forest",
+          "family": "main",
+          "index": 1,
+          "terrain": "forest",
+          "previous": "watch_c2_forest:s1",
+          "required": [
+            "watch_c2_forest:s2:route_marks",
+            "watch_c2_forest:s2:runes",
+            "watch_c2_forest:s2:torn_record"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c2_forest:s3:liaison",
+              "object": "c2:liaison",
+              "kind": "talk",
+              "requires": [],
+              "stage": "watch_c2_forest:s3",
+              "chapter": "watch_c2_forest",
+              "chain": "watch_c2_forest"
+            },
+            {
+              "id": "watch_c2_forest:s3:aid_cache",
+              "object": "c2:aid_cache",
+              "kind": "recover",
+              "requires": [
+                "watch_c2_forest:s3:liaison"
+              ],
+              "quest_item": "c2:aid",
+              "stage": "watch_c2_forest:s3",
+              "chapter": "watch_c2_forest",
+              "chain": "watch_c2_forest"
+            },
+            {
+              "id": "watch_c2_forest:s3:rescue",
+              "object": "c2:liaison",
+              "kind": "rescue",
+              "requires": [
+                "watch_c2_forest:s3:aid_cache"
+              ],
+              "stage": "watch_c2_forest:s3",
+              "chapter": "watch_c2_forest",
+              "chain": "watch_c2_forest"
+            }
+          ],
+          "id": "watch_c2_forest:s3",
+          "chain": "watch_c2_forest",
+          "chapter": "watch_c2_forest",
+          "family": "main",
+          "index": 2,
+          "terrain": "forest",
+          "previous": "watch_c2_forest:s2",
+          "required": [
+            "watch_c2_forest:s3:liaison",
+            "watch_c2_forest:s3:aid_cache",
+            "watch_c2_forest:s3:rescue"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c2_forest:s4:signal_parts",
+              "object": "c2:signal_parts",
+              "kind": "recover",
+              "requires": [],
+              "quest_item": "c2:signal_parts",
+              "stage": "watch_c2_forest:s4",
+              "chapter": "watch_c2_forest",
+              "chain": "watch_c2_forest"
+            },
+            {
+              "id": "watch_c2_forest:s4:beacon",
+              "object": "c2:beacon",
+              "kind": "repair",
+              "requires": [
+                "watch_c2_forest:s4:signal_parts"
+              ],
+              "service": "forest_station",
+              "next_chapter": "watch_c3_swamp",
+              "stage": "watch_c2_forest:s4",
+              "chapter": "watch_c2_forest",
+              "chain": "watch_c2_forest"
+            }
+          ],
+          "id": "watch_c2_forest:s4",
+          "chain": "watch_c2_forest",
+          "chapter": "watch_c2_forest",
+          "family": "main",
+          "index": 3,
+          "terrain": "forest",
+          "previous": "watch_c2_forest:s3",
+          "required": [
+            "watch_c2_forest:s4:signal_parts",
+            "watch_c2_forest:s4:beacon"
+          ]
+        }
+      ],
+      "unlock_after": "",
+      "batch": 1
+    },
+    {
+      "id": "watch_c3_swamp",
+      "terrain": "swamp",
+      "family": "main",
+      "number": 3,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "watch_c3_swamp:s1:totem",
+              "object": "c3:totem_record",
+              "kind": "read",
+              "requires": [],
+              "stage": "watch_c3_swamp:s1",
+              "chapter": "watch_c3_swamp",
+              "chain": "watch_c3_swamp"
+            },
+            {
+              "id": "watch_c3_swamp:s1:shrine",
+              "object": "c3:shrine_record",
+              "kind": "read",
+              "requires": [
+                "watch_c3_swamp:s1:totem"
+              ],
+              "stage": "watch_c3_swamp:s1",
+              "chapter": "watch_c3_swamp",
+              "chain": "watch_c3_swamp"
+            },
+            {
+              "id": "watch_c3_swamp:s1:satchel",
+              "object": "c3:satchel",
+              "kind": "recover",
+              "requires": [
+                "watch_c3_swamp:s1:shrine"
+              ],
+              "quest_item": "c3:satchel_record",
+              "stage": "watch_c3_swamp:s1",
+              "chapter": "watch_c3_swamp",
+              "chain": "watch_c3_swamp"
+            }
+          ],
+          "id": "watch_c3_swamp:s1",
+          "chain": "watch_c3_swamp",
+          "chapter": "watch_c3_swamp",
+          "family": "main",
+          "index": 0,
+          "terrain": "swamp",
+          "previous": "",
+          "required": [
+            "watch_c3_swamp:s1:totem",
+            "watch_c3_swamp:s1:shrine",
+            "watch_c3_swamp:s1:satchel"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c3_swamp:s2:old_route",
+              "object": "c3:old_route",
+              "kind": "read",
+              "requires": [],
+              "stage": "watch_c3_swamp:s2",
+              "chapter": "watch_c3_swamp",
+              "chain": "watch_c3_swamp"
+            },
+            {
+              "id": "watch_c3_swamp:s2:route_near",
+              "object": "c3:route_near",
+              "kind": "observe",
+              "requires": [
+                "watch_c3_swamp:s2:old_route"
+              ],
+              "stage": "watch_c3_swamp:s2",
+              "chapter": "watch_c3_swamp",
+              "chain": "watch_c3_swamp"
+            },
+            {
+              "id": "watch_c3_swamp:s2:route_outer",
+              "object": "c3:route_outer",
+              "kind": "observe",
+              "requires": [
+                "watch_c3_swamp:s2:old_route"
+              ],
+              "stage": "watch_c3_swamp:s2",
+              "chapter": "watch_c3_swamp",
+              "chain": "watch_c3_swamp"
+            }
+          ],
+          "id": "watch_c3_swamp:s2",
+          "chain": "watch_c3_swamp",
+          "chapter": "watch_c3_swamp",
+          "family": "main",
+          "index": 1,
+          "terrain": "swamp",
+          "previous": "watch_c3_swamp:s1",
+          "required": [
+            "watch_c3_swamp:s2:old_route",
+            "watch_c3_swamp:s2:route_near",
+            "watch_c3_swamp:s2:route_outer"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c3_swamp:s3:route_choice",
+              "object": "c3:route_choice",
+              "kind": "choice",
+              "requires": [],
+              "choices": [
+                {
+                  "id": "near"
+                },
+                {
+                  "id": "outer"
+                }
+              ],
+              "stage": "watch_c3_swamp:s3",
+              "chapter": "watch_c3_swamp",
+              "chain": "watch_c3_swamp"
+            },
+            {
+              "id": "watch_c3_swamp:s3:reach",
+              "object": "c3:survivor",
+              "kind": "route",
+              "requires": [
+                "watch_c3_swamp:s3:route_choice"
+              ],
+              "routes": [
+                "near",
+                "outer"
+              ],
+              "route_by_choice": {
+                "near": [
+                  "c3:route_near",
+                  "c3:survivor"
+                ],
+                "outer": [
+                  "c3:route_outer",
+                  "c3:survivor"
+                ]
+              },
+              "stage": "watch_c3_swamp:s3",
+              "chapter": "watch_c3_swamp",
+              "chain": "watch_c3_swamp"
+            },
+            {
+              "id": "watch_c3_swamp:s3:aid",
+              "object": "c3:aid_cache",
+              "kind": "recover",
+              "requires": [
+                "watch_c3_swamp:s3:reach"
+              ],
+              "quest_item": "c3:aid",
+              "stage": "watch_c3_swamp:s3",
+              "chapter": "watch_c3_swamp",
+              "chain": "watch_c3_swamp"
+            },
+            {
+              "id": "watch_c3_swamp:s3:rescue",
+              "object": "c3:survivor",
+              "kind": "rescue",
+              "requires": [
+                "watch_c3_swamp:s3:aid"
+              ],
+              "stage": "watch_c3_swamp:s3",
+              "chapter": "watch_c3_swamp",
+              "chain": "watch_c3_swamp"
+            }
+          ],
+          "id": "watch_c3_swamp:s3",
+          "chain": "watch_c3_swamp",
+          "chapter": "watch_c3_swamp",
+          "family": "main",
+          "index": 2,
+          "terrain": "swamp",
+          "previous": "watch_c3_swamp:s2",
+          "required": [
+            "watch_c3_swamp:s3:route_choice",
+            "watch_c3_swamp:s3:reach",
+            "watch_c3_swamp:s3:aid",
+            "watch_c3_swamp:s3:rescue"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c3_swamp:s4:account",
+              "object": "c3:survivor",
+              "kind": "talk",
+              "requires": [],
+              "stage": "watch_c3_swamp:s4",
+              "chapter": "watch_c3_swamp",
+              "chain": "watch_c3_swamp"
+            },
+            {
+              "id": "watch_c3_swamp:s4:reply",
+              "object": "c3:reply_record",
+              "kind": "recover",
+              "requires": [
+                "watch_c3_swamp:s4:account"
+              ],
+              "quest_item": "c3:reply",
+              "stage": "watch_c3_swamp:s4",
+              "chapter": "watch_c3_swamp",
+              "chain": "watch_c3_swamp"
+            },
+            {
+              "id": "watch_c3_swamp:s4:beacon",
+              "object": "c3:beacon",
+              "kind": "repair",
+              "requires": [
+                "watch_c3_swamp:s4:reply"
+              ],
+              "service": "swamp_station",
+              "next_chapter": "watch_c4_hill",
+              "stage": "watch_c3_swamp:s4",
+              "chapter": "watch_c3_swamp",
+              "chain": "watch_c3_swamp"
+            }
+          ],
+          "id": "watch_c3_swamp:s4",
+          "chain": "watch_c3_swamp",
+          "chapter": "watch_c3_swamp",
+          "family": "main",
+          "index": 3,
+          "terrain": "swamp",
+          "previous": "watch_c3_swamp:s3",
+          "required": [
+            "watch_c3_swamp:s4:account",
+            "watch_c3_swamp:s4:reply",
+            "watch_c3_swamp:s4:beacon"
+          ]
+        }
+      ],
+      "unlock_after": "",
+      "batch": 2
+    },
+    {
+      "id": "watch_c4_hill",
+      "terrain": "hill",
+      "family": "main",
+      "number": 4,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "watch_c4_hill:s1:scholar",
+              "object": "c4:scholar",
+              "kind": "talk",
+              "requires": [],
+              "stage": "watch_c4_hill:s1",
+              "chapter": "watch_c4_hill",
+              "chain": "watch_c4_hill"
+            },
+            {
+              "id": "watch_c4_hill:s1:roster",
+              "object": "c4:roster",
+              "kind": "read",
+              "requires": [
+                "watch_c4_hill:s1:scholar"
+              ],
+              "stage": "watch_c4_hill:s1",
+              "chapter": "watch_c4_hill",
+              "chain": "watch_c4_hill"
+            }
+          ],
+          "id": "watch_c4_hill:s1",
+          "chain": "watch_c4_hill",
+          "chapter": "watch_c4_hill",
+          "family": "main",
+          "index": 0,
+          "terrain": "hill",
+          "previous": "",
+          "required": [
+            "watch_c4_hill:s1:scholar",
+            "watch_c4_hill:s1:roster"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c4_hill:s2:parts",
+              "object": "c4:winch_parts",
+              "kind": "recover",
+              "requires": [],
+              "quest_item": "c4:winch_parts",
+              "stage": "watch_c4_hill:s2",
+              "chapter": "watch_c4_hill",
+              "chain": "watch_c4_hill"
+            },
+            {
+              "id": "watch_c4_hill:s2:winch",
+              "object": "c4:winch",
+              "kind": "repair",
+              "requires": [
+                "watch_c4_hill:s2:parts"
+              ],
+              "opens": "c4:archive_gate",
+              "stage": "watch_c4_hill:s2",
+              "chapter": "watch_c4_hill",
+              "chain": "watch_c4_hill"
+            }
+          ],
+          "id": "watch_c4_hill:s2",
+          "chain": "watch_c4_hill",
+          "chapter": "watch_c4_hill",
+          "family": "main",
+          "index": 1,
+          "terrain": "hill",
+          "previous": "watch_c4_hill:s1",
+          "required": [
+            "watch_c4_hill:s2:parts",
+            "watch_c4_hill:s2:winch"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c4_hill:s3:fortress",
+              "object": "c4:fortress_record",
+              "kind": "read",
+              "requires": [],
+              "stage": "watch_c4_hill:s3",
+              "chapter": "watch_c4_hill",
+              "chain": "watch_c4_hill"
+            },
+            {
+              "id": "watch_c4_hill:s3:passage",
+              "object": "c4:bypass_control",
+              "kind": "encounter",
+              "requires": [
+                "watch_c4_hill:s3:fortress"
+              ],
+              "boss_species": "牛头王",
+              "choices": [
+                "defeated",
+                "bypass",
+                "absent"
+              ],
+              "opens": "c4:archive_gate",
+              "stage": "watch_c4_hill:s3",
+              "chapter": "watch_c4_hill",
+              "chain": "watch_c4_hill"
+            },
+            {
+              "id": "watch_c4_hill:s3:archive",
+              "object": "c4:archive",
+              "kind": "recover",
+              "requires": [
+                "watch_c4_hill:s3:passage"
+              ],
+              "quest_item": "c4:archive",
+              "stage": "watch_c4_hill:s3",
+              "chapter": "watch_c4_hill",
+              "chain": "watch_c4_hill"
+            }
+          ],
+          "id": "watch_c4_hill:s3",
+          "chain": "watch_c4_hill",
+          "chapter": "watch_c4_hill",
+          "family": "main",
+          "index": 2,
+          "terrain": "hill",
+          "previous": "watch_c4_hill:s2",
+          "required": [
+            "watch_c4_hill:s3:fortress",
+            "watch_c4_hill:s3:passage",
+            "watch_c4_hill:s3:archive"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c4_hill:s4:keeper",
+              "object": "c4:map_keeper",
+              "kind": "talk",
+              "requires": [],
+              "stage": "watch_c4_hill:s4",
+              "chapter": "watch_c4_hill",
+              "chain": "watch_c4_hill"
+            },
+            {
+              "id": "watch_c4_hill:s4:coordinates",
+              "object": "c4:snow_coordinates",
+              "kind": "recover",
+              "requires": [
+                "watch_c4_hill:s4:keeper"
+              ],
+              "quest_item": "c4:snow_coordinates",
+              "stage": "watch_c4_hill:s4",
+              "chapter": "watch_c4_hill",
+              "chain": "watch_c4_hill"
+            },
+            {
+              "id": "watch_c4_hill:s4:beacon",
+              "object": "c4:beacon",
+              "kind": "repair",
+              "requires": [
+                "watch_c4_hill:s4:coordinates"
+              ],
+              "service": "hill_station",
+              "next_chapter": "watch_c5_snow",
+              "stage": "watch_c4_hill:s4",
+              "chapter": "watch_c4_hill",
+              "chain": "watch_c4_hill"
+            }
+          ],
+          "id": "watch_c4_hill:s4",
+          "chain": "watch_c4_hill",
+          "chapter": "watch_c4_hill",
+          "family": "main",
+          "index": 3,
+          "terrain": "hill",
+          "previous": "watch_c4_hill:s3",
+          "required": [
+            "watch_c4_hill:s4:keeper",
+            "watch_c4_hill:s4:coordinates",
+            "watch_c4_hill:s4:beacon"
+          ]
+        }
+      ],
+      "unlock_after": "",
+      "batch": 2
+    },
+    {
+      "id": "watch_c5_snow",
+      "terrain": "snow",
+      "family": "main",
+      "number": 5,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "watch_c5_snow:s1:altar",
+              "object": "c5:altar_record",
+              "kind": "read",
+              "requires": [],
+              "stage": "watch_c5_snow:s1",
+              "chapter": "watch_c5_snow",
+              "chain": "watch_c5_snow"
+            },
+            {
+              "id": "watch_c5_snow:s1:ice",
+              "object": "c5:ice_barrier",
+              "kind": "obstacle",
+              "requires": [
+                "watch_c5_snow:s1:altar"
+              ],
+              "stage": "watch_c5_snow:s1",
+              "chapter": "watch_c5_snow",
+              "chain": "watch_c5_snow"
+            },
+            {
+              "id": "watch_c5_snow:s1:tablet",
+              "object": "c5:tablet",
+              "kind": "recover",
+              "requires": [
+                "watch_c5_snow:s1:ice"
+              ],
+              "quest_item": "c5:tablet",
+              "stage": "watch_c5_snow:s1",
+              "chapter": "watch_c5_snow",
+              "chain": "watch_c5_snow"
+            }
+          ],
+          "id": "watch_c5_snow:s1",
+          "chain": "watch_c5_snow",
+          "chapter": "watch_c5_snow",
+          "family": "main",
+          "index": 0,
+          "terrain": "snow",
+          "previous": "",
+          "required": [
+            "watch_c5_snow:s1:altar",
+            "watch_c5_snow:s1:ice",
+            "watch_c5_snow:s1:tablet"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c5_snow:s2:leader",
+              "object": "c5:leader",
+              "kind": "talk",
+              "requires": [],
+              "stage": "watch_c5_snow:s2",
+              "chapter": "watch_c5_snow",
+              "chain": "watch_c5_snow"
+            },
+            {
+              "id": "watch_c5_snow:s2:aid",
+              "object": "c5:aid_cache",
+              "kind": "recover",
+              "requires": [
+                "watch_c5_snow:s2:leader"
+              ],
+              "quest_item": "c5:aid",
+              "stage": "watch_c5_snow:s2",
+              "chapter": "watch_c5_snow",
+              "chain": "watch_c5_snow"
+            },
+            {
+              "id": "watch_c5_snow:s2:rescue",
+              "object": "c5:leader",
+              "kind": "rescue",
+              "requires": [
+                "watch_c5_snow:s2:aid"
+              ],
+              "stage": "watch_c5_snow:s2",
+              "chapter": "watch_c5_snow",
+              "chain": "watch_c5_snow"
+            }
+          ],
+          "id": "watch_c5_snow:s2",
+          "chain": "watch_c5_snow",
+          "chapter": "watch_c5_snow",
+          "family": "main",
+          "index": 1,
+          "terrain": "snow",
+          "previous": "watch_c5_snow:s1",
+          "required": [
+            "watch_c5_snow:s2:leader",
+            "watch_c5_snow:s2:aid",
+            "watch_c5_snow:s2:rescue"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c5_snow:s3:withdrawal",
+              "object": "c5:withdrawal_log",
+              "kind": "read",
+              "requires": [],
+              "stage": "watch_c5_snow:s3",
+              "chapter": "watch_c5_snow",
+              "chain": "watch_c5_snow"
+            },
+            {
+              "id": "watch_c5_snow:s3:route_log",
+              "object": "c5:route_log",
+              "kind": "read",
+              "requires": [],
+              "stage": "watch_c5_snow:s3",
+              "chapter": "watch_c5_snow",
+              "chain": "watch_c5_snow"
+            },
+            {
+              "id": "watch_c5_snow:s3:causality",
+              "object": "c5:evidence_board",
+              "kind": "puzzle",
+              "requires": [
+                "watch_c5_snow:s3:withdrawal",
+                "watch_c5_snow:s3:route_log"
+              ],
+              "puzzle_order": [
+                "split",
+                "withdrawal",
+                "lost"
+              ],
+              "stage": "watch_c5_snow:s3",
+              "chapter": "watch_c5_snow",
+              "chain": "watch_c5_snow"
+            }
+          ],
+          "id": "watch_c5_snow:s3",
+          "chain": "watch_c5_snow",
+          "chapter": "watch_c5_snow",
+          "family": "main",
+          "index": 2,
+          "terrain": "snow",
+          "previous": "watch_c5_snow:s2",
+          "required": [
+            "watch_c5_snow:s3:withdrawal",
+            "watch_c5_snow:s3:route_log",
+            "watch_c5_snow:s3:causality"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c5_snow:s4:plans",
+              "object": "c5:leader",
+              "kind": "talk",
+              "requires": [],
+              "stage": "watch_c5_snow:s4",
+              "chapter": "watch_c5_snow",
+              "chain": "watch_c5_snow"
+            },
+            {
+              "id": "watch_c5_snow:s4:coordinates",
+              "object": "c5:lava_coordinates",
+              "kind": "recover",
+              "requires": [
+                "watch_c5_snow:s4:plans"
+              ],
+              "quest_item": "c5:lava_coordinates",
+              "stage": "watch_c5_snow:s4",
+              "chapter": "watch_c5_snow",
+              "chain": "watch_c5_snow"
+            },
+            {
+              "id": "watch_c5_snow:s4:beacon",
+              "object": "c5:beacon",
+              "kind": "repair",
+              "requires": [
+                "watch_c5_snow:s4:coordinates"
+              ],
+              "service": "snow_station",
+              "next_chapter": "watch_c6_lava",
+              "stage": "watch_c5_snow:s4",
+              "chapter": "watch_c5_snow",
+              "chain": "watch_c5_snow"
+            }
+          ],
+          "id": "watch_c5_snow:s4",
+          "chain": "watch_c5_snow",
+          "chapter": "watch_c5_snow",
+          "family": "main",
+          "index": 3,
+          "terrain": "snow",
+          "previous": "watch_c5_snow:s3",
+          "required": [
+            "watch_c5_snow:s4:plans",
+            "watch_c5_snow:s4:coordinates",
+            "watch_c5_snow:s4:beacon"
+          ]
+        }
+      ],
+      "unlock_after": "",
+      "batch": 2
+    },
+    {
+      "id": "watch_c6_lava",
+      "terrain": "lava",
+      "family": "main",
+      "number": 6,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "watch_c6_lava:s1:hazard",
+              "object": "c6:hazard_record",
+              "kind": "read",
+              "requires": [],
+              "stage": "watch_c6_lava:s1",
+              "chapter": "watch_c6_lava",
+              "chain": "watch_c6_lava"
+            },
+            {
+              "id": "watch_c6_lava:s1:approach",
+              "object": "c6:route_approach",
+              "kind": "observe",
+              "requires": [
+                "watch_c6_lava:s1:hazard"
+              ],
+              "stage": "watch_c6_lava:s1",
+              "chapter": "watch_c6_lava",
+              "chain": "watch_c6_lava"
+            }
+          ],
+          "id": "watch_c6_lava:s1",
+          "chain": "watch_c6_lava",
+          "chapter": "watch_c6_lava",
+          "family": "main",
+          "index": 0,
+          "terrain": "lava",
+          "previous": "",
+          "required": [
+            "watch_c6_lava:s1:hazard",
+            "watch_c6_lava:s1:approach"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c6_lava:s2:fortress",
+              "object": "c6:fortress_record",
+              "kind": "read",
+              "requires": [],
+              "stage": "watch_c6_lava:s2",
+              "chapter": "watch_c6_lava",
+              "chain": "watch_c6_lava"
+            },
+            {
+              "id": "watch_c6_lava:s2:passage",
+              "object": "c6:bypass_control",
+              "kind": "encounter",
+              "requires": [
+                "watch_c6_lava:s2:fortress"
+              ],
+              "boss_species": "熔岩龟王",
+              "choices": [
+                "defeated",
+                "absent"
+              ],
+              "opens": "c6:core_gate",
+              "stage": "watch_c6_lava:s2",
+              "chapter": "watch_c6_lava",
+              "chain": "watch_c6_lava"
+            },
+            {
+              "id": "watch_c6_lava:s2:core_record",
+              "object": "c6:core_record",
+              "kind": "recover",
+              "requires": [
+                "watch_c6_lava:s2:passage"
+              ],
+              "quest_item": "c6:core_record",
+              "stage": "watch_c6_lava:s2",
+              "chapter": "watch_c6_lava",
+              "chain": "watch_c6_lava"
+            }
+          ],
+          "id": "watch_c6_lava:s2",
+          "chain": "watch_c6_lava",
+          "chapter": "watch_c6_lava",
+          "family": "main",
+          "index": 1,
+          "terrain": "lava",
+          "previous": "watch_c6_lava:s1",
+          "required": [
+            "watch_c6_lava:s2:fortress",
+            "watch_c6_lava:s2:passage",
+            "watch_c6_lava:s2:core_record"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c6_lava:s3:core_order",
+              "object": "c6:heart",
+              "kind": "puzzle",
+              "requires": [],
+              "puzzle_order": [
+                "west",
+                "east",
+                "center"
+              ],
+              "puzzle_objects": [
+                "c6:core_west",
+                "c6:core_east",
+                "c6:core_center"
+              ],
+              "stage": "watch_c6_lava:s3",
+              "chapter": "watch_c6_lava",
+              "chain": "watch_c6_lava"
+            },
+            {
+              "id": "watch_c6_lava:s3:activate",
+              "object": "c6:heart",
+              "kind": "repair",
+              "requires": [
+                "watch_c6_lava:s3:core_order"
+              ],
+              "service": "heart_station",
+              "stage": "watch_c6_lava:s3",
+              "chapter": "watch_c6_lava",
+              "chain": "watch_c6_lava"
+            }
+          ],
+          "id": "watch_c6_lava:s3",
+          "chain": "watch_c6_lava",
+          "chapter": "watch_c6_lava",
+          "family": "main",
+          "index": 2,
+          "terrain": "lava",
+          "previous": "watch_c6_lava:s2",
+          "required": [
+            "watch_c6_lava:s3:core_order",
+            "watch_c6_lava:s3:activate"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "watch_c6_lava:s4:ending",
+              "object": "c6:ending_council",
+              "kind": "choice",
+              "requires": [],
+              "choices": [
+                {
+                  "id": "distributed"
+                },
+                {
+                  "id": "centralized"
+                }
+              ],
+              "stage": "watch_c6_lava:s4",
+              "chapter": "watch_c6_lava",
+              "chain": "watch_c6_lava"
+            },
+            {
+              "id": "watch_c6_lava:s4:settle",
+              "object": "c6:beacon",
+              "kind": "repair",
+              "requires": [
+                "watch_c6_lava:s4:ending"
+              ],
+              "service": "ending_station",
+              "ending": true,
+              "stage": "watch_c6_lava:s4",
+              "chapter": "watch_c6_lava",
+              "chain": "watch_c6_lava"
+            }
+          ],
+          "id": "watch_c6_lava:s4",
+          "chain": "watch_c6_lava",
+          "chapter": "watch_c6_lava",
+          "family": "main",
+          "index": 3,
+          "terrain": "lava",
+          "previous": "watch_c6_lava:s3",
+          "required": [
+            "watch_c6_lava:s4:ending",
+            "watch_c6_lava:s4:settle"
+          ]
+        }
+      ],
+      "unlock_after": "",
+      "batch": 2
+    },
+    {
+      "id": "side_patrol",
+      "terrain": "plains",
+      "family": "side",
+      "number": 1,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "side_patrol:s1:request",
+              "object": "side_patrol:giver",
+              "kind": "talk",
+              "requires": [],
+              "stage": "side_patrol:s1",
+              "chapter": "",
+              "chain": "side_patrol"
+            },
+            {
+              "id": "side_patrol:s1:record",
+              "object": "side_patrol:record",
+              "kind": "read",
+              "requires": [
+                "side_patrol:s1:request"
+              ],
+              "stage": "side_patrol:s1",
+              "chapter": "",
+              "chain": "side_patrol"
+            },
+            {
+              "id": "side_patrol:s1:badge",
+              "object": "side_patrol:target",
+              "kind": "recover",
+              "requires": [
+                "side_patrol:s1:record"
+              ],
+              "quest_item": "side_patrol:badge",
+              "stage": "side_patrol:s1",
+              "chapter": "",
+              "chain": "side_patrol"
+            }
+          ],
+          "id": "side_patrol:s1",
+          "chain": "side_patrol",
+          "chapter": "",
+          "family": "side",
+          "index": 0,
+          "terrain": "plains",
+          "previous": "",
+          "required": [
+            "side_patrol:s1:request",
+            "side_patrol:s1:record",
+            "side_patrol:s1:badge"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "side_patrol:s2:station",
+              "object": "side_patrol:resolution",
+              "kind": "choice",
+              "requires": [],
+              "choices": [
+                {
+                  "id": "camp"
+                },
+                {
+                  "id": "forest"
+                }
+              ],
+              "stage": "side_patrol:s2",
+              "chapter": "",
+              "chain": "side_patrol"
+            },
+            {
+              "id": "side_patrol:s2:settle",
+              "object": "side_patrol:station_camp",
+              "kind": "repair",
+              "requires": [
+                "side_patrol:s2:station"
+              ],
+              "destination_by_choice": {
+                "camp": "side_patrol:station_camp",
+                "forest": "side_patrol:station_forest"
+              },
+              "service": "patrol_station",
+              "stage": "side_patrol:s2",
+              "chapter": "",
+              "chain": "side_patrol"
+            }
+          ],
+          "id": "side_patrol:s2",
+          "chain": "side_patrol",
+          "chapter": "",
+          "family": "side",
+          "index": 1,
+          "terrain": "plains",
+          "previous": "side_patrol:s1",
+          "required": [
+            "side_patrol:s2:station",
+            "side_patrol:s2:settle"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 3
+    },
+    {
+      "id": "side_herbalist",
+      "terrain": "forest",
+      "family": "side",
+      "number": 2,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "side_herbalist:s1:request",
+              "object": "side_herbalist:giver",
+              "kind": "talk",
+              "requires": [],
+              "stage": "side_herbalist:s1",
+              "chapter": "",
+              "chain": "side_herbalist"
+            },
+            {
+              "id": "side_herbalist:s1:record",
+              "object": "side_herbalist:record",
+              "kind": "read",
+              "requires": [
+                "side_herbalist:s1:request"
+              ],
+              "stage": "side_herbalist:s1",
+              "chapter": "",
+              "chain": "side_herbalist"
+            },
+            {
+              "id": "side_herbalist:s1:medicine",
+              "object": "side_herbalist:medicine",
+              "kind": "recover",
+              "requires": [
+                "side_herbalist:s1:record"
+              ],
+              "quest_item": "side_herbalist:medicine",
+              "stage": "side_herbalist:s1",
+              "chapter": "",
+              "chain": "side_herbalist"
+            }
+          ],
+          "id": "side_herbalist:s1",
+          "chain": "side_herbalist",
+          "chapter": "",
+          "family": "side",
+          "index": 0,
+          "terrain": "forest",
+          "previous": "",
+          "required": [
+            "side_herbalist:s1:request",
+            "side_herbalist:s1:record",
+            "side_herbalist:s1:medicine"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "side_herbalist:s2:purpose",
+              "object": "side_herbalist:resolution",
+              "kind": "choice",
+              "requires": [],
+              "choices": [
+                {
+                  "id": "patient"
+                },
+                {
+                  "id": "reserve"
+                }
+              ],
+              "stage": "side_herbalist:s2",
+              "chapter": "",
+              "chain": "side_herbalist"
+            },
+            {
+              "id": "side_herbalist:s2:deliver",
+              "object": "side_herbalist:patient",
+              "kind": "deliver",
+              "requires": [
+                "side_herbalist:s2:purpose"
+              ],
+              "destination_by_choice": {
+                "patient": "side_herbalist:patient",
+                "reserve": "side_herbalist:station_reserve"
+              },
+              "consumes": "side_herbalist:medicine",
+              "service": "herbalist_reserve",
+              "service_choices": [
+                "reserve"
+              ],
+              "stage": "side_herbalist:s2",
+              "chapter": "",
+              "chain": "side_herbalist"
+            }
+          ],
+          "id": "side_herbalist:s2",
+          "chain": "side_herbalist",
+          "chapter": "",
+          "family": "side",
+          "index": 1,
+          "terrain": "forest",
+          "previous": "side_herbalist:s1",
+          "required": [
+            "side_herbalist:s2:purpose",
+            "side_herbalist:s2:deliver"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 3
+    },
+    {
+      "id": "side_hunter",
+      "terrain": "plains",
+      "family": "side",
+      "number": 3,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "side_hunter:s1:request",
+              "object": "side_hunter:giver",
+              "kind": "talk",
+              "requires": [],
+              "stage": "side_hunter:s1",
+              "chapter": "",
+              "chain": "side_hunter"
+            },
+            {
+              "id": "side_hunter:s1:book",
+              "object": "side_hunter:record",
+              "kind": "read",
+              "requires": [
+                "side_hunter:s1:request"
+              ],
+              "stage": "side_hunter:s1",
+              "chapter": "",
+              "chain": "side_hunter"
+            },
+            {
+              "id": "side_hunter:s1:survey",
+              "object": "side_hunter:target",
+              "kind": "observe",
+              "requires": [
+                "side_hunter:s1:book"
+              ],
+              "ecology_mode": "hunter_counts",
+              "stage": "side_hunter:s1",
+              "chapter": "",
+              "chain": "side_hunter"
+            }
+          ],
+          "id": "side_hunter:s1",
+          "chain": "side_hunter",
+          "chapter": "",
+          "family": "side",
+          "index": 0,
+          "terrain": "plains",
+          "previous": "",
+          "required": [
+            "side_hunter:s1:request",
+            "side_hunter:s1:book",
+            "side_hunter:s1:survey"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "side_hunter:s2:choice",
+              "object": "side_hunter:resolution",
+              "kind": "choice",
+              "requires": [],
+              "choices": [
+                {
+                  "id": "local"
+                },
+                {
+                  "id": "warning"
+                }
+              ],
+              "stage": "side_hunter:s2",
+              "chapter": "",
+              "chain": "side_hunter"
+            },
+            {
+              "id": "side_hunter:s2:result",
+              "object": "side_hunter:warning_sign",
+              "kind": "ecology",
+              "requires": [
+                "side_hunter:s2:choice"
+              ],
+              "destination_by_choice": {
+                "local": "side_hunter:target",
+                "warning": "side_hunter:warning_sign"
+              },
+              "ecology_mode": "hunter_resolution",
+              "stage": "side_hunter:s2",
+              "chapter": "",
+              "chain": "side_hunter"
+            }
+          ],
+          "id": "side_hunter:s2",
+          "chain": "side_hunter",
+          "chapter": "",
+          "family": "side",
+          "index": 1,
+          "terrain": "plains",
+          "previous": "side_hunter:s1",
+          "required": [
+            "side_hunter:s2:choice",
+            "side_hunter:s2:result"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 3
+    },
+    {
+      "id": "side_scholar",
+      "terrain": "hill",
+      "family": "side",
+      "number": 4,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "side_scholar:s1:request",
+              "object": "side_scholar:giver",
+              "kind": "talk",
+              "requires": [],
+              "stage": "side_scholar:s1",
+              "chapter": "",
+              "chain": "side_scholar"
+            },
+            {
+              "id": "side_scholar:s1:inscription",
+              "object": "side_scholar:record",
+              "kind": "read",
+              "requires": [
+                "side_scholar:s1:request"
+              ],
+              "stage": "side_scholar:s1",
+              "chapter": "",
+              "chain": "side_scholar"
+            },
+            {
+              "id": "side_scholar:s1:rubbing",
+              "object": "side_scholar:target",
+              "kind": "recover",
+              "requires": [
+                "side_scholar:s1:inscription"
+              ],
+              "quest_item": "side_scholar:rubbing",
+              "stage": "side_scholar:s1",
+              "chapter": "",
+              "chain": "side_scholar"
+            }
+          ],
+          "id": "side_scholar:s1",
+          "chain": "side_scholar",
+          "chapter": "",
+          "family": "side",
+          "index": 0,
+          "terrain": "hill",
+          "previous": "",
+          "required": [
+            "side_scholar:s1:request",
+            "side_scholar:s1:inscription",
+            "side_scholar:s1:rubbing"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "side_scholar:s2:choice",
+              "object": "side_scholar:resolution",
+              "kind": "choice",
+              "requires": [],
+              "choices": [
+                {
+                  "id": "preserve"
+                },
+                {
+                  "id": "component"
+                }
+              ],
+              "stage": "side_scholar:s2",
+              "chapter": "",
+              "chain": "side_scholar"
+            },
+            {
+              "id": "side_scholar:s2:resolve",
+              "object": "side_scholar:record",
+              "kind": "repair",
+              "requires": [
+                "side_scholar:s2:choice"
+              ],
+              "destination_by_choice": {
+                "preserve": "side_scholar:record",
+                "component": "side_scholar:shortcut_gate"
+              },
+              "opens_choice": {
+                "component": "side_scholar:shortcut_gate"
+              },
+              "stage": "side_scholar:s2",
+              "chapter": "",
+              "chain": "side_scholar"
+            }
+          ],
+          "id": "side_scholar:s2",
+          "chain": "side_scholar",
+          "chapter": "",
+          "family": "side",
+          "index": 1,
+          "terrain": "hill",
+          "previous": "side_scholar:s1",
+          "required": [
+            "side_scholar:s2:choice",
+            "side_scholar:s2:resolve"
+          ]
+        }
+      ],
+      "unlock_after": "watch_c3_swamp",
+      "batch": 3
+    },
+    {
+      "id": "side_merchant",
+      "terrain": "swamp",
+      "family": "side",
+      "number": 5,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "side_merchant:s1:request",
+              "object": "side_merchant:giver",
+              "kind": "talk",
+              "requires": [],
+              "stage": "side_merchant:s1",
+              "chapter": "",
+              "chain": "side_merchant"
+            },
+            {
+              "id": "side_merchant:s1:waybill",
+              "object": "side_merchant:record",
+              "kind": "read",
+              "requires": [
+                "side_merchant:s1:request"
+              ],
+              "stage": "side_merchant:s1",
+              "chapter": "",
+              "chain": "side_merchant"
+            },
+            {
+              "id": "side_merchant:s1:crate",
+              "object": "side_merchant:crate",
+              "kind": "recover",
+              "requires": [
+                "side_merchant:s1:waybill"
+              ],
+              "quest_item": "side_merchant:crate",
+              "stage": "side_merchant:s1",
+              "chapter": "",
+              "chain": "side_merchant"
+            }
+          ],
+          "id": "side_merchant:s1",
+          "chain": "side_merchant",
+          "chapter": "",
+          "family": "side",
+          "index": 0,
+          "terrain": "swamp",
+          "previous": "",
+          "required": [
+            "side_merchant:s1:request",
+            "side_merchant:s1:waybill",
+            "side_merchant:s1:crate"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "side_merchant:s2:destination",
+              "object": "side_merchant:resolution",
+              "kind": "choice",
+              "requires": [],
+              "choices": [
+                {
+                  "id": "near"
+                },
+                {
+                  "id": "outer"
+                }
+              ],
+              "stage": "side_merchant:s2",
+              "chapter": "",
+              "chain": "side_merchant"
+            },
+            {
+              "id": "side_merchant:s2:deliver",
+              "object": "side_merchant:station_near",
+              "kind": "deliver",
+              "requires": [
+                "side_merchant:s2:destination"
+              ],
+              "destination_by_choice": {
+                "near": "side_merchant:station_near",
+                "outer": "side_merchant:station_outer"
+              },
+              "consumes": "side_merchant:crate",
+              "service": "merchant_station",
+              "stage": "side_merchant:s2",
+              "chapter": "",
+              "chain": "side_merchant"
+            }
+          ],
+          "id": "side_merchant:s2",
+          "chain": "side_merchant",
+          "chapter": "",
+          "family": "side",
+          "index": 1,
+          "terrain": "swamp",
+          "previous": "side_merchant:s1",
+          "required": [
+            "side_merchant:s2:destination",
+            "side_merchant:s2:deliver"
+          ]
+        }
+      ],
+      "unlock_after": "watch_c2_forest",
+      "batch": 3
+    },
+    {
+      "id": "side_watchman",
+      "terrain": "hill",
+      "family": "side",
+      "number": 6,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "side_watchman:s1:request",
+              "object": "side_watchman:giver",
+              "kind": "talk",
+              "requires": [],
+              "stage": "side_watchman:s1",
+              "chapter": "",
+              "chain": "side_watchman"
+            },
+            {
+              "id": "side_watchman:s1:record",
+              "object": "side_watchman:record",
+              "kind": "read",
+              "requires": [
+                "side_watchman:s1:request"
+              ],
+              "stage": "side_watchman:s1",
+              "chapter": "",
+              "chain": "side_watchman"
+            },
+            {
+              "id": "side_watchman:s1:sight",
+              "object": "side_watchman:target",
+              "kind": "observe",
+              "requires": [
+                "side_watchman:s1:record"
+              ],
+              "ecology_mode": "watch_sight",
+              "stage": "side_watchman:s1",
+              "chapter": "",
+              "chain": "side_watchman"
+            }
+          ],
+          "id": "side_watchman:s1",
+          "chain": "side_watchman",
+          "chapter": "",
+          "family": "side",
+          "index": 0,
+          "terrain": "hill",
+          "previous": "",
+          "required": [
+            "side_watchman:s1:request",
+            "side_watchman:s1:record",
+            "side_watchman:s1:sight"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "side_watchman:s2:choice",
+              "object": "side_watchman:resolution",
+              "kind": "choice",
+              "requires": [],
+              "choices": [
+                {
+                  "id": "near"
+                },
+                {
+                  "id": "high"
+                }
+              ],
+              "stage": "side_watchman:s2",
+              "chapter": "",
+              "chain": "side_watchman"
+            },
+            {
+              "id": "side_watchman:s2:flag",
+              "object": "side_watchman:watch_near",
+              "kind": "repair",
+              "requires": [
+                "side_watchman:s2:choice"
+              ],
+              "destination_by_choice": {
+                "near": "side_watchman:watch_near",
+                "high": "side_watchman:watch_high"
+              },
+              "service": "watchman_station",
+              "stage": "side_watchman:s2",
+              "chapter": "",
+              "chain": "side_watchman"
+            }
+          ],
+          "id": "side_watchman:s2",
+          "chain": "side_watchman",
+          "chapter": "",
+          "family": "side",
+          "index": 1,
+          "terrain": "hill",
+          "previous": "side_watchman:s1",
+          "required": [
+            "side_watchman:s2:choice",
+            "side_watchman:s2:flag"
+          ]
+        }
+      ],
+      "unlock_after": "watch_c3_swamp",
+      "batch": 3
+    },
+    {
+      "id": "side_letter",
+      "terrain": "snow",
+      "family": "side",
+      "number": 7,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "side_letter:s1:request",
+              "object": "side_letter:giver",
+              "kind": "talk",
+              "requires": [],
+              "stage": "side_letter:s1",
+              "chapter": "",
+              "chain": "side_letter"
+            },
+            {
+              "id": "side_letter:s1:record",
+              "object": "side_letter:record",
+              "kind": "read",
+              "requires": [
+                "side_letter:s1:request"
+              ],
+              "stage": "side_letter:s1",
+              "chapter": "",
+              "chain": "side_letter"
+            },
+            {
+              "id": "side_letter:s1:case",
+              "object": "side_letter:letter_case",
+              "kind": "recover",
+              "requires": [
+                "side_letter:s1:record"
+              ],
+              "quest_item": "side_letter:letter",
+              "stage": "side_letter:s1",
+              "chapter": "",
+              "chain": "side_letter"
+            }
+          ],
+          "id": "side_letter:s1",
+          "chain": "side_letter",
+          "chapter": "",
+          "family": "side",
+          "index": 0,
+          "terrain": "snow",
+          "previous": "",
+          "required": [
+            "side_letter:s1:request",
+            "side_letter:s1:record",
+            "side_letter:s1:case"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "side_letter:s2:recipient",
+              "object": "side_letter:recipient",
+              "kind": "talk",
+              "requires": [],
+              "stage": "side_letter:s2",
+              "chapter": "",
+              "chain": "side_letter"
+            },
+            {
+              "id": "side_letter:s2:deliver",
+              "object": "side_letter:recipient",
+              "kind": "deliver",
+              "requires": [
+                "side_letter:s2:recipient"
+              ],
+              "consumes": "side_letter:letter",
+              "stage": "side_letter:s2",
+              "chapter": "",
+              "chain": "side_letter"
+            },
+            {
+              "id": "side_letter:s2:reply",
+              "object": "side_letter:resolution",
+              "kind": "read",
+              "requires": [
+                "side_letter:s2:deliver"
+              ],
+              "stage": "side_letter:s2",
+              "chapter": "",
+              "chain": "side_letter"
+            }
+          ],
+          "id": "side_letter:s2",
+          "chain": "side_letter",
+          "chapter": "",
+          "family": "side",
+          "index": 1,
+          "terrain": "snow",
+          "previous": "side_letter:s1",
+          "required": [
+            "side_letter:s2:recipient",
+            "side_letter:s2:deliver",
+            "side_letter:s2:reply"
+          ]
+        }
+      ],
+      "unlock_after": "watch_c4_hill",
+      "batch": 3
+    },
+    {
+      "id": "side_troll",
+      "terrain": "forest",
+      "family": "side",
+      "number": 8,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "side_troll:s1:request",
+              "object": "side_troll:giver",
+              "kind": "talk",
+              "requires": [],
+              "stage": "side_troll:s1",
+              "chapter": "",
+              "chain": "side_troll"
+            },
+            {
+              "id": "side_troll:s1:flag",
+              "object": "side_troll:record",
+              "kind": "read",
+              "requires": [
+                "side_troll:s1:request"
+              ],
+              "stage": "side_troll:s1",
+              "chapter": "",
+              "chain": "side_troll"
+            },
+            {
+              "id": "side_troll:s1:site",
+              "object": "side_troll:target",
+              "kind": "observe",
+              "requires": [
+                "side_troll:s1:flag"
+              ],
+              "ecology_mode": "troll_state",
+              "stage": "side_troll:s1",
+              "chapter": "",
+              "chain": "side_troll"
+            },
+            {
+              "id": "side_troll:s1:challenge",
+              "object": "side_troll:target",
+              "kind": "boss",
+              "requires": [
+                "side_troll:s1:site"
+              ],
+              "optional": true,
+              "boss_species": "巨魔王",
+              "stage": "side_troll:s1",
+              "chapter": "",
+              "chain": "side_troll"
+            }
+          ],
+          "id": "side_troll:s1",
+          "chain": "side_troll",
+          "chapter": "",
+          "family": "side",
+          "index": 0,
+          "terrain": "forest",
+          "previous": "",
+          "required": [
+            "side_troll:s1:request",
+            "side_troll:s1:flag",
+            "side_troll:s1:site"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "side_troll:s2:runes",
+              "object": "side_troll:room_runes",
+              "kind": "puzzle",
+              "requires": [],
+              "puzzle_order": [
+                "leaf",
+                "stone",
+                "lamp"
+              ],
+              "puzzle_objects": [
+                "side_troll:rune_leaf",
+                "side_troll:rune_stone",
+                "side_troll:rune_lamp"
+              ],
+              "opens": "side_troll:room_gate",
+              "stage": "side_troll:s2",
+              "chapter": "",
+              "chain": "side_troll"
+            },
+            {
+              "id": "side_troll:s2:record",
+              "object": "side_troll:room_record",
+              "kind": "recover",
+              "requires": [
+                "side_troll:s2:runes"
+              ],
+              "quest_item": "side_troll:room_record",
+              "stage": "side_troll:s2",
+              "chapter": "",
+              "chain": "side_troll"
+            }
+          ],
+          "id": "side_troll:s2",
+          "chain": "side_troll",
+          "chapter": "",
+          "family": "side",
+          "index": 1,
+          "terrain": "forest",
+          "previous": "side_troll:s1",
+          "required": [
+            "side_troll:s2:runes",
+            "side_troll:s2:record"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 3
+    },
+    {
+      "id": "region_plains",
+      "terrain": "plains",
+      "family": "regional",
+      "number": 1,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "region_plains:s1:near",
+              "object": "region_plains:survey_a",
+              "kind": "read",
+              "requires": [],
+              "stage": "region_plains:s1",
+              "chapter": "",
+              "chain": "region_plains"
+            },
+            {
+              "id": "region_plains:s1:outer",
+              "object": "region_plains:survey_b",
+              "kind": "observe",
+              "requires": [],
+              "stage": "region_plains:s1",
+              "chapter": "",
+              "chain": "region_plains"
+            }
+          ],
+          "id": "region_plains:s1",
+          "chain": "region_plains",
+          "chapter": "",
+          "family": "regional",
+          "index": 0,
+          "terrain": "plains",
+          "previous": "",
+          "required": [
+            "region_plains:s1:near",
+            "region_plains:s1:outer"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "region_plains:s2:choice",
+              "object": "region_plains:choice",
+              "kind": "choice",
+              "requires": [],
+              "choices": [
+                {
+                  "id": "near"
+                },
+                {
+                  "id": "outer"
+                }
+              ],
+              "stage": "region_plains:s2",
+              "chapter": "",
+              "chain": "region_plains"
+            },
+            {
+              "id": "region_plains:s2:work",
+              "object": "region_plains:work_near",
+              "kind": "repair",
+              "requires": [
+                "region_plains:s2:choice"
+              ],
+              "destination_by_choice": {
+                "near": "region_plains:work_near",
+                "outer": "region_plains:work_outer"
+              },
+              "stage": "region_plains:s2",
+              "chapter": "",
+              "chain": "region_plains"
+            }
+          ],
+          "id": "region_plains:s2",
+          "chain": "region_plains",
+          "chapter": "",
+          "family": "regional",
+          "index": 1,
+          "terrain": "plains",
+          "previous": "region_plains:s1",
+          "required": [
+            "region_plains:s2:choice",
+            "region_plains:s2:work"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "region_plains:s3:walk",
+              "object": "region_plains:station",
+              "kind": "route",
+              "requires": [],
+              "route_corner_count_by_choice": {
+                "near": 2,
+                "outer": 4
+              },
+              "choice_stage": "region_plains:s2",
+              "routes": [
+                "near",
+                "outer"
+              ],
+              "route_by_choice": {
+                "near": [
+                  "region_plains:work_near",
+                  "region_plains:station"
+                ],
+                "outer": [
+                  "region_plains:work_outer",
+                  "region_plains:station"
+                ]
+              },
+              "stage": "region_plains:s3",
+              "chapter": "",
+              "chain": "region_plains"
+            },
+            {
+              "id": "region_plains:s3:station",
+              "object": "region_plains:station",
+              "kind": "repair",
+              "requires": [
+                "region_plains:s3:walk"
+              ],
+              "service": "region_plains_station",
+              "choice_stage": "region_plains:s2",
+              "service_endpoints_by_choice": {
+                "near": [
+                  "region_plains:station"
+                ],
+                "outer": [
+                  "region_plains:station",
+                  "region_plains:work_outer"
+                ]
+              },
+              "stage": "region_plains:s3",
+              "chapter": "",
+              "chain": "region_plains"
+            }
+          ],
+          "id": "region_plains:s3",
+          "chain": "region_plains",
+          "chapter": "",
+          "family": "regional",
+          "index": 2,
+          "terrain": "plains",
+          "previous": "region_plains:s2",
+          "required": [
+            "region_plains:s3:walk",
+            "region_plains:s3:station"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 3
+    },
+    {
+      "id": "region_forest",
+      "terrain": "forest",
+      "family": "regional",
+      "number": 2,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "region_forest:s1:clue",
+              "object": "region_forest:guide",
+              "kind": "talk",
+              "requires": [],
+              "ecology_mode": "nest_clue",
+              "stage": "region_forest:s1",
+              "chapter": "",
+              "chain": "region_forest"
+            },
+            {
+              "id": "region_forest:s1:nest",
+              "object": "region_forest:survey_a",
+              "kind": "observe",
+              "requires": [
+                "region_forest:s1:clue"
+              ],
+              "ecology_mode": "nest_survey",
+              "stage": "region_forest:s1",
+              "chapter": "",
+              "chain": "region_forest"
+            },
+            {
+              "id": "region_forest:s1:trail",
+              "object": "region_forest:survey_b",
+              "kind": "observe",
+              "requires": [],
+              "stage": "region_forest:s1",
+              "chapter": "",
+              "chain": "region_forest"
+            }
+          ],
+          "id": "region_forest:s1",
+          "chain": "region_forest",
+          "chapter": "",
+          "family": "regional",
+          "index": 0,
+          "terrain": "forest",
+          "previous": "",
+          "required": [
+            "region_forest:s1:clue",
+            "region_forest:s1:nest",
+            "region_forest:s1:trail"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "region_forest:s2:choice",
+              "object": "region_forest:choice",
+              "kind": "choice",
+              "requires": [],
+              "choices": [
+                {
+                  "id": "near"
+                },
+                {
+                  "id": "outer"
+                }
+              ],
+              "stage": "region_forest:s2",
+              "chapter": "",
+              "chain": "region_forest"
+            },
+            {
+              "id": "region_forest:s2:work",
+              "object": "region_forest:work_near",
+              "kind": "ecology",
+              "requires": [
+                "region_forest:s2:choice"
+              ],
+              "ecology_mode": "nest_resolution",
+              "destination_by_choice": {
+                "near": "region_forest:work_near",
+                "outer": "region_forest:work_outer"
+              },
+              "stage": "region_forest:s2",
+              "chapter": "",
+              "chain": "region_forest"
+            }
+          ],
+          "id": "region_forest:s2",
+          "chain": "region_forest",
+          "chapter": "",
+          "family": "regional",
+          "index": 1,
+          "terrain": "forest",
+          "previous": "region_forest:s1",
+          "required": [
+            "region_forest:s2:choice",
+            "region_forest:s2:work"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "region_forest:s3:walk",
+              "object": "region_forest:station",
+              "kind": "route",
+              "requires": [],
+              "route_corner_count_by_choice": {
+                "near": 2,
+                "outer": 4
+              },
+              "choice_stage": "region_forest:s2",
+              "routes": [
+                "near",
+                "outer"
+              ],
+              "route_by_choice": {
+                "near": [
+                  "region_forest:work_near",
+                  "region_forest:station"
+                ],
+                "outer": [
+                  "region_forest:work_outer",
+                  "region_forest:station"
+                ]
+              },
+              "stage": "region_forest:s3",
+              "chapter": "",
+              "chain": "region_forest"
+            },
+            {
+              "id": "region_forest:s3:sign",
+              "object": "region_forest:station",
+              "kind": "repair",
+              "requires": [
+                "region_forest:s3:walk"
+              ],
+              "service": "region_forest_station",
+              "stage": "region_forest:s3",
+              "chapter": "",
+              "chain": "region_forest"
+            }
+          ],
+          "id": "region_forest:s3",
+          "chain": "region_forest",
+          "chapter": "",
+          "family": "regional",
+          "index": 2,
+          "terrain": "forest",
+          "previous": "region_forest:s2",
+          "required": [
+            "region_forest:s3:walk",
+            "region_forest:s3:sign"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 3
+    },
+    {
+      "id": "region_swamp",
+      "terrain": "swamp",
+      "family": "regional",
+      "number": 3,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "region_swamp:s1:near",
+              "object": "region_swamp:survey_a",
+              "kind": "observe",
+              "requires": [],
+              "stage": "region_swamp:s1",
+              "chapter": "",
+              "chain": "region_swamp"
+            },
+            {
+              "id": "region_swamp:s1:outer",
+              "object": "region_swamp:survey_b",
+              "kind": "observe",
+              "requires": [],
+              "stage": "region_swamp:s1",
+              "chapter": "",
+              "chain": "region_swamp"
+            }
+          ],
+          "id": "region_swamp:s1",
+          "chain": "region_swamp",
+          "chapter": "",
+          "family": "regional",
+          "index": 0,
+          "terrain": "swamp",
+          "previous": "",
+          "required": [
+            "region_swamp:s1:near",
+            "region_swamp:s1:outer"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "region_swamp:s2:choice",
+              "object": "region_swamp:choice",
+              "kind": "choice",
+              "requires": [],
+              "choices": [
+                {
+                  "id": "near"
+                },
+                {
+                  "id": "outer"
+                }
+              ],
+              "stage": "region_swamp:s2",
+              "chapter": "",
+              "chain": "region_swamp"
+            },
+            {
+              "id": "region_swamp:s2:work",
+              "object": "region_swamp:work_near",
+              "kind": "repair",
+              "requires": [
+                "region_swamp:s2:choice"
+              ],
+              "destination_by_choice": {
+                "near": "region_swamp:work_near",
+                "outer": "region_swamp:work_outer"
+              },
+              "obstacle_by_choice": {
+                "near": "region_swamp:near_barrier"
+              },
+              "stage": "region_swamp:s2",
+              "chapter": "",
+              "chain": "region_swamp"
+            }
+          ],
+          "id": "region_swamp:s2",
+          "chain": "region_swamp",
+          "chapter": "",
+          "family": "regional",
+          "index": 1,
+          "terrain": "swamp",
+          "previous": "region_swamp:s1",
+          "required": [
+            "region_swamp:s2:choice",
+            "region_swamp:s2:work"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "region_swamp:s3:walk",
+              "object": "region_swamp:station",
+              "kind": "route",
+              "requires": [],
+              "route_corner_count_by_choice": {
+                "near": 2,
+                "outer": 4
+              },
+              "choice_stage": "region_swamp:s2",
+              "routes": [
+                "near",
+                "outer"
+              ],
+              "route_by_choice": {
+                "near": [
+                  "region_swamp:work_near",
+                  "region_swamp:station"
+                ],
+                "outer": [
+                  "region_swamp:work_outer",
+                  "region_swamp:station"
+                ]
+              },
+              "stage": "region_swamp:s3",
+              "chapter": "",
+              "chain": "region_swamp"
+            },
+            {
+              "id": "region_swamp:s3:station",
+              "object": "region_swamp:station",
+              "kind": "repair",
+              "requires": [
+                "region_swamp:s3:walk"
+              ],
+              "service": "region_swamp_station",
+              "stage": "region_swamp:s3",
+              "chapter": "",
+              "chain": "region_swamp"
+            }
+          ],
+          "id": "region_swamp:s3",
+          "chain": "region_swamp",
+          "chapter": "",
+          "family": "regional",
+          "index": 2,
+          "terrain": "swamp",
+          "previous": "region_swamp:s2",
+          "required": [
+            "region_swamp:s3:walk",
+            "region_swamp:s3:station"
+          ]
+        }
+      ],
+      "unlock_after": "watch_c2_forest",
+      "batch": 3
+    },
+    {
+      "id": "region_hill",
+      "terrain": "hill",
+      "family": "regional",
+      "number": 4,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "region_hill:s1:south",
+              "object": "region_hill:survey_a",
+              "kind": "read",
+              "requires": [],
+              "stage": "region_hill:s1",
+              "chapter": "",
+              "chain": "region_hill"
+            },
+            {
+              "id": "region_hill:s1:north",
+              "object": "region_hill:survey_b",
+              "kind": "observe",
+              "requires": [],
+              "stage": "region_hill:s1",
+              "chapter": "",
+              "chain": "region_hill"
+            }
+          ],
+          "id": "region_hill:s1",
+          "chain": "region_hill",
+          "chapter": "",
+          "family": "regional",
+          "index": 0,
+          "terrain": "hill",
+          "previous": "",
+          "required": [
+            "region_hill:s1:south",
+            "region_hill:s1:north"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "region_hill:s2:choice",
+              "object": "region_hill:choice",
+              "kind": "choice",
+              "requires": [],
+              "choices": [
+                {
+                  "id": "near"
+                },
+                {
+                  "id": "outer"
+                }
+              ],
+              "stage": "region_hill:s2",
+              "chapter": "",
+              "chain": "region_hill"
+            },
+            {
+              "id": "region_hill:s2:work",
+              "object": "region_hill:work_near",
+              "kind": "repair",
+              "requires": [
+                "region_hill:s2:choice"
+              ],
+              "destination_by_choice": {
+                "near": "region_hill:work_near",
+                "outer": "region_hill:work_outer"
+              },
+              "obstacle_by_choice": {
+                "near": "region_hill:near_barrier"
+              },
+              "opens_choice": {
+                "outer": "region_hill:shortcut_gate"
+              },
+              "stage": "region_hill:s2",
+              "chapter": "",
+              "chain": "region_hill"
+            }
+          ],
+          "id": "region_hill:s2",
+          "chain": "region_hill",
+          "chapter": "",
+          "family": "regional",
+          "index": 1,
+          "terrain": "hill",
+          "previous": "region_hill:s1",
+          "required": [
+            "region_hill:s2:choice",
+            "region_hill:s2:work"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "region_hill:s3:walk",
+              "object": "region_hill:station",
+              "kind": "route",
+              "requires": [],
+              "route_corner_count_by_choice": {
+                "near": 2,
+                "outer": 4
+              },
+              "choice_stage": "region_hill:s2",
+              "routes": [
+                "near",
+                "outer"
+              ],
+              "route_by_choice": {
+                "near": [
+                  "region_hill:work_near",
+                  "region_hill:station"
+                ],
+                "outer": [
+                  "region_hill:work_outer",
+                  "region_hill:station"
+                ]
+              },
+              "stage": "region_hill:s3",
+              "chapter": "",
+              "chain": "region_hill"
+            },
+            {
+              "id": "region_hill:s3:station",
+              "object": "region_hill:station",
+              "kind": "repair",
+              "requires": [
+                "region_hill:s3:walk"
+              ],
+              "service": "region_hill_station",
+              "stage": "region_hill:s3",
+              "chapter": "",
+              "chain": "region_hill"
+            }
+          ],
+          "id": "region_hill:s3",
+          "chain": "region_hill",
+          "chapter": "",
+          "family": "regional",
+          "index": 2,
+          "terrain": "hill",
+          "previous": "region_hill:s2",
+          "required": [
+            "region_hill:s3:walk",
+            "region_hill:s3:station"
+          ]
+        }
+      ],
+      "unlock_after": "watch_c3_swamp",
+      "batch": 3
+    },
+    {
+      "id": "region_snow",
+      "terrain": "snow",
+      "family": "regional",
+      "number": 5,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "region_snow:s1:open",
+              "object": "region_snow:survey_a",
+              "kind": "read",
+              "requires": [],
+              "stage": "region_snow:s1",
+              "chapter": "",
+              "chain": "region_snow"
+            },
+            {
+              "id": "region_snow:s1:cover",
+              "object": "region_snow:survey_b",
+              "kind": "observe",
+              "requires": [],
+              "stage": "region_snow:s1",
+              "chapter": "",
+              "chain": "region_snow"
+            }
+          ],
+          "id": "region_snow:s1",
+          "chain": "region_snow",
+          "chapter": "",
+          "family": "regional",
+          "index": 0,
+          "terrain": "snow",
+          "previous": "",
+          "required": [
+            "region_snow:s1:open",
+            "region_snow:s1:cover"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "region_snow:s2:choice",
+              "object": "region_snow:choice",
+              "kind": "choice",
+              "requires": [],
+              "choices": [
+                {
+                  "id": "near"
+                },
+                {
+                  "id": "outer"
+                }
+              ],
+              "stage": "region_snow:s2",
+              "chapter": "",
+              "chain": "region_snow"
+            },
+            {
+              "id": "region_snow:s2:work",
+              "object": "region_snow:work_near",
+              "kind": "repair",
+              "requires": [
+                "region_snow:s2:choice"
+              ],
+              "destination_by_choice": {
+                "near": "region_snow:work_near",
+                "outer": "region_snow:work_outer"
+              },
+              "stage": "region_snow:s2",
+              "chapter": "",
+              "chain": "region_snow"
+            }
+          ],
+          "id": "region_snow:s2",
+          "chain": "region_snow",
+          "chapter": "",
+          "family": "regional",
+          "index": 1,
+          "terrain": "snow",
+          "previous": "region_snow:s1",
+          "required": [
+            "region_snow:s2:choice",
+            "region_snow:s2:work"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "region_snow:s3:walk",
+              "object": "region_snow:station",
+              "kind": "route",
+              "requires": [],
+              "route_corner_count_by_choice": {
+                "near": 2,
+                "outer": 4
+              },
+              "choice_stage": "region_snow:s2",
+              "routes": [
+                "near",
+                "outer"
+              ],
+              "route_by_choice": {
+                "near": [
+                  "region_snow:work_near",
+                  "region_snow:station"
+                ],
+                "outer": [
+                  "region_snow:work_outer",
+                  "region_snow:station"
+                ]
+              },
+              "stage": "region_snow:s3",
+              "chapter": "",
+              "chain": "region_snow"
+            },
+            {
+              "id": "region_snow:s3:station",
+              "object": "region_snow:station",
+              "kind": "repair",
+              "requires": [
+                "region_snow:s3:walk"
+              ],
+              "service": "region_snow_station",
+              "stage": "region_snow:s3",
+              "chapter": "",
+              "chain": "region_snow"
+            }
+          ],
+          "id": "region_snow:s3",
+          "chain": "region_snow",
+          "chapter": "",
+          "family": "regional",
+          "index": 2,
+          "terrain": "snow",
+          "previous": "region_snow:s2",
+          "required": [
+            "region_snow:s3:walk",
+            "region_snow:s3:station"
+          ]
+        }
+      ],
+      "unlock_after": "watch_c4_hill",
+      "batch": 3
+    },
+    {
+      "id": "region_lava",
+      "terrain": "lava",
+      "family": "regional",
+      "number": 6,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "region_lava:s1:near",
+              "object": "region_lava:survey_a",
+              "kind": "observe",
+              "requires": [],
+              "stage": "region_lava:s1",
+              "chapter": "",
+              "chain": "region_lava"
+            },
+            {
+              "id": "region_lava:s1:outer",
+              "object": "region_lava:survey_b",
+              "kind": "observe",
+              "requires": [],
+              "stage": "region_lava:s1",
+              "chapter": "",
+              "chain": "region_lava"
+            }
+          ],
+          "id": "region_lava:s1",
+          "chain": "region_lava",
+          "chapter": "",
+          "family": "regional",
+          "index": 0,
+          "terrain": "lava",
+          "previous": "",
+          "required": [
+            "region_lava:s1:near",
+            "region_lava:s1:outer"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "region_lava:s2:choice",
+              "object": "region_lava:choice",
+              "kind": "choice",
+              "requires": [],
+              "choices": [
+                {
+                  "id": "near"
+                },
+                {
+                  "id": "outer"
+                }
+              ],
+              "stage": "region_lava:s2",
+              "chapter": "",
+              "chain": "region_lava"
+            },
+            {
+              "id": "region_lava:s2:work",
+              "object": "region_lava:work_near",
+              "kind": "repair",
+              "requires": [
+                "region_lava:s2:choice"
+              ],
+              "destination_by_choice": {
+                "near": "region_lava:work_near",
+                "outer": "region_lava:work_outer"
+              },
+              "stage": "region_lava:s2",
+              "chapter": "",
+              "chain": "region_lava"
+            }
+          ],
+          "id": "region_lava:s2",
+          "chain": "region_lava",
+          "chapter": "",
+          "family": "regional",
+          "index": 1,
+          "terrain": "lava",
+          "previous": "region_lava:s1",
+          "required": [
+            "region_lava:s2:choice",
+            "region_lava:s2:work"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "region_lava:s3:walk",
+              "object": "region_lava:station",
+              "kind": "route",
+              "requires": [],
+              "route_corner_count_by_choice": {
+                "near": 4,
+                "outer": 4
+              },
+              "choice_stage": "region_lava:s2",
+              "routes": [
+                "near",
+                "outer"
+              ],
+              "route_by_choice": {
+                "near": [
+                  "region_lava:work_near",
+                  "region_lava:station"
+                ],
+                "outer": [
+                  "region_lava:work_outer",
+                  "region_lava:station"
+                ]
+              },
+              "stage": "region_lava:s3",
+              "chapter": "",
+              "chain": "region_lava"
+            },
+            {
+              "id": "region_lava:s3:station",
+              "object": "region_lava:station",
+              "kind": "repair",
+              "requires": [
+                "region_lava:s3:walk"
+              ],
+              "service": "region_lava_station",
+              "stage": "region_lava:s3",
+              "chapter": "",
+              "chain": "region_lava"
+            }
+          ],
+          "id": "region_lava:s3",
+          "chain": "region_lava",
+          "chapter": "",
+          "family": "regional",
+          "index": 2,
+          "terrain": "lava",
+          "previous": "region_lava:s2",
+          "required": [
+            "region_lava:s3:walk",
+            "region_lava:s3:station"
+          ]
+        }
+      ],
+      "unlock_after": "watch_c5_snow",
+      "batch": 3
+    },
+    {
+      "id": "world_migration",
+      "terrain": "world",
+      "family": "world",
+      "number": 1,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "world_migration:s1:route_a",
+              "object": "world_migration:route_a",
+              "kind": "observe",
+              "requires": [],
+              "ecology_mode": "world_migration_origin",
+              "stage": "world_migration:s1",
+              "chapter": "",
+              "chain": "world_migration"
+            },
+            {
+              "id": "world_migration:s1:route_b",
+              "object": "world_migration:route_b",
+              "kind": "observe",
+              "requires": [],
+              "ecology_mode": "world_migration_destination",
+              "stage": "world_migration:s1",
+              "chapter": "",
+              "chain": "world_migration"
+            }
+          ],
+          "id": "world_migration:s1",
+          "chain": "world_migration",
+          "chapter": "",
+          "family": "world",
+          "index": 0,
+          "terrain": "world",
+          "previous": "",
+          "required": [
+            "world_migration:s1:route_a",
+            "world_migration:s1:route_b"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "world_migration:s2:status",
+              "object": "world_migration:observer",
+              "kind": "observe",
+              "requires": [],
+              "ecology_mode": "world_migration_status",
+              "stage": "world_migration:s2",
+              "chapter": "",
+              "chain": "world_migration"
+            }
+          ],
+          "id": "world_migration:s2",
+          "chain": "world_migration",
+          "chapter": "",
+          "family": "world",
+          "index": 1,
+          "terrain": "world",
+          "previous": "world_migration:s1",
+          "required": [
+            "world_migration:s2:status"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "world_migration:s3:archive",
+              "object": "world_migration:record_board",
+              "kind": "deliver",
+              "requires": [],
+              "stage": "world_migration:s3",
+              "chapter": "",
+              "chain": "world_migration"
+            }
+          ],
+          "id": "world_migration:s3",
+          "chain": "world_migration",
+          "chapter": "",
+          "family": "world",
+          "index": 2,
+          "terrain": "world",
+          "previous": "world_migration:s2",
+          "required": [
+            "world_migration:s3:archive"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 4
+    },
+    {
+      "id": "world_decline",
+      "terrain": "world",
+      "family": "world",
+      "number": 2,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "world_decline:s1:site",
+              "object": "world_decline:last_site",
+              "kind": "observe",
+              "requires": [],
+              "ecology_mode": "world_decline_site",
+              "stage": "world_decline:s1",
+              "chapter": "",
+              "chain": "world_decline"
+            }
+          ],
+          "id": "world_decline:s1",
+          "chain": "world_decline",
+          "chapter": "",
+          "family": "world",
+          "index": 0,
+          "terrain": "world",
+          "previous": "",
+          "required": [
+            "world_decline:s1:site"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "world_decline:s2:cause",
+              "object": "world_decline:evidence_post",
+              "kind": "observe",
+              "requires": [],
+              "ecology_mode": "world_decline_status",
+              "stage": "world_decline:s2",
+              "chapter": "",
+              "chain": "world_decline"
+            }
+          ],
+          "id": "world_decline:s2",
+          "chain": "world_decline",
+          "chapter": "",
+          "family": "world",
+          "index": 1,
+          "terrain": "world",
+          "previous": "world_decline:s1",
+          "required": [
+            "world_decline:s2:cause"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "world_decline:s3:warning",
+              "object": "world_decline:warning_sign",
+              "kind": "repair",
+              "requires": [],
+              "stage": "world_decline:s3",
+              "chapter": "",
+              "chain": "world_decline"
+            },
+            {
+              "id": "world_decline:s3:archive",
+              "object": "world_decline:observer",
+              "kind": "deliver",
+              "requires": [
+                "world_decline:s3:warning"
+              ],
+              "stage": "world_decline:s3",
+              "chapter": "",
+              "chain": "world_decline"
+            }
+          ],
+          "id": "world_decline:s3",
+          "chain": "world_decline",
+          "chapter": "",
+          "family": "world",
+          "index": 2,
+          "terrain": "world",
+          "previous": "world_decline:s2",
+          "required": [
+            "world_decline:s3:warning",
+            "world_decline:s3:archive"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 4
+    },
+    {
+      "id": "world_relief",
+      "terrain": "world",
+      "family": "world",
+      "number": 3,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "world_relief:s1:need_a",
+              "object": "world_relief:need_a",
+              "kind": "talk",
+              "requires": [],
+              "stage": "world_relief:s1",
+              "chapter": "",
+              "chain": "world_relief"
+            },
+            {
+              "id": "world_relief:s1:need_b",
+              "object": "world_relief:need_b",
+              "kind": "talk",
+              "requires": [],
+              "stage": "world_relief:s1",
+              "chapter": "",
+              "chain": "world_relief"
+            }
+          ],
+          "id": "world_relief:s1",
+          "chain": "world_relief",
+          "chapter": "",
+          "family": "world",
+          "index": 0,
+          "terrain": "world",
+          "previous": "",
+          "required": [
+            "world_relief:s1:need_a",
+            "world_relief:s1:need_b"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "world_relief:s2:supply_a",
+              "object": "world_relief:supply_a",
+              "kind": "deliver",
+              "requires": [],
+              "supply_id": "world_relief:parcel_a",
+              "stage": "world_relief:s2",
+              "chapter": "",
+              "chain": "world_relief"
+            },
+            {
+              "id": "world_relief:s2:supply_b",
+              "object": "world_relief:supply_b",
+              "kind": "deliver",
+              "requires": [],
+              "supply_id": "world_relief:parcel_b",
+              "stage": "world_relief:s2",
+              "chapter": "",
+              "chain": "world_relief"
+            }
+          ],
+          "id": "world_relief:s2",
+          "chain": "world_relief",
+          "chapter": "",
+          "family": "world",
+          "index": 1,
+          "terrain": "world",
+          "previous": "world_relief:s1",
+          "required": [
+            "world_relief:s2:supply_a",
+            "world_relief:s2:supply_b"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "world_relief:s3:return_a",
+              "object": "world_relief:need_a",
+              "kind": "talk",
+              "requires": [],
+              "stage": "world_relief:s3",
+              "chapter": "",
+              "chain": "world_relief"
+            },
+            {
+              "id": "world_relief:s3:return_b",
+              "object": "world_relief:need_b",
+              "kind": "talk",
+              "requires": [],
+              "stage": "world_relief:s3",
+              "chapter": "",
+              "chain": "world_relief"
+            },
+            {
+              "id": "world_relief:s3:settle",
+              "object": "world_relief:coordination_post",
+              "kind": "repair",
+              "requires": [
+                "world_relief:s3:return_a",
+                "world_relief:s3:return_b"
+              ],
+              "service": "world_relief_station",
+              "stage": "world_relief:s3",
+              "chapter": "",
+              "chain": "world_relief"
+            }
+          ],
+          "id": "world_relief:s3",
+          "chain": "world_relief",
+          "chapter": "",
+          "family": "world",
+          "index": 2,
+          "terrain": "world",
+          "previous": "world_relief:s2",
+          "required": [
+            "world_relief:s3:return_a",
+            "world_relief:s3:return_b",
+            "world_relief:s3:settle"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 4
+    },
+    {
+      "id": "world_watchnet",
+      "terrain": "world",
+      "family": "world",
+      "number": 4,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "world_watchnet:s1:plan",
+              "object": "world_watchnet:planning_board",
+              "kind": "configure",
+              "requires": [],
+              "node_count": 3,
+              "stage": "world_watchnet:s1",
+              "chapter": "",
+              "chain": "world_watchnet"
+            }
+          ],
+          "id": "world_watchnet:s1",
+          "chain": "world_watchnet",
+          "chapter": "",
+          "family": "world",
+          "index": 0,
+          "terrain": "world",
+          "previous": "",
+          "required": [
+            "world_watchnet:s1:plan"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "world_watchnet:s2:node_1",
+              "object": "world_watchnet:node_1",
+              "kind": "repair",
+              "requires": [],
+              "node_index": 0,
+              "stage": "world_watchnet:s2",
+              "chapter": "",
+              "chain": "world_watchnet"
+            },
+            {
+              "id": "world_watchnet:s2:node_2",
+              "object": "world_watchnet:node_2",
+              "kind": "repair",
+              "requires": [],
+              "node_index": 1,
+              "stage": "world_watchnet:s2",
+              "chapter": "",
+              "chain": "world_watchnet"
+            },
+            {
+              "id": "world_watchnet:s2:node_3",
+              "object": "world_watchnet:node_3",
+              "kind": "repair",
+              "requires": [],
+              "node_index": 2,
+              "stage": "world_watchnet:s2",
+              "chapter": "",
+              "chain": "world_watchnet"
+            }
+          ],
+          "id": "world_watchnet:s2",
+          "chain": "world_watchnet",
+          "chapter": "",
+          "family": "world",
+          "index": 1,
+          "terrain": "world",
+          "previous": "world_watchnet:s1",
+          "required": [
+            "world_watchnet:s2:node_1",
+            "world_watchnet:s2:node_2",
+            "world_watchnet:s2:node_3"
+          ]
+        },
+        {
+          "actions": [
+            {
+              "id": "world_watchnet:s3:archive",
+              "object": "world_watchnet:record_board",
+              "kind": "deliver",
+              "requires": [],
+              "service": "world_watchnet_station",
+              "stage": "world_watchnet:s3",
+              "chapter": "",
+              "chain": "world_watchnet"
+            }
+          ],
+          "id": "world_watchnet:s3",
+          "chain": "world_watchnet",
+          "chapter": "",
+          "family": "world",
+          "index": 2,
+          "terrain": "world",
+          "previous": "world_watchnet:s2",
+          "required": [
+            "world_watchnet:s3:archive"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 4
+    },
+    {
+      "id": "random_wounded",
+      "terrain": "local",
+      "family": "random",
+      "number": 1,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "random_wounded:s1:request",
+              "object": "random_wounded:giver",
+              "kind": "read",
+              "requires": [],
+              "stage": "random_wounded:s1",
+              "chapter": "",
+              "chain": "random_wounded"
+            },
+            {
+              "id": "random_wounded:s1:aid",
+              "object": "random_wounded:parts",
+              "kind": "recover",
+              "requires": [
+                "random_wounded:s1:request"
+              ],
+              "quest_item": "random_wounded:aid",
+              "stage": "random_wounded:s1",
+              "chapter": "",
+              "chain": "random_wounded"
+            },
+            {
+              "id": "random_wounded:s1:rescue",
+              "object": "random_wounded:target",
+              "kind": "rescue",
+              "requires": [
+                "random_wounded:s1:aid"
+              ],
+              "stage": "random_wounded:s1",
+              "chapter": "",
+              "chain": "random_wounded"
+            }
+          ],
+          "id": "random_wounded:s1",
+          "chain": "random_wounded",
+          "chapter": "",
+          "family": "random",
+          "index": 0,
+          "terrain": "local",
+          "previous": "",
+          "required": [
+            "random_wounded:s1:request",
+            "random_wounded:s1:aid",
+            "random_wounded:s1:rescue"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 4
+    },
+    {
+      "id": "random_parcel",
+      "terrain": "local",
+      "family": "random",
+      "number": 2,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "random_parcel:s1:request",
+              "object": "random_parcel:giver",
+              "kind": "read",
+              "requires": [],
+              "stage": "random_parcel:s1",
+              "chapter": "",
+              "chain": "random_parcel"
+            },
+            {
+              "id": "random_parcel:s1:parcel",
+              "object": "random_parcel:target",
+              "kind": "recover",
+              "requires": [
+                "random_parcel:s1:request"
+              ],
+              "quest_item": "random_parcel:parcel",
+              "stage": "random_parcel:s1",
+              "chapter": "",
+              "chain": "random_parcel"
+            },
+            {
+              "id": "random_parcel:s1:return",
+              "object": "random_parcel:return",
+              "kind": "deliver",
+              "requires": [
+                "random_parcel:s1:parcel"
+              ],
+              "consumes": "random_parcel:parcel",
+              "stage": "random_parcel:s1",
+              "chapter": "",
+              "chain": "random_parcel"
+            }
+          ],
+          "id": "random_parcel:s1",
+          "chain": "random_parcel",
+          "chapter": "",
+          "family": "random",
+          "index": 0,
+          "terrain": "local",
+          "previous": "",
+          "required": [
+            "random_parcel:s1:request",
+            "random_parcel:s1:parcel",
+            "random_parcel:s1:return"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 4
+    },
+    {
+      "id": "random_sign",
+      "terrain": "local",
+      "family": "random",
+      "number": 3,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "random_sign:s1:request",
+              "object": "random_sign:giver",
+              "kind": "read",
+              "requires": [],
+              "stage": "random_sign:s1",
+              "chapter": "",
+              "chain": "random_sign"
+            },
+            {
+              "id": "random_sign:s1:parts",
+              "object": "random_sign:parts",
+              "kind": "recover",
+              "requires": [
+                "random_sign:s1:request"
+              ],
+              "quest_item": "random_sign:parts",
+              "stage": "random_sign:s1",
+              "chapter": "",
+              "chain": "random_sign"
+            },
+            {
+              "id": "random_sign:s1:repair",
+              "object": "random_sign:target",
+              "kind": "repair",
+              "requires": [
+                "random_sign:s1:parts"
+              ],
+              "stage": "random_sign:s1",
+              "chapter": "",
+              "chain": "random_sign"
+            }
+          ],
+          "id": "random_sign:s1",
+          "chain": "random_sign",
+          "chapter": "",
+          "family": "random",
+          "index": 0,
+          "terrain": "local",
+          "previous": "",
+          "required": [
+            "random_sign:s1:request",
+            "random_sign:s1:parts",
+            "random_sign:s1:repair"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 4
+    },
+    {
+      "id": "random_rocks",
+      "terrain": "local",
+      "family": "random",
+      "number": 4,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "random_rocks:s1:request",
+              "object": "random_rocks:giver",
+              "kind": "read",
+              "requires": [],
+              "stage": "random_rocks:s1",
+              "chapter": "",
+              "chain": "random_rocks"
+            },
+            {
+              "id": "random_rocks:s1:break",
+              "object": "random_rocks:target",
+              "kind": "obstacle",
+              "requires": [
+                "random_rocks:s1:request"
+              ],
+              "barrier_id": "random_rocks:barrier",
+              "stage": "random_rocks:s1",
+              "chapter": "",
+              "chain": "random_rocks"
+            },
+            {
+              "id": "random_rocks:s1:cross",
+              "object": "random_rocks:return",
+              "kind": "route",
+              "requires": [
+                "random_rocks:s1:break"
+              ],
+              "routes": [
+                "passage"
+              ],
+              "route_waypoints": [
+                "random_rocks:target",
+                "random_rocks:return"
+              ],
+              "stage": "random_rocks:s1",
+              "chapter": "",
+              "chain": "random_rocks"
+            }
+          ],
+          "id": "random_rocks:s1",
+          "chain": "random_rocks",
+          "chapter": "",
+          "family": "random",
+          "index": 0,
+          "terrain": "local",
+          "previous": "",
+          "required": [
+            "random_rocks:s1:request",
+            "random_rocks:s1:break",
+            "random_rocks:s1:cross"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 4
+    },
+    {
+      "id": "random_medicine",
+      "terrain": "local",
+      "family": "random",
+      "number": 5,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "random_medicine:s1:request",
+              "object": "random_medicine:giver",
+              "kind": "talk",
+              "requires": [],
+              "stage": "random_medicine:s1",
+              "chapter": "",
+              "chain": "random_medicine"
+            },
+            {
+              "id": "random_medicine:s1:medicine",
+              "object": "random_medicine:parts",
+              "kind": "recover",
+              "requires": [
+                "random_medicine:s1:request"
+              ],
+              "quest_item": "random_medicine:medicine",
+              "stage": "random_medicine:s1",
+              "chapter": "",
+              "chain": "random_medicine"
+            },
+            {
+              "id": "random_medicine:s1:deliver",
+              "object": "random_medicine:target",
+              "kind": "deliver",
+              "requires": [
+                "random_medicine:s1:medicine"
+              ],
+              "consumes": "random_medicine:medicine",
+              "stage": "random_medicine:s1",
+              "chapter": "",
+              "chain": "random_medicine"
+            }
+          ],
+          "id": "random_medicine:s1",
+          "chain": "random_medicine",
+          "chapter": "",
+          "family": "random",
+          "index": 0,
+          "terrain": "local",
+          "previous": "",
+          "required": [
+            "random_medicine:s1:request",
+            "random_medicine:s1:medicine",
+            "random_medicine:s1:deliver"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 4
+    },
+    {
+      "id": "random_message",
+      "terrain": "local",
+      "family": "random",
+      "number": 6,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "random_message:s1:request",
+              "object": "random_message:giver",
+              "kind": "talk",
+              "requires": [],
+              "stage": "random_message:s1",
+              "chapter": "",
+              "chain": "random_message"
+            },
+            {
+              "id": "random_message:s1:message",
+              "object": "random_message:target",
+              "kind": "recover",
+              "requires": [
+                "random_message:s1:request"
+              ],
+              "quest_item": "random_message:message",
+              "stage": "random_message:s1",
+              "chapter": "",
+              "chain": "random_message"
+            },
+            {
+              "id": "random_message:s1:deliver",
+              "object": "random_message:return",
+              "kind": "deliver",
+              "requires": [
+                "random_message:s1:message"
+              ],
+              "consumes": "random_message:message",
+              "stage": "random_message:s1",
+              "chapter": "",
+              "chain": "random_message"
+            }
+          ],
+          "id": "random_message:s1",
+          "chain": "random_message",
+          "chapter": "",
+          "family": "random",
+          "index": 0,
+          "terrain": "local",
+          "previous": "",
+          "required": [
+            "random_message:s1:request",
+            "random_message:s1:message",
+            "random_message:s1:deliver"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 4
+    },
+    {
+      "id": "random_nest",
+      "terrain": "local",
+      "family": "random",
+      "number": 7,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "random_nest:s1:request",
+              "object": "random_nest:giver",
+              "kind": "read",
+              "requires": [],
+              "stage": "random_nest:s1",
+              "chapter": "",
+              "chain": "random_nest"
+            },
+            {
+              "id": "random_nest:s1:result",
+              "object": "random_nest:target",
+              "kind": "ecology",
+              "requires": [
+                "random_nest:s1:request"
+              ],
+              "ecology_mode": "nest_resolution",
+              "stage": "random_nest:s1",
+              "chapter": "",
+              "chain": "random_nest"
+            },
+            {
+              "id": "random_nest:s1:report",
+              "object": "random_nest:return",
+              "kind": "deliver",
+              "requires": [
+                "random_nest:s1:result"
+              ],
+              "stage": "random_nest:s1",
+              "chapter": "",
+              "chain": "random_nest"
+            }
+          ],
+          "id": "random_nest:s1",
+          "chain": "random_nest",
+          "chapter": "",
+          "family": "random",
+          "index": 0,
+          "terrain": "local",
+          "previous": "",
+          "required": [
+            "random_nest:s1:request",
+            "random_nest:s1:result",
+            "random_nest:s1:report"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 4
+    },
+    {
+      "id": "random_migration",
+      "terrain": "local",
+      "family": "random",
+      "number": 8,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "random_migration:s1:request",
+              "object": "random_migration:giver",
+              "kind": "read",
+              "requires": [],
+              "stage": "random_migration:s1",
+              "chapter": "",
+              "chain": "random_migration"
+            },
+            {
+              "id": "random_migration:s1:site",
+              "object": "random_migration:target",
+              "kind": "observe",
+              "requires": [
+                "random_migration:s1:request"
+              ],
+              "ecology_mode": "migration_state",
+              "stage": "random_migration:s1",
+              "chapter": "",
+              "chain": "random_migration"
+            },
+            {
+              "id": "random_migration:s1:report",
+              "object": "random_migration:return",
+              "kind": "deliver",
+              "requires": [
+                "random_migration:s1:site"
+              ],
+              "stage": "random_migration:s1",
+              "chapter": "",
+              "chain": "random_migration"
+            }
+          ],
+          "id": "random_migration:s1",
+          "chain": "random_migration",
+          "chapter": "",
+          "family": "random",
+          "index": 0,
+          "terrain": "local",
+          "previous": "",
+          "required": [
+            "random_migration:s1:request",
+            "random_migration:s1:site",
+            "random_migration:s1:report"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 4
+    },
+    {
+      "id": "random_camp",
+      "terrain": "local",
+      "family": "random",
+      "number": 9,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "random_camp:s1:request",
+              "object": "random_camp:giver",
+              "kind": "read",
+              "requires": [],
+              "stage": "random_camp:s1",
+              "chapter": "",
+              "chain": "random_camp"
+            },
+            {
+              "id": "random_camp:s1:result",
+              "object": "random_camp:target",
+              "kind": "ecology",
+              "requires": [
+                "random_camp:s1:request"
+              ],
+              "ecology_mode": "camp_resolution",
+              "stage": "random_camp:s1",
+              "chapter": "",
+              "chain": "random_camp"
+            },
+            {
+              "id": "random_camp:s1:report",
+              "object": "random_camp:return",
+              "kind": "deliver",
+              "requires": [
+                "random_camp:s1:result"
+              ],
+              "stage": "random_camp:s1",
+              "chapter": "",
+              "chain": "random_camp"
+            }
+          ],
+          "id": "random_camp:s1",
+          "chain": "random_camp",
+          "chapter": "",
+          "family": "random",
+          "index": 0,
+          "terrain": "local",
+          "previous": "",
+          "required": [
+            "random_camp:s1:request",
+            "random_camp:s1:result",
+            "random_camp:s1:report"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 4
+    },
+    {
+      "id": "random_runes",
+      "terrain": "local",
+      "family": "random",
+      "number": 10,
+      "steps": [
+        {
+          "actions": [
+            {
+              "id": "random_runes:s1:request",
+              "object": "random_runes:giver",
+              "kind": "read",
+              "requires": [],
+              "stage": "random_runes:s1",
+              "chapter": "",
+              "chain": "random_runes"
+            },
+            {
+              "id": "random_runes:s1:record",
+              "object": "random_runes:record",
+              "kind": "read",
+              "requires": [
+                "random_runes:s1:request"
+              ],
+              "stage": "random_runes:s1",
+              "chapter": "",
+              "chain": "random_runes"
+            },
+            {
+              "id": "random_runes:s1:runes",
+              "object": "random_runes:target",
+              "kind": "puzzle",
+              "requires": [
+                "random_runes:s1:record"
+              ],
+              "puzzle_order": [
+                "lamp",
+                "road",
+                "person"
+              ],
+              "puzzle_objects": [
+                "random_runes:rune_a",
+                "random_runes:rune_b",
+                "random_runes:rune_c"
+              ],
+              "stage": "random_runes:s1",
+              "chapter": "",
+              "chain": "random_runes"
+            }
+          ],
+          "id": "random_runes:s1",
+          "chain": "random_runes",
+          "chapter": "",
+          "family": "random",
+          "index": 0,
+          "terrain": "local",
+          "previous": "",
+          "required": [
+            "random_runes:s1:request",
+            "random_runes:s1:record",
+            "random_runes:s1:runes"
+          ]
+        }
+      ],
+      "unlock_after": "chapter1",
+      "batch": 4
+    }
+  ]
+}

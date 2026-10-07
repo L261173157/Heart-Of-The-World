@@ -270,27 +270,32 @@ func _cold_extra() -> void:
 	_check(_same(_q(),_legacy_before),"旧第一章原证据与收据保持不变")
 
 func _read_final() -> void:
-	var ending:=str(_cq().quests[C6+":s4"].choice)
-	_verify_ending_world(ending)
+	_verify_ending_world()
 	var patrol:=_cp("side_patrol:giver")
 	_check(patrol!=null and patrol.global_position.distance_to(CampaignLayout.object_position("side_patrol:station_camp")+Vector2(64,0))<0.1,"最终派驻不搬走独立人物线已选驻守NPC")
 	for id: String in ["region_snow:station","world_relief:need_a","world_relief:need_b","world_relief:coordination_post"]:
 		var node:=_cp(id)
 		_check(node!=null and bool(node.get("repaired")) and not str(node.get("service")).is_empty(),"终局冷读保持另一家族的真实施工和服务实体 "+id)
-	_check(_campaign.epilogue().contains("另已收尾2条人物故事、修复1处区域工程"),"后记只汇总实际完成的两条人物/一处区域，不假装全目录完成")
+	var summary := RegEx.new()
+	summary.compile("(?:^|[^0-9])([0-9]+)份托付[^\\n]*?([0-9]+)处区域")
+	var counts := summary.search(_campaign.epilogue())
+	_check(counts != null and int(counts.get_string(1)) == 2 and int(counts.get_string(2)) == 1,"后记只汇总实际完成的两条人物/一处区域，不假装全目录完成")
 	for service: String in ["world_relief_station","patrol_station","region_snow_station"]:
 		_check(_campaign_data.service_claimed(_cq(),service),"最终冷读保持唯一服务墓碑 "+service)
 	var wallet:=_wallet()
 	var pending := GameState.pending_items.duplicate(true)
 	var stable:=_stable_families()
-	var objects: Array=["region_snow:station"] if ending=="distributed" else ["side_patrol:station_camp","world_relief:coordination_post"]
+	var objects: Array=["side_patrol:station_camp","world_relief:coordination_post","region_snow:station"]
 	for id: String in objects:
+		if id == "region_snow:station" and not await _travel_story("snow", "ending:shelter", false): return
 		if not await _cw(id): return
 		var family: String="dynamic" if id.begins_with("world_") else "optional"
 		# 已领菜单应展示收据并移除领取选项，不再要求点一个本不该存在的旧按钮。
 		if not await _ci(id, false): return
-		_check(_hud._dialogue_text.text.contains("已领取") and _option("campaign|"+family+"|supply|"+id) == null,
-			"终局独立冷读后真实菜单已领取且没有领取按钮 " + id)
+		var received_text: String = _hud._dialogue_text.text
+		_check(received_text.contains("饭团") and (received_text.contains("已领取") or received_text.contains("已经领过"))
+			and not received_text.contains("选一处就好") and _option("campaign|"+family+"|supply|"+id) == null,
+			"终局独立冷读后真实菜单明确饭团已领且没有领取按钮或再次领取邀请 " + id)
 		if family == "optional":
 			var shop := _option("campaign|optional|shop|" + id)
 			_check(shop != null and shop.visible and not shop.disabled, "已领补给仍保留真实站点商店 " + id)
@@ -317,7 +322,7 @@ func _run() -> void:
 	EventBus.quest_list_changed.connect(_capture_list)
 	_cold_campaign_expected()
 	_cold_extra()
-	_check(CampaignQuest.ENABLED_BATCH==4 and GameState.SAVE_VERSION==18,"整部验收必须针对最终EN4/SAVE18")
+	_check(CampaignQuest.ENABLED_BATCH==4 and GameState.SAVE_VERSION==19,"整部验收必须针对最终EN4/SAVE19")
 	if _fails==0:
 		match args[0]:
 			"prepare": await _prepare_mixed()
@@ -326,10 +331,10 @@ func _run() -> void:
 				await _finish_world()
 			"resume": await _resume_snow()
 			"finale": await _finale()
-			"distributed", "centralized":
+			"reunion":
 				var stable:=_stable_families()
-				await _ending(args[0])
-				_intact(stable,"最终派驻及四处服务访问")
+				await _ending()
+				_intact(stable,"团聚终局及四位居民服务访问")
 			"read": await _read_final()
 			_: _check(false,"未知整合阶段")
 	_check(_same(main_before,_earlier_main()),"本段全部活动保持早期主线证据及支付不变")

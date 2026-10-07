@@ -23,7 +23,13 @@ MARKER = '=== QUEST PICKUP FEEDBACK VISUAL PASS'
 REQUIRED = ['00-actionable-outpost-hud', 'task-list-outpost', 'task-details-outpost',
             'world-aid_bag', 'after-aid_bag', 'world-repair_tools', 'after-repair_tools',
             'read-clue-retained', 'completion-toast', 'overflow-receipt',
-            'campaign-actionable-hud', 'task-list-campaign', 'task-details-campaign', 'campaign-empty-container', 'shared-supply-before', 'shared-claimed-world-region_plains-station', 'shared-claimed-world-region_plains-work_outer', 'shared-claimed-menu-region_plains-station', 'shared-claimed-menu-region_plains-work_outer']
+            'campaign-actionable-hud', 'task-list-campaign', 'task-details-campaign', 'campaign-empty-container', 'shared-supply-before', 'shared-claimed-world-region_plains-station', 'shared-claimed-world-region_plains-work_outer', 'shared-claimed-menu-region_plains-station', 'shared-claimed-menu-region_plains-work_outer',
+            '01-chapter-briefing-question', '01-chapter-briefing-back', '01-chapter-briefing-rules',
+            '06-wounded-request-question', '06-wounded-request-back',
+            'campaign-liaison-question', 'campaign-liaison-back',
+            'side-patrol-offer', 'side-patrol-offer-question', 'side-patrol-offer-back',
+            'earned-rescue', 'earned-repair', 'earned-next-clue',
+            'earned-campaign-liaison', 'earned-campaign-crate-before']
 
 def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -58,7 +64,7 @@ def main() -> int:
     if not os.environ.get('DISPLAY') and not os.environ.get('WAYLAND_DISPLAY'):
         print('QUEST PICKUP RENDER BLOCKED: actual graphics display required')
         return 1
-    manifest = {'fixture':'Generated isolated state; first chapter uses actual node interactions, touch confirmation, and actual nest attacks. Camera teleports and frozen enemy/eco AI. Declared ordinary ransack quest verifies real auto-settlement. Overflow uses prefilled98 + actual3 transaction. Campaign supplemental uses explicitly seeded prerequisites.',
+    manifest = {'fixture':'Generated isolated state; first chapter uses actual node interactions, touch confirmation, and actual nest attacks. Optional questions/Back and earned-result Continue use fresh touch gestures with unchanged evidence/reward checks. Camera teleports and frozen enemy/eco AI. Declared ordinary ransack quest verifies real auto-settlement. Overflow uses prefilled98 + actual3 transaction. Campaign supplemental uses explicitly seeded prerequisites.',
                 'limitations':['Not iPhone or Metal evidence', 'Not unassisted route traversal or pacing evidence'],
                 'engine_path':opts.godot,'engine_sha256':sha(Path(opts.godot)),
                 'git_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=PROJECT,text=True).strip(),
@@ -107,7 +113,8 @@ def main() -> int:
                     manifest['files'].append({'file':path.name,'size':actual,'sha256':sha(path)})
                 write_manifest()
         after=sources()
-        drift=[name for name in manifest['sources'] if after.get(name)!=manifest['sources'][name]]
+        manifest['sources_after']=after
+        drift=[name for name in sorted(manifest['sources'].keys() | after.keys()) if after.get(name)!=manifest['sources'].get(name)]
         manifest['source_drift']=drift
         if drift: raise RuntimeError('Source changed during capture; rerun final evidence: '+', '.join(drift))
         manifest['passed']=True; write_manifest()

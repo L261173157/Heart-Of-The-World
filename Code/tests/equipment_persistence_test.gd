@@ -75,7 +75,7 @@ func _migrate() -> void:
 	GameState.save_enabled = true
 	check(GameState.save_now(), "首次迁移完整保存成功")
 	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(GameState.SAVE_PATH))
-	check(int(saved.campaign_min_reader) == 18 and int(saved.version) == 18, "v17可识别的最小读者保护写入18")
+	check(int(saved.campaign_min_reader) == GameState.SAVE_VERSION and int(saved.version) == GameState.SAVE_VERSION, "历史读者可识别的最小读取版本与当前格式一致")
 	check(FileAccess.get_file_as_bytes(GameState.SAVE_PATH + ".pre-equipment-v17.bak") == FileAccess.get_file_as_bytes(GameState.SAVE_PATH + ".legacy"), "原始旧档字节备份未改变")
 	var f := FileAccess.open(GameState.SAVE_PATH + ".expected", FileAccess.WRITE)
 	f.store_string(JSON.stringify(saved))

@@ -3,7 +3,7 @@
 
 默认用十三个独立进程真实完成 C1 至 C5；--from-save 只复用同源测试夹具。
 所有保留的存档都是生成的隔离测试夹具，不是用户存档。
-不编写完成证据、余额、演员或世界状态；结局分支恢复同一真实未决定存档。
+不编写完成证据、余额、演员或世界状态；终局从真实未完成名册存档继续。
 """
 from __future__ import annotations
 
@@ -196,35 +196,26 @@ def run_campaign(args, project: Path, root: Path, runtime: Path) -> int:
             if not evidence.run(phase):
                 return fail()
         if args.phase == "all":
-            undecided = (save.read_bytes(), expected.read_bytes())
             evidence.retain("finale")
-            endings = {}
-            for ending in ("distributed", "centralized"):
-                save.write_bytes(undecided[0])
-                expected.write_bytes(undecided[1])
-                if not evidence.run(ending):
-                    return fail()
-                endings[ending] = json.loads(save.read_bytes())
-                evidence.retain(ending)
-                if not evidence.run("read", label=ending + "-read", unchanged_save=True):
-                    return fail()
-            distributed, centralized = endings["distributed"], endings["centralized"]
+            before_ending = json.loads(save.read_bytes())
+            if not evidence.run("reunion"):
+                return fail()
+            after_ending = json.loads(save.read_bytes())
+            evidence.retain("reunion")
+            if not evidence.run("read", label="reunion-read", unchanged_save=True):
+                return fail()
             for key in ("outpost_quest", "camp_quest"):
-                if distributed[key] != centralized[key]:
-                    print("FAIL: alternate endings altered legacy state " + key)
-                    return fail("alternate endings altered legacy state " + key)
-            # 空普通委托可省略存档字段，按载入时的空结构比较。
+                if before_ending[key] != after_ending[key]:
+                    return fail("reunion altered legacy state " + key)
             empty_quests = {"active": [], "completed": {}, "receipts": {}, "last_receipt": ""}
-            if distributed.get("quests", empty_quests) != centralized.get("quests", empty_quests):
-                print("FAIL: alternate endings altered ordinary quest state")
-                return fail("alternate endings altered ordinary quest state")
-            d, c = distributed["campaign_quest"], centralized["campaign_quest"]
+            if before_ending.get("quests", empty_quests) != after_ending.get("quests", empty_quests):
+                return fail("reunion altered ordinary quest state")
+            before, after = before_ending["campaign_quest"], after_ending["campaign_quest"]
             other = lambda q: {key: value for key, value in q["quests"].items() if not key.startswith("watch_")}
-            if other(d) != other(c) or d["service_receipts"] != c["service_receipts"]:
-                print("FAIL: alternate endings altered another family or service tombstone")
-                return fail("alternate endings altered another family or service tombstone")
-            print("Cross-ending comparison: identical non-main proofs, rewards, service tombstones and old contracts", flush=True)
-            print("=== CAMPAIGN CROSS FAMILY LIFECYCLE PASS (" + str(8 if args.from_save else 21) + " fresh processes) ===", flush=True)
+            if other(before) != other(after) or before["service_receipts"] != after["service_receipts"]:
+                return fail("reunion altered another family or service tombstone")
+            print("Reunion comparison: identical non-main proofs, rewards, service tombstones and old contracts", flush=True)
+            print("=== CAMPAIGN CROSS FAMILY LIFECYCLE PASS (" + str(6 if args.from_save else 19) + " fresh processes) ===", flush=True)
         evidence.finish("passed")
         return 0
     except Exception as error:

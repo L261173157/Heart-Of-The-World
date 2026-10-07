@@ -188,8 +188,11 @@ func _run() -> void:
 			and Presentation.receipt_text(GameState.quests["receipts"].get(COLLECT_ID, {})).contains("金钥匙"),
 			"领奖后读档保留完成标记及实际奖励收据说明")
 	var next := _qm.offer(COLLECT_ID, "collect", "草药师")
-	_check(next["kind"] == "quest" and next["quest"]["id"] != id and next["text"].contains("已领奖"),
-			"完成后仍可接下一单，清楚说明上一单已领奖")
+	var previous_receipt: Dictionary = GameState.quests["receipts"].get(COLLECT_ID, {})
+	_check(next["kind"] == "quest" and next["quest"]["id"] != id
+			and previous_receipt.get("id", "") == id and int(previous_receipt.get("gold", -1)) == int(quest["gold"])
+			and str(next["text"]).contains("报酬") and str(next["text"]).contains("已领过"),
+			"完成后仍可接不同ID的新单，依据实际旧收据清楚说明上一单报酬已经领过")
 	# 自动委托沿用即时结算；选择第二单后第一单完成不能改变追踪目标。
 	var first := _qm.offer("lm_clarity_explore", "explore", "守望者")["quest"] as Dictionary
 	var second := _qm.offer("lm_clarity_ransack", "ransack", "学者")["quest"] as Dictionary

@@ -21,7 +21,7 @@ static func state(quest: Dictionary) -> String:
 
 static func objective(quest: Dictionary) -> String:
 	if quest.get("kind", "") in ["camp_ecology", "outpost", "campaign"]:
-		return str(quest.get("ui_objective", "与营地巡守交谈"))
+		return str(quest.get("ui_objective", "与营地巡守周照交谈"))
 	if quest.get("settlement_blocked", false):
 		return "奖励待发：当前无法结算，材料与奖励保留"
 	if state(quest) == "claimable":
@@ -127,3 +127,36 @@ static func bonus_item(quest: Dictionary) -> String:
 		var pool: Array = EconomyMath.BOSS_BONUS_POOL
 		return pool[hash("quest-bonus2|%s" % quest.get("id", "")) % pool.size()]
 	return ""
+
+
+## 叙事只读载荷：问题不会携带命令，也不写入任务或存档。
+static func action_prompt(action: Dictionary) -> String:
+	return str(action.get("prompt", action.get("text", "")))
+
+
+static func dialogue_questions(payload: Dictionary) -> Array:
+	var quest: Dictionary = payload.get("quest", {}) if payload.get("quest", {}) is Dictionary else {}
+	var source: Variant = payload.get("questions", quest.get("questions", []))
+	var result: Array = []
+	if not source is Array:
+		return result
+	for entry: Variant in source:
+		if not entry is Dictionary:
+			continue
+		var label := str(entry.get("label", "")).strip_edges()
+		var answer := str(entry.get("answer", "")).strip_edges()
+		if not label.is_empty() and not answer.is_empty():
+			result.append({"label": label, "answer": answer})
+	return result
+
+
+static func dialogue_rules(payload: Dictionary) -> String:
+	var quest: Dictionary = payload.get("quest", {}) if payload.get("quest", {}) is Dictionary else {}
+	return str(payload.get("rules", quest.get("rules", ""))).strip_edges()
+
+
+static func with_narrative(payload: Dictionary, action: Dictionary) -> Dictionary:
+	var result := payload.duplicate(true)
+	result["questions"] = dialogue_questions(payload if payload.has("questions") else action)
+	result["rules"] = dialogue_rules(payload if payload.has("rules") else action)
+	return result

@@ -141,7 +141,7 @@ class OutpostObject extends Node2D:
 		visible = not taken
 		if taken: _near = false
 		if kind == "patrol":
-			title = "前哨巡守" if rescued else "受伤的前哨巡守"
+			title = "前哨巡守石安" if rescued else "受伤的前哨巡守石安"
 			interaction_label = "交谈" if rescued or not evidence.get("aid_taken", false) else "救治巡守"
 			if _patrol != null:
 				_patrol.rotation = 0.0 if rescued else -PI / 2.0
@@ -152,8 +152,8 @@ class OutpostObject extends Node2D:
 			title = "前哨路标 · 已修复" if repaired else "损坏的前哨路标"
 			interaction_label = "查看路标" if repaired else "修复路标"
 		elif read:
-			title += " · 已读"
-			interaction_label = "重读"
+			title += " · 已调查" if outpost_id == "entrance_record" else " · 已读"
+			interaction_label = "再看拖痕" if outpost_id == "entrance_record" else "重读"
 		context_title = title.get_slice(" · ", 0)
 		if affordance_state == "ready": title += " · 待领取"
 		elif affordance_state == "claimed": title += " · 已领取"
@@ -216,13 +216,20 @@ class OutpostObject extends Node2D:
 		draw_set_transform(Vector2.ZERO)
 		match kind:
 			"record":
-				# 掉落的纸页贴地，不是有奖励的通用宝箱。
-				draw_rect(Rect2(-14, -12, 28, 18), Color("80674d"))
-				draw_rect(Rect2(-11, -16, 24, 21), Color("e6d6a6"))
-				draw_rect(Rect2(-8, -13, 18, 2), Color("967958"))
-				for y in [-8, -3]:
-					draw_rect(Rect2(-8, y, 14, 2), Color("967958"))
-				draw_rect(Rect2(7, 0, 6, 5), Color("416b88"))
+				if outpost_id == "entrance_record":
+					# 门前线索是地上的拖痕，不能仍画成一张「入口草图」。
+					for i in 6:
+						draw_rect(Rect2(-18 + i * 7, 7 - i * 3, 12, 3), Color("655843"))
+					for point: Vector2 in [Vector2(-11, 7), Vector2(3, 1), Vector2(18, -4)]:
+						draw_rect(Rect2(point, Vector2(4, 3)), Color("78453e"))
+				else:
+					# 札记与清单才是纸页；读取完成态继续沿用已有状态。
+					draw_rect(Rect2(-14, -12, 28, 18), Color("80674d"))
+					draw_rect(Rect2(-11, -16, 24, 21), Color("e6d6a6"))
+					draw_rect(Rect2(-8, -13, 18, 2), Color("967958"))
+					for y in [-8, -3]:
+						draw_rect(Rect2(-8, y, 14, 2), Color("967958"))
+					draw_rect(Rect2(7, 0, 6, 5), Color("416b88"))
 			"patrol":
 				if not rescued:
 					draw_texture_rect(BED, Rect2(-38, -28, 76, 48), false)
@@ -329,9 +336,12 @@ class OutpostGround extends Node2D:
 			for y in range(-1, 2):
 				for x in range(-1, 2):
 					draw_texture_rect(FLOOR, Rect2(local + Vector2(x * 24 - 12, y * 24 - 12), Vector2(24,24)), false, Color(0.85,0.91,0.87,0.75))
-		# 入口拖痕以及西侧残墙旁的小路，都指向真实缺口。
+		# 拖痕先从调查点沿门外转向正门；不把玩家直指不可穿越的城墙。
+		for i in 8:
+			var point := Vector2(-128, 544).lerp(Vector2(0, 544), float(i) / 7.0).snapped(Vector2(4, 4))
+			draw_rect(Rect2(point, Vector2(12, 3)), Color("73634d"))
 		for i in 7:
-			draw_rect(Rect2(-137 + i * 6, 556 - i * 10, 3, 12), Color(0.31,0.32,0.22,0.6))
+			draw_rect(Rect2(-7 + (i % 2) * 5, 540 - i * 16, 3, 10), Color(0.31, 0.32, 0.22, 0.6))
 
 	func _draw_path(start: Vector2, end: Vector2) -> void:
 		var steps := maxi(1, ceili(start.distance_to(end) / 16.0))

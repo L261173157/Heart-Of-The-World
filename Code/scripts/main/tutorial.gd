@@ -108,15 +108,18 @@ func _hint_opening1(controls: String) -> void:
 
 
 func _hint_opening2() -> void:
-	_hint("open2", "菜单里的「生态监测」显示种群；靠近营地巡守可调查附近真实动静")
+	if GameState.outpost_quest.is_empty():
+		_hint("open2", "营地巡守周照一直望着旧道。靠近交谈，问问前哨出了什么事")
+	else:
+		_hint("open2", "任务栏会记下当前线索；想重看人物的话，可以打开任务记录")
 
 
 func _hint_find_camp() -> void:
 	# 到点仍未开杀才点亮（flag 在 _hint 内写档，一次性）；已开杀说明玩家
 	# 自己找到了怪，不再打扰
-	if GameState.session_kills > 0 or _seen("find_camp"):
+	if GameState.session_kills > 0 or _seen("find_camp") or not GameState.outpost_quest.is_empty():
 		return
-	_hint("find_camp", "怪物以族群营地栖居荒野。先问营地巡守获取附近线索；小地图只显示看得见的活体")
+	_hint("find_camp", "想沿旧道出发，先和营地巡守周照聊聊。他正在等前哨的消息")
 
 
 func _on_region(region_id: String, display_name: String) -> void:
