@@ -447,7 +447,7 @@ func _setup_camp_quest_giver() -> void:
 	keeper.name = "CampEcologist"
 	keeper.position = WorldConfig.spawn_pos() + Vector2(-100, 75)
 	keeper.kind = "石环"
-	keeper.giver = "营地巡守"
+	keeper.giver = "营地巡守周照"
 	keeper.landmark_id = "camp_ecology"
 	keeper.quest_kind = "outpost"
 	keeper.color = Color("9fd5a6")

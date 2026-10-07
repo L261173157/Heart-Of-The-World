@@ -14,7 +14,8 @@ func _ready() -> void:
 func _run() -> void:
 	_hud = preload("res://scenes/ui/hud.tscn").instantiate()
 	add_child(_hud)
-	var ledgers: Array[Dictionary] = [_ledger("distributed", 1), _ledger("distributed", 5), _ledger("centralized", 5)]
+	var current := _ledger(5)
+	var ledgers: Array[Dictionary] = [_ledger(1), current, _legacy_view(current, "distributed"), _legacy_view(current, "centralized")]
 	for canvas: Vector2i in [Vector2i(1280, 720), Vector2i(1560, 720), Vector2i(1024, 640)]:
 		get_tree().root.size = canvas
 		get_tree().root.content_scale_size = canvas
@@ -55,7 +56,19 @@ func _check(ok: bool, label: String) -> void:
 	_checks += 1
 	if not ok: _fails += 1
 	print("  %s %s" % ["PASS" if ok else "FAIL", label])
-func _ledger(ending: String, chapters: int) -> Dictionary:
+## 仅呈现夹具：历史账本用当前合法前置和两种原始证据形状构造，不声称旧版实走。
+func _legacy_view(current: Dictionary, historical: String) -> Dictionary:
+	var raw := current.duplicate(true)
+	var ending: Dictionary = raw.quests["watch_c6_lava:s4"]
+	ending.choice = historical
+	ending.evidence["watch_c6_lava:s4:ending"].kind = "choice"
+	ending.evidence["watch_c6_lava:s4:ending"].choice = historical
+	raw.ending = historical
+	var restored := Data.sanitize(raw, int(raw.seed))
+	_check(restored.quests["watch_c6_lava:s4"].choice == historical and Data.effective_ending(restored) == "reunion", "UI旧证据保留原选择，当前后记统一团聚")
+	return restored
+
+func _ledger(chapters: int) -> Dictionary:
 	var q := Data.create(7781)
 	var e: Dictionary = {}
 	for key: String in Data.Outpost.EVIDENCE: e[key] = true
@@ -65,17 +78,16 @@ func _ledger(ending: String, chapters: int) -> Dictionary:
 		for stage: Dictionary in chapter["steps"]:
 			for action: Dictionary in stage["actions"]:
 				if action.get("optional", false): continue
-				_check(Data.record(q, stage["id"], action["id"], _proof(q, action, ending)), "UI 合同夹具记录")
+				_check(Data.record(q, stage["id"], action["id"], _proof(q, action)), "UI 合同夹具记录")
 			_check(Data.mark_paid(q, stage["id"]), "UI 合同夹具收据")
 	return q
-func _proof(q: Dictionary, a: Dictionary, ending: String) -> Dictionary:
+func _proof(q: Dictionary, a: Dictionary) -> Dictionary:
 	var p := {"position": [234, 567], "tick": 11}
 	var selected := Data.choice(q, a)
 	match str(a["kind"]):
 		"choice":
 			var option: Variant = a["choices"][0]
 			selected = str(option["id"]) if option is Dictionary else str(option)
-			if a["chain"] == "watch_c6_lava": selected = ending
 			if a["chain"] == "region_forest": selected = "outer"
 			p["choice"] = selected
 		"puzzle": p["order"] = a["puzzle_order"].duplicate()

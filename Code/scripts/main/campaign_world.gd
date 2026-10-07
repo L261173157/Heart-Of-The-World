@@ -76,6 +76,7 @@ class CampaignObject extends Node2D:
 		"hunter":preload("res://assets/creatures/frames/npc_hunter/npc_hunter_frames.res"),
 		"keeper":preload("res://assets/creatures/frames/npc_keeper/npc_keeper_frames.res"),
 	}
+	const REUNION_NAMES := {"c2:liaison":"阿苇", "c3:survivor":"沈渡", "c4:map_keeper":"罗墨", "c5:leader":"韩铎"}
 	const BAG := preload("res://assets/ts/icons/bag.png")
 	const TOOLS := preload("res://assets/ts/icons/knock_axe.png")
 	const SHELTER := preload("res://assets/ts/structures_baked/ts_house1.png")
@@ -149,7 +150,7 @@ class CampaignObject extends Node2D:
 			title = str(placement.get("title",title))
 		var hidden := bool(definition.get("initial_hidden",false)) and placement.is_empty()
 		if campaign_id == "ending:shelter":
-			hidden = str(snapshot.get("ending","")) != "centralized" and placement.is_empty()
+			hidden = str(snapshot.get("ending","")) != "reunion" and placement.is_empty()
 		if definition.has("instance_id"):
 			hidden = str(snapshot.get("active_encounter", "")) != str(definition.instance_id)
 		visible = not bool(placement.get("hidden",hidden))
@@ -194,7 +195,12 @@ class CampaignObject extends Node2D:
 			_near = false
 			if kind == "record": visible = false
 		if _label != null:
-			_label.text = title
+			# 团聚四人间隔160px；完整身份/状态仍留在交互与目录，头顶只显示短姓名和服务。
+			var reunited := str(snapshot.get("ending", "")) == "reunion" and REUNION_NAMES.has(campaign_id)
+			_label.clip_text = reunited
+			_label.text = str(REUNION_NAMES[campaign_id]) + " · 补给" if reunited else title
+			_label.position.x = -70.0 if reunited else -170.0
+			_label.size.x = 140.0 if reunited else 340.0
 		queue_redraw()
 
 	func _process(delta: float) -> void:

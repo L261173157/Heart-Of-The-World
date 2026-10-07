@@ -720,7 +720,7 @@ func outpost_visual_state() -> Dictionary:
 func outpost_state() -> Dictionary:
 	return _outpost.visual_state()
 
-func legacy_camp_offer(giver: String = "营地巡守") -> Dictionary:
+func legacy_camp_offer(giver: String = "营地巡守周照") -> Dictionary:
 	var payload := _camp.offer(giver)
 	payload["back_action"] = "outpost:menu"
 	return payload

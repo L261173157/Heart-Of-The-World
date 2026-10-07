@@ -141,7 +141,7 @@ class OutpostObject extends Node2D:
 		visible = not taken
 		if taken: _near = false
 		if kind == "patrol":
-			title = "前哨巡守" if rescued else "受伤的前哨巡守"
+			title = "前哨巡守石安" if rescued else "受伤的前哨巡守石安"
 			interaction_label = "交谈" if rescued or not evidence.get("aid_taken", false) else "救治巡守"
 			if _patrol != null:
 				_patrol.rotation = 0.0 if rescued else -PI / 2.0

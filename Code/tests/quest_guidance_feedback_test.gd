@@ -74,10 +74,10 @@ func _test_campaign_guidance() -> void:
 	_check(Data.accept_chapter(GameState.campaign_quest, "watch_c2_forest", 1), "章节展示夹具接取林地章")
 	var campaign: CampaignQuest = _qm._campaign
 	var view := campaign.snapshot("watch_c2_forest:s1")
-	_check(view.next_action == "与草药师交谈" and view.target_title == "草药师", "章节下一步包含实际交谈对象")
+	_check(view.next_action == "与林地药师白榆交谈" and view.target_title == "林地药师白榆", "章节下一步包含实际交谈对象")
 	GameState.tracked_quest_id = str(view.id)
 	_qm._push_hud()
-	_check(_hud.quest_label.text.contains("与草药师交谈"), "生产快照经管理器到真实HUD不截去NPC")
+	_check(_hud.quest_label.text.contains("与林地药师白榆交谈"), "生产快照经管理器到真实HUD不截去NPC")
 	_check(campaign.visual_state().get("target_object_id", "") == view.target_object_id, "初始世界投影复用已推送追踪快照")
 	EventBus.quest_track_requested.emit("")
 	_check(campaign.visual_state().get("target_object_id", "") == "", "明确取消跟踪立即清除世界目标")
@@ -297,5 +297,5 @@ func _test_receipt_backdrop() -> void:
 	_check(label.text == "排队的普通提示" and not label.has_theme_stylebox_override("normal"), "排队切换到普通提示时也移除底板")
 
 func _test_context_target() -> void:
-	EventBus.context_interaction_changed.emit({"available":true, "target_id":"campaign:c2:herbalist", "target_title":"草药师", "label":"交谈"})
-	_check(_hud._context_target_label.text == "草药师" and (_hud._context_btn.get_node("Caption") as Label).text == "交谈", "独立交互显示实际对象并保留简短动作")
+	EventBus.context_interaction_changed.emit({"available":true, "target_id":"campaign:c2:herbalist", "target_title":"林地药师白榆", "label":"交谈"})
+	_check(_hud._context_target_label.text == "林地药师白榆" and (_hud._context_btn.get_node("Caption") as Label).text == "交谈", "独立交互显示实际对象并保留简短动作")

@@ -21,7 +21,7 @@ static func state(quest: Dictionary) -> String:
 
 static func objective(quest: Dictionary) -> String:
 	if quest.get("kind", "") in ["camp_ecology", "outpost", "campaign"]:
-		return str(quest.get("ui_objective", "与营地巡守交谈"))
+		return str(quest.get("ui_objective", "与营地巡守周照交谈"))
 	if quest.get("settlement_blocked", false):
 		return "奖励待发：当前无法结算，材料与奖励保留"
 	if state(quest) == "claimable":

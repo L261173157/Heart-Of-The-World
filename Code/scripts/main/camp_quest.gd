@@ -30,7 +30,7 @@ func ledger() -> Dictionary:
 func is_active() -> bool:
 	return not ledger().is_empty() and ledger().get("active", false) and not ledger().get("paid", false)
 
-func offer(giver: String = "营地巡守") -> Dictionary:
+func offer(giver: String = "营地巡守周照") -> Dictionary:
 	var q := ledger()
 	if q.get("paid", false):
 		return {"kind": "info", "giver": giver, "state": "completed", "text": "你带回的经过，我已经记下了。以后有人出营，至少知道该留意什么。\n" + str(q.get("next_clue", "周围的路还长，出门多留意。")), "rules": receipt_text()}
@@ -60,7 +60,7 @@ func offer(giver: String = "营地巡守") -> Dictionary:
 	return {"kind": "info", "giver": giver, "state": "in_progress", "text": "先照这条线索找找，遇到变化再回来告诉我。\n" + next_action(), "rules": _reward_rules()}
 
 func _reward_rules() -> String:
-	return "有限狩猎与捣巢报酬相同：%d金币、%d经验、%s×1。若实地确认线索消失且无替代目标，则按调查与已有贡献结算（12–24金币、20–36经验，无补给）。需返回营地巡守交付；已结算的报酬不会重复领取。" % [Data.REWARD_GOLD, Data.REWARD_XP, ItemCatalog.name_of(Data.REWARD_BONUS)]
+	return "有限狩猎与捣巢报酬相同：%d金币、%d经验、%s×1。若实地确认线索消失且无替代目标，则按调查与已有贡献结算（12–24金币、20–36经验，无补给）。需返回营地巡守周照交付；已结算的报酬不会重复领取。" % [Data.REWARD_GOLD, Data.REWARD_XP, ItemCatalog.name_of(Data.REWARD_BONUS)]
 
 func accept() -> String:
 	# 新章节已含同一份生态预算，陈旧旧单对话不能在领奖后再开第二份。
@@ -71,7 +71,7 @@ func accept() -> String:
 	if ledger().is_empty():
 		if not _preview_current():
 			_preview = {}
-			return "暂无已核实的可达目标，请与营地巡守重新交谈"
+			return "暂无已核实的可达目标，请与营地巡守周照重新交谈"
 		GameState.camp_quest = Data.sanitize({"id": Data.ID, "active": true, "target": _preview})
 	else:
 		ledger()["active"] = true
@@ -144,7 +144,7 @@ func choice_payload() -> Dictionary:
 	var payload := {"kind": "camp_choice", "giver": "巢边的调查", "faceset": 0,
 		"origin": player.global_position if player != null else WorldConfig.spawn_pos(),
 		"text": "你已经到了据点旁。眼下%s\n要让出营的人少些危险，你打算怎样处理？" % live_text(),
-		"rules": "已有狩猎%d/2；处理后返回营地巡守交付。\n%s" % [mini(_hunt_progress(), 2), _reward_rules()],
+		"rules": "已有狩猎%d/2；处理后返回营地巡守周照交付。\n%s" % [mini(_hunt_progress(), 2), _reward_rules()],
 		"options": [
 			{"label": "有限狩猎" if hunt_enabled else "有限狩猎（当前不可用）", "action": "choose_hunt", "enabled": hunt_enabled,
 				"disabled_reason": "" if hunt_enabled else reason,
@@ -192,7 +192,7 @@ func claim() -> String:
 	if not is_active() or q["stage"] != "return" or not Data.has_result(q) or _paying:
 		return "此调查尚未完成交付，或已经领奖"
 	if not _at_giver():
-		return "请返回营地巡守身边，手动交付调查记录"
+		return "请返回营地巡守周照身边，手动交付调查记录"
 	var bonus := str(q.get("bonus", ""))
 	var rewards := {bonus: 1} if not bonus.is_empty() else {}
 	if not Inventory.can_apply({}, rewards):
@@ -247,12 +247,12 @@ func snapshot() -> Dictionary:
 		return {}
 	var t: Dictionary = q.get("target", {})
 	var done: bool = q["stage"] in ["return", "completed"]
-	var view := {"id": Data.ID, "landmark_id": Data.LANDMARK, "kind": "camp_ecology", "giver": "营地巡守",
+	var view := {"id": Data.ID, "landmark_id": Data.LANDMARK, "kind": "camp_ecology", "giver": "营地巡守周照",
 		"title": Data.TITLE, "progress": 1 if done else 0, "need": 1, "claim_at_npc": true,
 		"gold": q["gold"], "xp": q["xp"], "bonus": q["bonus"], "camp_stage": q["stage"],
 		"ui_state": "claimable" if done else "in_progress", "ui_status": "可交付" if done else "进行中",
 		"ui_objective": objective(), "history": history_text(), "live_facts": live_text() if _on_site() else "当前据点状态未在视野内；历史行动记录不代表现状",
-		"next_action": next_action(), "target_title": "营地巡守" if done else str(t.get("species", "")) + "据点",
+		"next_action": next_action(), "target_title": "营地巡守周照" if done else str(t.get("species", "")) + "据点",
 		"step_progress": step_progress(),
 		"target_pos": [WorldConfig.spawn_pos().x, WorldConfig.spawn_pos().y] if done else t.get("pos", []),
 		"species": "" if done else t.get("species", ""), "hunt_region": t.get("region_id", ""),
@@ -263,12 +263,12 @@ func snapshot() -> Dictionary:
 
 func next_action() -> String:
 	var q := ledger()
-	if q.is_empty(): return "与营地巡守交谈"
+	if q.is_empty(): return "与营地巡守周照交谈"
 	if _searching: return "正在核对可达线索"
-	if q["stage"] == "return": return "返回营地巡守交付领奖"
-	if q["stage"] == "completed": return "与营地巡守交谈，了解下一处线索"
+	if q["stage"] == "return": return "返回营地巡守周照交付领奖"
+	if q["stage"] == "completed": return "与营地巡守周照交谈，了解下一处线索"
 	var t: Dictionary = q.get("target", {})
-	if t.is_empty(): return "回营地巡守处复核线索"
+	if t.is_empty(): return "回营地巡守周照处复核线索"
 	var where := str(t["species"]) + "据点"
 	match str(q["stage"]):
 		"investigate": return "前往%s调查" % where
@@ -278,7 +278,7 @@ func next_action() -> String:
 			if _on_site() and (f["viable_count"] == 0 or not f["nest_active"] or (q["choice"] == "hunt" and not _hunt_possible(f))):
 				return "回%s重新核查" % where
 			return "在%s有限狩猎，保留巢穴" % where if q["choice"] == "hunt" else "捣毁%s巢穴" % t["species"]
-	return "与营地巡守交谈"
+	return "与营地巡守周照交谈"
 
 func step_progress() -> String:
 	var q := ledger()
@@ -293,7 +293,7 @@ func step_progress() -> String:
 func objective() -> String:
 	var q := ledger()
 	if q.is_empty():
-		return "与营地巡守交谈"
+		return "与营地巡守周照交谈"
 	if _searching:
 		return "正在核对真实种群与可达路线 · 可继续探索"
 	var t: Dictionary = q.get("target", {})
@@ -310,7 +310,7 @@ func objective() -> String:
 			if q["choice"] == "hunt":
 				return "有限狩猎 %s · 累计%d/2 · 保留巢穴和剩余族群%s" % [t["species"], _hunt_progress(), "" if _on_site() else " · 现状待到场确认"]
 			return "捣毁%s的巢穴 · 暂停繁衍，存活个体仍会狂怒%s" % [t["species"], "" if _on_site() else " · 现状待到场确认"]
-		"return": return "已有行动记录 · 返回营地巡守，手动交付领奖"
+		"return": return "已有行动记录 · 返回营地巡守周照，手动交付领奖"
 		_: return str(q.get("next_clue", "自由探索周边地区"))
 
 func facts() -> Dictionary:

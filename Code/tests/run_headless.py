@@ -14,6 +14,8 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "campaign_lore_contract": (["-s", "tests/campaign_lore_contract_test.gd"], "=== CAMPAIGN LORE CONTRACT PASS"),
+    "campaign_reunion_compatibility": ([str(PROJECT / "tests/run_campaign_reunion_compatibility_test.py")], "=== CAMPAIGN REUNION COMPATIBILITY LIFECYCLE PASS"),
     "campaign_narrative_contract": (["-s", "tests/campaign_narrative_contract_test.gd"], "=== CAMPAIGN NARRATIVE CONTRACT PASS"),
     "quest_narrative_ui": (["res://tests/quest_narrative_ui_test.tscn", "--quit-after", "30000"], "=== QUEST NARRATIVE UI PASS"),
     "reward_feedback": (["res://tests/reward_feedback_test.tscn", "--quit-after", "1000"], "=== REWARD FEEDBACK PASS"),
@@ -59,6 +61,7 @@ CASES = {
     "campaign_optional_geometry": (["res://tests/campaign_optional_geometry_test.tscn", "--quit-after", "100000"], "=== CAMPAIGN OPTIONAL GEOMETRY PASS"),
     "campaign_optional_placements": (["-s", "tests/campaign_optional_placements_test.gd"], "=== CAMPAIGN OPTIONAL PLACEMENTS PASS"),
     "campaign_service_receipts": (["-s", "tests/campaign_service_receipts_test.gd"], "CAMPAIGN_SERVICE_RECEIPTS_TEST PASS"),
+    "campaign_complete_story": ([str(PROJECT / "tests/run_campaign_complete_story_test.py")], "=== CAMPAIGN COMPLETE STORY LIFECYCLE PASS ==="),
     "campaign_story_lifecycle": ([str(PROJECT / "tests/run_campaign_story_lifecycle_test.py")], "=== CAMPAIGN STORY LIFECYCLE PASS"),
     "campaign_reward_contract": (["-s", "tests/campaign_reward_contract_test.gd"], "CAMPAIGN_REWARD_CONTRACT_TEST PASS"),
     "campaign_ledger": (["-s", "tests/campaign_ledger_test.gd"], "CAMPAIGN_LEDGER_TEST PASS"),
@@ -167,11 +170,13 @@ def unexpected_errors(case: str, output: str) -> list[str]:
 
 def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str],
              godot: str, logs: Path, timeout: int) -> bool:
-    if name in {"campaign_regional_passage", "campaign_story_lifecycle", "campaign_optional_lifecycle", "campaign_optional_outcomes", "campaign_dynamic_lifecycle", "campaign_dynamic_save_failure", "campaign_cross_family", "campaign_earned_budget", "equipment_earned_budget"}:
-        timeout = max(timeout, 1800)  # 六章实走、双路线和双结局的独立进程链。
+    if name == "campaign_complete_story":
+        timeout = max(timeout, 3600)  # 从新档逐章实走，含三种路线组合和真实战斗。
+    if name in {"campaign_reunion_compatibility", "campaign_regional_passage", "campaign_story_lifecycle", "campaign_optional_lifecycle", "campaign_optional_outcomes", "campaign_dynamic_lifecycle", "campaign_dynamic_save_failure", "campaign_cross_family", "campaign_earned_budget", "equipment_earned_budget"}:
+        timeout = max(timeout, 1800)  # 六章实走、分支路线与团聚收束的独立进程链。
     command = ([sys.executable, args[0], godot] if args[0].endswith(".py")
                else [godot, "--headless", "--path", str(PROJECT), *args])
-    if name in {"campaign_cross_family", "campaign_earned_budget", "equipment_earned_budget", "equipment_persistence", "chest_transaction"}:
+    if name in {"campaign_reunion_compatibility", "campaign_complete_story", "campaign_cross_family", "campaign_earned_budget", "equipment_earned_budget", "equipment_persistence", "chest_transaction"}:
         command += ["--log-dir", str(logs / name)]
     print(f"[{name}] 开始", flush=True)
     with subprocess.Popen(command, env=env, stdout=subprocess.PIPE,

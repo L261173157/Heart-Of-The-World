@@ -105,6 +105,7 @@ func payload(a: Dictionary) -> Dictionary:
 	return {}
 func proof(a: Dictionary, choice: String) -> Dictionary:
 	var proof: Dictionary = host._position_proof(str(a["object"]))
+	if a["kind"] == "conclude" and not choice.is_empty(): return {"error":"团聚安排已确认，请在名册前继续返程，不再选择分散或集中派驻"}
 	match str(a["kind"]):
 		"route":
 			var route := str(_q().get("quests",{}).get(a["stage"],{}).get("choice",""))
@@ -182,10 +183,10 @@ func _live_boss(species: String) -> Array:
 func _terrain(a: Dictionary) -> String:
 	return str(Catalog.stage(str(a["stage"])).get("terrain",""))
 func _choice_consequence(choice: String) -> String:
-	return {"near":"路较短，需打碎浅滩石障并走过缺口","outer":"路较长，沿西侧外缘走过两个转折","distributed":"联络员、幸存者、地图保管员和队长各守原站，四地都能补给","centralized":"四人一同迁到平原避难所，补给接待集中在那里"}.get(choice,"按这份安排继续")
+	return {"near":"路较短，需打碎浅滩石障并走过缺口","outer":"路较长，沿西侧外缘走过两个转折"}.get(choice,"按这份安排继续")
 func _choice_risk(choice: String) -> String:
 	if choice in ["near","outer"]: return "确认后沿所选路线接应；开通一处缺口不保证沿路一直安全"
-	return "确认后保留所选驻地；原有检查点、回城和前哨巡守继续保留"
+	return "确认后保留这段行动；原有检查点和回城继续可用"
 func state() -> Dictionary:
 	var state := {"open_gates":[],"rescued":{},"placements":{},"ending":""}
 	if host._proof_exists("watch_c4_hill:s2:winch"): state["open_gates"].append("c4:archive_gate")
@@ -194,12 +195,14 @@ func state() -> Dictionary:
 	if Data.ready(_q(),"watch_c2_forest:s4"):
 		state["placements"]["side_troll:departure"] = {"hidden":false}
 	if Data.ready(_q(),"watch_c6_lava:s4"):
-		var ending := str(_q().get("quests",{}).get("watch_c6_lava:s4",{}).get("choice",""))
+		var ending := Data.effective_ending(_q())
 		state["ending"] = ending
 		for npc: String in CampaignLayout.ending_positions(ending):
 			var pos: Vector2 = CampaignLayout.ending_positions(ending)[npc]
 			state["placements"][npc] = {"position":[pos.x,pos.y],"service":"远征补给","hidden":false}
-		state["placements"]["ending:shelter"] = {"hidden":ending!="centralized"}
+		state["placements"]["ending:shelter"] = {"hidden":false,"service":"团聚补给"}
+		for beacon: String in ["c2:beacon","c3:beacon","c4:beacon","c5:beacon","c6:beacon"]:
+			state["placements"][beacon] = {"service":"低负载自动转发"}
 	return state
 
 

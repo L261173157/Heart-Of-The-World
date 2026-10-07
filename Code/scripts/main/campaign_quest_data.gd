@@ -12,6 +12,9 @@ const ID := "campaign_watch_v1"
 const VERSION := 1
 const MAX_LEVEL := 100
 const MAX_AMOUNT := 100000
+const ENDING_STAGE := "watch_c6_lava:s4"
+const ENDING_ACTION := ENDING_STAGE + ":ending"
+const REUNION := "reunion"
 ## 此版本抄录批准时的 EconomyMath 预算，终身不随通用经济平衡改写。
 ## 新战役平衡必须新增 v2 规则并提升 REWARD_VERSION；绝不可修改以下 v1 常量。
 const REWARD_VERSION := 1
@@ -62,7 +65,7 @@ static func sanitize(value: Variant, seed: int) -> Dictionary:
 			var proof: Dictionary = _proof(evidence.get(a["id"]), a, seed)
 			if not proof.is_empty() and _can_record(q, sid, a["id"], false) and _consistent_proof(q, a, proof):
 				state["evidence"][a["id"]] = proof
-				if a["kind"] == "choice": state["choice"] = proof.get("choice", "")
+				if a["kind"] == "choice" or _legacy_ending_proof(proof, a): state["choice"] = proof.get("choice", "")
 	# 使用次数是独立的不可逆占位记录；放弃、读档和坏证据都不能把名额退回。
 	var used: Dictionary = raw.get("random_used", {}) if raw.get("random_used") is Dictionary else {}
 	for s: Dictionary in Catalog.all_stages(int(q.get("seed", 0))):
@@ -148,6 +151,8 @@ static func _can_record(q: Dictionary, stage_id: String, action_id: String, live
 static func record(q: Dictionary, stage_id: String, action_id: String, evidence: Dictionary) -> bool:
 	if not can_record(q, stage_id, action_id): return false
 	var a := Catalog.action(stage_id, action_id)
+	# 旧二选一只允许从既有收据恢复；实时入口不能再创建第二种结局。
+	if action_id == ENDING_ACTION and evidence.has("choice"): return false
 	var raw: Dictionary = evidence.duplicate(true)
 	raw["action_id"] = action_id
 	raw["seed"] = q["seed"]
@@ -293,17 +298,26 @@ static func _receipt(value: Variant) -> Dictionary:
 	return {"paid": was_paid, "status": "paid" if was_paid else "pending", "gold": clampi(_integer(raw.get("gold"), 0), 0, MAX_AMOUNT),
 		"xp": clampi(_integer(raw.get("xp"), 0), 0, MAX_AMOUNT), "bonus": "onigiri" if str(raw.get("bonus", "")) == "onigiri" else ""}
 
+## 只兼容原版终章该项行动的两种历史签署记录；不放宽其它行动的类型检查。
+static func _legacy_ending_proof(raw: Dictionary, action: Dictionary) -> bool:
+	return action.get("id", "") == ENDING_ACTION and action.get("kind", "") == "conclude" and raw.get("kind", "") == "choice" and raw.get("choice", "") in ["distributed", "centralized"]
+
+## 历史选择属于存档证据，当前驻地和服务只消费统一的团聚结局。
+static func effective_ending(q: Dictionary) -> String:
+	return REUNION if ready(q, ENDING_STAGE) else ""
+
 static func _proof(value: Variant, action: Dictionary, seed: int) -> Dictionary:
 	if not value is Dictionary: return {}
 	var raw: Dictionary = value
 	if not raw.get("action_id") is String or not raw.get("object") is String or not raw.get("kind") is String: return {}
-	if raw["action_id"] != action["id"] or _integer(raw.get("seed"), -1) != seed or raw["object"] != action["object"] or raw["kind"] != action["kind"]: return {}
+	if raw["action_id"] != action["id"] or _integer(raw.get("seed"), -1) != seed or raw["object"] != action["object"] or (raw["kind"] != action["kind"] and not _legacy_ending_proof(raw, action)): return {}
+	if action["id"] == ENDING_ACTION and raw.has("choice") and not _legacy_ending_proof(raw, action): return {}
 	var tick := _integer(raw.get("tick"), -1)
 	var position: Variant = raw.get("position")
 	if tick < 0 or not position is Array or position.size() != 2: return {}
 	for coordinate: Variant in position:
 		if typeof(coordinate) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(coordinate)) or absf(float(coordinate)) > 10000000.0: return {}
-	var p := {"action_id": action["id"], "seed": seed, "object": action["object"], "kind": action["kind"], "tick": tick,
+	var p := {"action_id": action["id"], "seed": seed, "object": action["object"], "kind": raw["kind"], "tick": tick,
 		"position": [float(position[0]), float(position[1])]}
 	match str(action["kind"]):
 		"puzzle":
@@ -403,7 +417,7 @@ static func _restore_runtime_state(q: Dictionary, raw: Dictionary) -> void:
 	var travel: Dictionary = raw.get("travel", {}) if raw.get("travel") is Dictionary else {}
 	if travel.get("visited") is Array:
 		for terrain: Variant in travel["visited"]:
-			if terrain is String and (terrain in q["travel"]["unlocked"] or terrain == "home" or (terrain == "shelter" and chapter_complete(q, "watch_c6_lava") and q.get("quests",{}).get("watch_c6_lava:s4",{}).get("choice","")=="centralized") or (terrain == "side_troll" and chapter_complete(q, "watch_c2_forest"))) and not terrain in q["travel"]["visited"]: q["travel"]["visited"].append(terrain)
+			if terrain is String and (terrain in q["travel"]["unlocked"] or terrain == "home" or (terrain == "shelter" and effective_ending(q) == REUNION) or (terrain == "side_troll" and chapter_complete(q, "watch_c2_forest"))) and not terrain in q["travel"]["visited"]: q["travel"]["visited"].append(terrain)
 	if not q["travel"].has("arrivals"): q["travel"]["arrivals"] = {}
 	if travel.get("arrivals") is Dictionary:
 		for terrain: String in q["travel"]["visited"]:
@@ -434,7 +448,14 @@ static func _refresh_derived(q: Dictionary) -> void:
 				var service: String = a["service"]
 				var claimed := service_claimed(q, service)
 				q["services"][service] = {"enabled": true, "claimed": claimed, "status": "claimed" if claimed else "available", "stock_item": "onigiri"}
-			if a.get("ending", false) and ready(q, s["id"]): q["ending"] = state.get("choice", "")
+			if a.get("ending", false) and ready(q, s["id"]):
+				q["ending"] = state.get("choice", "") if not str(state.get("choice", "")).is_empty() else REUNION
+	if effective_ending(q) == REUNION:
+		# 原站点仍是亮着的转发设备；此标记不搬走独立支线居民或更改补给领取墓碑。
+		for id: String in ["forest_station", "swamp_station", "hill_station", "snow_station", "ending_station"]:
+			if q["services"].has(id):
+				q["services"][id]["mode"] = "automatic_relay"
+				q["services"][id]["staffed"] = false
 
 
 static func choice(q: Dictionary, action: Dictionary) -> String:

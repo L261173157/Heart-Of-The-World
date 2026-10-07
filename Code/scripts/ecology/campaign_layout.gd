@@ -10,7 +10,7 @@ const SITE_IDS := {"plains":"watch_c1_outpost", "forest":"watch_c2_forest", "swa
 const SITE_TITLES := {"plains":"失联的前哨", "forest":"林间旧约站", "swamp":"沉没的账册", "hill":"城塞外接应营", "snow":"风雪中继站", "lava":"最后的守望"}
 const SITE_HALF := Vector2(704, 704)
 const OBJECTS := {
-	"c2:herbalist": {"terrain":"forest", "title":"草药师", "kind":"npc", "portrait":"herbalist", "offset":Vector2(-96,448), "interaction_label":"交谈"},
+	"c2:herbalist": {"terrain":"forest", "title":"林地药师白榆", "kind":"npc", "portrait":"herbalist", "offset":Vector2(-96,448), "interaction_label":"交谈"},
 	"c2:old_pact": {"terrain":"forest", "title":"旧约抄本", "kind":"record", "offset":Vector2(-256,288), "interaction_label":"阅读旧约"},
 	"c2:route_marks": {"terrain":"forest", "title":"巡线员的方位刻记", "kind":"record", "offset":Vector2(128,224), "interaction_label":"辨认刻记"},
 	"c2:rune_north": {"terrain":"forest", "title":"北方信号石", "kind":"rune", "offset":Vector2(160,-448), "interaction_label":"触碰北印"},
@@ -18,7 +18,7 @@ const OBJECTS := {
 	"c2:rune_west": {"terrain":"forest", "title":"西方信号石", "kind":"rune", "offset":Vector2(-512,128), "interaction_label":"触碰西印"},
 	"c2:forest_gate": {"terrain":"forest", "title":"旧约档案石门", "kind":"gate", "offset":Vector2(-352,-32), "interaction_label":"检查石门"},
 	"c2:torn_record": {"terrain":"forest", "title":"门后的残页", "kind":"record", "offset":Vector2(-352,-320), "interaction_label":"收取残页"},
-	"c2:liaison": {"terrain":"forest", "title":"受伤的远征队联络员", "kind":"injured", "portrait":"watchman", "offset":Vector2(352,-224), "interaction_label":"查看伤势"},
+	"c2:liaison": {"terrain":"forest", "title":"联络员阿苇", "kind":"injured", "portrait":"watchman", "offset":Vector2(352,-224), "interaction_label":"查看伤势"},
 	"c2:aid_cache": {"terrain":"forest", "title":"林间急救匣", "kind":"aid", "offset":Vector2(480,352), "interaction_label":"取出急救物资"},
 	"c2:signal_parts": {"terrain":"forest", "title":"信标备件箱", "kind":"parts", "offset":Vector2(-512,448), "interaction_label":"领取信标备件"},
 	"c2:beacon": {"terrain":"forest", "title":"失火的林间信标", "kind":"beacon", "offset":Vector2(0,-32), "interaction_label":"检查信标"},
@@ -29,11 +29,11 @@ const OBJECTS := {
 	"c3:route_near": {"terrain":"swamp", "title":"近路勘察桩", "kind":"survey", "offset":Vector2(0,128), "interaction_label":"勘察现场"},
 	"c3:route_outer": {"terrain":"swamp", "title":"外环勘察桩", "kind":"survey", "offset":Vector2(-576,-128), "interaction_label":"勘察现场"},
 	"c3:route_choice": {"terrain":"swamp", "title":"接应路线图", "kind":"record", "offset":Vector2(0,384), "interaction_label":"调查记录"},
-	"c3:survivor": {"terrain":"swamp", "title":"沼泽幸存者", "kind":"injured", "portrait":"watchman", "offset":Vector2(0,-416), "interaction_label":"查看伤势"},
+	"c3:survivor": {"terrain":"swamp", "title":"渡工沈渡", "kind":"injured", "portrait":"watchman", "offset":Vector2(0,-416), "interaction_label":"查看伤势"},
 	"c3:aid_cache": {"terrain":"swamp", "title":"接应急救匣", "kind":"aid", "offset":Vector2(448,-320), "interaction_label":"领取急救物资"},
 	"c3:reply_record": {"terrain":"swamp", "title":"未完成的回信", "kind":"record", "offset":Vector2(-224,-384), "interaction_label":"调查记录"},
 	"c3:beacon": {"terrain":"swamp", "title":"沼泽联络灯", "kind":"beacon", "offset":Vector2(224,-416), "interaction_label":"检查信标"},
-	"c4:scholar": {"terrain":"hill", "title":"遗迹学者", "kind":"npc", "portrait":"scholar", "offset":Vector2(-192,448), "interaction_label":"交谈"},
+	"c4:scholar": {"terrain":"hill", "title":"遗迹学者闻川", "kind":"npc", "portrait":"scholar", "offset":Vector2(-192,448), "interaction_label":"交谈"},
 	"c4:roster": {"terrain":"hill", "title":"旧驻守名册", "kind":"record", "offset":Vector2(-416,224), "interaction_label":"调查记录"},
 	"c4:winch_parts": {"terrain":"hill", "title":"绞盘零件", "kind":"parts", "offset":Vector2(480,320), "interaction_label":"领取零件"},
 	"c4:winch": {"terrain":"hill", "title":"断开的绞盘", "kind":"valve", "offset":Vector2(-160,-416), "interaction_label":"操作机关"},
@@ -41,13 +41,13 @@ const OBJECTS := {
 	"c4:fortress_record": {"terrain":"hill", "title":"城塞南门观测点", "kind":"survey", "anchor":"boss", "offset":Vector2(0,288), "interaction_label":"勘察现场"},
 	"c4:bypass_control": {"terrain":"hill", "title":"西侧绕行绞盘", "kind":"valve", "anchor":"boss", "offset":Vector2(-416,-64), "interaction_label":"操作机关"},
 	"c4:archive": {"terrain":"hill", "title":"封关档案", "kind":"record", "anchor":"boss", "offset":Vector2(512,-320), "interaction_label":"调查记录"},
-	"c4:map_keeper": {"terrain":"hill", "title":"负伤的地图保管员", "kind":"injured", "portrait":"scholar", "offset":Vector2(384,-256), "interaction_label":"查看伤势"},
+	"c4:map_keeper": {"terrain":"hill", "title":"地图保管员罗墨", "kind":"injured", "portrait":"scholar", "offset":Vector2(384,-256), "interaction_label":"查看伤势"},
 	"c4:snow_coordinates": {"terrain":"hill", "title":"第二次分队的坐标", "kind":"record", "offset":Vector2(-384,-352), "interaction_label":"调查记录"},
 	"c4:beacon": {"terrain":"hill", "title":"丘陵接应信标", "kind":"beacon", "offset":Vector2(0,128), "interaction_label":"检查信标"},
 	"c5:altar_record": {"terrain":"snow", "title":"冰封祭坛刻文", "kind":"record", "offset":Vector2(-384,128), "interaction_label":"调查记录"},
 	"c5:ice_barrier": {"terrain":"snow", "title":"封住祭坛的冰障", "kind":"survey", "offset":Vector2(-352,-32), "interaction_label":"勘察现场"},
 	"c5:tablet": {"terrain":"snow", "title":"祭坛内的石版", "kind":"record", "offset":Vector2(-352,-320), "interaction_label":"调查记录"},
-	"c5:leader": {"terrain":"snow", "title":"受伤的远征队长", "kind":"injured", "portrait":"watchman", "offset":Vector2(352,-288), "interaction_label":"查看伤势"},
+	"c5:leader": {"terrain":"snow", "title":"远征队长韩铎", "kind":"injured", "portrait":"watchman", "offset":Vector2(352,-288), "interaction_label":"查看伤势"},
 	"c5:aid_cache": {"terrain":"snow", "title":"雪地急救匣", "kind":"aid", "offset":Vector2(-512,448), "interaction_label":"领取急救物资"},
 	"c5:withdrawal_log": {"terrain":"snow", "title":"撤守日志", "kind":"record", "offset":Vector2(-160,224), "interaction_label":"调查记录"},
 	"c5:route_log": {"terrain":"snow", "title":"分队路书", "kind":"record", "offset":Vector2(480,320), "interaction_label":"调查记录"},
@@ -63,7 +63,7 @@ const OBJECTS := {
 	"c6:core_east": {"terrain":"lava", "title":"中枢东侧回路", "kind":"rune", "anchor":"boss", "offset":Vector2(672,-224), "interaction_label":"操作回路"},
 	"c6:core_center": {"terrain":"lava", "title":"中枢中央回路", "kind":"rune", "anchor":"boss", "offset":Vector2(512,-64), "interaction_label":"操作回路"},
 	"c6:heart": {"terrain":"lava", "title":"世界之心", "kind":"beacon", "anchor":"boss", "offset":Vector2(512,96), "interaction_label":"检查信标"},
-	"c6:ending_council": {"terrain":"lava", "title":"此后道路的议事桌", "kind":"record", "offset":Vector2(-352,224), "interaction_label":"调查记录"},
+	"c6:ending_council": {"terrain":"lava", "title":"归途的团聚名册", "kind":"record", "offset":Vector2(-352,224), "interaction_label":"调查记录"},
 	"c6:beacon": {"terrain":"lava", "title":"熔岩接应信标", "kind":"beacon", "offset":Vector2(0,128), "interaction_label":"检查信标"},
 }
 
@@ -747,13 +747,13 @@ static func _build_ending_shelter() -> void:
 
 
 ## 只给新增剧情人物安排驻地，绝不改第一章留守巡逻员或既有检查点。
-static func ending_positions(choice: String) -> Dictionary:
+static func ending_positions(_legacy_choice: String = "reunion") -> Dictionary:
 	_ensure()
 	var cast := ["c2:liaison","c3:survivor","c4:map_keeper","c5:leader"]
 	var out := {}
 	var center := site_center("plains")+Vector2(-576,1472)
 	for i in cast.size():
-		out[cast[i]] = center+Vector2((i-1.5)*160,-120) if choice=="centralized" else object_position(cast[i])
+		out[cast[i]] = center+Vector2((i-1.5)*160,-120)
 	return out
 
 

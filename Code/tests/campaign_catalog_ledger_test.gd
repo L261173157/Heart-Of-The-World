@@ -24,7 +24,9 @@ func _initialize() -> void:
 		for stage: Dictionary in c["steps"]: _complete_stage(q, stage)
 		q = _roundtrip(q)
 		_check(Data.chapter_complete(q, c["id"]), "全章JSON往返证据完整")
-	_check(q["ending"] == "distributed", "终局由真实选择与落实证据推导")
+	_check(Data.effective_ending(q) == "reunion" and q["ending"] == "reunion", "新终局由团聚确认与落实证据推导")
+	var finale: Dictionary = q["quests"]["watch_c6_lava:s4"]
+	_check(finale["choice"].is_empty() and finale["evidence"]["watch_c6_lava:s4:ending"]["kind"] == "conclude", "新终局没有虚构历史选择")
 	for family: Array in [Catalog.side_chains(), Catalog.regional_arcs()]:
 		for chain: Dictionary in family:
 			for stage: Dictionary in chain["steps"]:

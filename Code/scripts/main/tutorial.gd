@@ -109,7 +109,7 @@ func _hint_opening1(controls: String) -> void:
 
 func _hint_opening2() -> void:
 	if GameState.outpost_quest.is_empty():
-		_hint("open2", "营地巡守一直望着旧道。靠近交谈，问问前哨出了什么事")
+		_hint("open2", "营地巡守周照一直望着旧道。靠近交谈，问问前哨出了什么事")
 	else:
 		_hint("open2", "任务栏会记下当前线索；想重看人物的话，可以打开任务记录")
 
@@ -119,7 +119,7 @@ func _hint_find_camp() -> void:
 	# 自己找到了怪，不再打扰
 	if GameState.session_kills > 0 or _seen("find_camp") or not GameState.outpost_quest.is_empty():
 		return
-	_hint("find_camp", "想沿旧道出发，先和营地巡守聊聊。他正在等前哨的消息")
+	_hint("find_camp", "想沿旧道出发，先和营地巡守周照聊聊。他正在等前哨的消息")
 
 
 func _on_region(region_id: String, display_name: String) -> void:

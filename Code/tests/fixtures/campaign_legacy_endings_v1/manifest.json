@@ -1,0 +1,164 @@
+{
+  "schema": 1,
+  "label": "Generated isolated test fixture; not a user save",
+  "source_revision": "e5668d2d473d38e7dcc6c08cd0a8cfe76fbe01dc",
+  "source_engine": "4.7.stable.official.5b4e0cb0f",
+  "source_engine_sha256": "f85bbc6b15e22416c7d797cd60b63286dd67b9cb13498847056c18520ae55a75",
+  "source_run_status": "passed",
+  "source_phases": [
+    {
+      "label": "source-chapter1",
+      "status": "passed"
+    },
+    {
+      "label": "source-depart",
+      "status": "passed"
+    },
+    {
+      "label": "source-rune_partial",
+      "status": "passed"
+    },
+    {
+      "label": "source-runes",
+      "status": "passed"
+    },
+    {
+      "label": "source-rescue",
+      "status": "passed"
+    },
+    {
+      "label": "source-beacon99",
+      "status": "passed"
+    },
+    {
+      "label": "source-claim",
+      "status": "passed"
+    },
+    {
+      "label": "source-c3_prepare",
+      "status": "passed"
+    },
+    {
+      "label": "source-c3_outer_partial",
+      "status": "passed"
+    },
+    {
+      "label": "source-c3_outer",
+      "status": "passed"
+    },
+    {
+      "label": "source-c4",
+      "status": "passed"
+    },
+    {
+      "label": "source-c5_partial",
+      "status": "passed"
+    },
+    {
+      "label": "source-c5_finish",
+      "status": "passed"
+    },
+    {
+      "label": "prepare",
+      "status": "passed"
+    },
+    {
+      "label": "world",
+      "status": "passed"
+    },
+    {
+      "label": "resume",
+      "status": "passed"
+    },
+    {
+      "label": "finale",
+      "status": "passed"
+    },
+    {
+      "label": "distributed",
+      "status": "passed"
+    },
+    {
+      "label": "distributed-read",
+      "status": "passed"
+    },
+    {
+      "label": "centralized",
+      "status": "passed"
+    },
+    {
+      "label": "centralized-read",
+      "status": "passed"
+    }
+  ],
+  "source_files": {
+    "scripts/main/campaign_catalog.gd": {
+      "exists": true,
+      "bytes": 98623,
+      "sha256": "d8c11daa9eab4ba46a238be956b95cfa348c6150c555a460ee9dca335d934fd8"
+    },
+    "scripts/main/campaign_main.gd": {
+      "exists": true,
+      "bytes": 13635,
+      "sha256": "79795f55a33f111ab842e00d054a7b392217753675d469c3e95902c893f29d6c"
+    },
+    "scripts/main/campaign_quest_data.gd": {
+      "exists": true,
+      "bytes": 45118,
+      "sha256": "6c5049cccf15137769e183f7f1116e68319b1857872cc43af2f34b365c406203"
+    },
+    "tests/campaign_cross_family_test.gd": {
+      "exists": true,
+      "bytes": 19873,
+      "sha256": "226c648432ebbfe8ce83626326f93d2b8d1e3b80bd4c24dc003030e5a2ac2e57"
+    },
+    "tests/campaign_story_acceptance_test.gd": {
+      "exists": true,
+      "bytes": 24471,
+      "sha256": "7882f5c710aeca866b6804f2f56c84b160c086e0d736725c5300733cb4b0f9ea"
+    },
+    "tests/run_campaign_cross_family_test.py": {
+      "exists": true,
+      "bytes": 13594,
+      "sha256": "4260df5b6185939bf8d8aac8983a40314873a2db8a619b454e44451488ad6733"
+    }
+  },
+  "fixtures": {
+    "distributed": {
+      "save": {
+        "file": "distributed.json.gz",
+        "bytes": 278680,
+        "sha256": "0983ee158c82819d6db4c556274af13824012f75e69be01f3b4fe8ec74474b6b"
+      },
+      "expected": {
+        "file": "distributed.json.campaign_expected.gz",
+        "bytes": 165579,
+        "sha256": "ea26f6034dc35903b1e89cf45fe1529cc0a9f8326fe97fb2899a4cf563b6dd20"
+      }
+    },
+    "centralized": {
+      "save": {
+        "file": "centralized.json.gz",
+        "bytes": 278587,
+        "sha256": "036971d3dd9672062b5e6bf2d509a5fb129fbc67ab9780c8563c631a043c525b"
+      },
+      "expected": {
+        "file": "centralized.json.campaign_expected.gz",
+        "bytes": 165484,
+        "sha256": "30e6506893b0ccdc47ed4a4a515d05efecbb31985dcecaab60fa318ce5f4b357"
+      }
+    },
+    "finale": {
+      "save": {
+        "file": "finale.json.gz",
+        "bytes": 278026,
+        "sha256": "498bff823bf52f5e058dd09883666fea2ff0579901687e1eabdf5aa6590be5ae"
+      },
+      "expected": {
+        "file": "finale.json.campaign_expected.gz",
+        "bytes": 164907,
+        "sha256": "cb22397c9d5927f91822d123299312816164ed52880041021a73fce5c3a2998d"
+      }
+    }
+  }
+}

@@ -178,11 +178,14 @@ func _test_extended_routes(seedv: int) -> void:
 		_check(ObstacleField.sample_cell(boss_cell+Vector2i(6,0)).get("kind","")=="castle","附室不覆盖原城塞东墙")
 	var changed := CampaignLayout.set_open_gates([])
 	ObstacleField.invalidate_authored_cells(changed)
-	for choice: String in ["distributed","centralized"]:
+	var reunion := CampaignLayout.ending_positions("reunion")
+	_check(reunion.size() == 4 and reunion.has_all(["c2:liaison", "c3:survivor", "c4:map_keeper", "c5:leader"]), "团聚有四位固定归来人物")
+	for choice: String in ["reunion", "distributed", "centralized", "", "unknown"]:
 		var positions := CampaignLayout.ending_positions(choice)
-		_check(positions.size()==4,"两个结局各有四个新增人物去向")
+		_check(positions == reunion, "历史布局调用统一返回同一团聚驻地")
 		for position: Vector2 in positions.values():
 			_check(not ObstacleField.blocks(position,12) and ObstacleField.liquid_kind_at(position)=="","结局人物实际安全站位")
+			_check(BiomeMap.terrain_at(position) == "plains" and position.distance_to(CampaignLayout.object_position("ending:shelter")) < 480, "四位人物在同一平原避难所团聚")
 	var troll := CampaignLayout.entry_for_object("side_troll:giver")
 	_check(troll.distance_to(BiomeMap.farthest_patch("forest").center)>2000,"巨魔支线远征安全接近点")
 	_check(not ObstacleField.blocks(troll,12) and ObstacleField.liquid_kind_at(troll)=="","巨魔支线落点通行安全")

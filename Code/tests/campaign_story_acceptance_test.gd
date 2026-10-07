@@ -362,49 +362,67 @@ func _read_defeat() -> void:
 	var boss: MonsterInstance = WorldSim.sim.instances.get(int(kill.get("instance_id", -1)))
 	_check(boss != null and not boss.is_alive, "原Boss死亡在世界存档保留，没有为剧情强制复活")
 
-func _ending(choice: String) -> void:
+func _ending(_legacy_label: String = "reunion") -> void:
 	var old_checkpoints := GameState.discovered_checkpoints.duplicate()
 	var outpost := _q().duplicate(true)
 	var patrol_position := _prop("wounded_patrol").global_position
 	var actions := _stage_actions(C6, 4)
-	if not await _do_action(actions[0], choice) or not await _do_action(actions[1]): return
-	_check(_campaign_data.ready(_cq(), C6 + ":s4"), "明确结局选择加现场落实完成最后节拍：" + choice)
-	_verify_ending_world(choice)
-	_check(_same(outpost, _q()) and _prop("wounded_patrol").global_position == patrol_position, "两种结局均保留首章原巡守和原始奖励合同")
+	if not await _cw(actions[0]["object"]): return
+	var before := _cq().duplicate(true)
+	_campaign.perform_action(actions[0]["id"], "distributed")
+	_campaign.perform_action(actions[0]["id"], "centralized")
+	_check(_same(before, _cq()), "旧二选一回调不能替新终局留下选择或发奖")
+	var payload: Dictionary = _campaign.object_payload(str(actions[0]["object"]))
+	_check(payload.get("kind", "") == "camp_action" and not payload.has("options"), "团聚名册使用单行动确认，没有终局分支按钮")
+	if not await _do_action(actions[0]) or not await _do_action(actions[1]): return
+	_check(_campaign_data.ready(_cq(), C6 + ":s4") and _campaign_data.effective_ending(_cq()) == "reunion", "团聚名册加现场转发完成唯一终局")
+	_verify_ending_world()
+	_check(_same(outpost, _q()) and _prop("wounded_patrol").global_position == patrol_position, "团聚保留首章原巡守和原始奖励合同")
 	_check(GameState.discovered_checkpoints == old_checkpoints, "结局不撤销原检查点")
 	var wallet := _wallet()
-	_campaign.perform_action(actions[0]["id"], "centralized" if choice == "distributed" else "distributed")
+	var receipt: Dictionary = _cq().quests[C6+":s4"].duplicate(true)
+	_campaign.perform_action(actions[0]["id"], "centralized")
+	_campaign.perform_action(actions[0]["id"], "distributed")
 	_campaign.claim(C6 + ":s4")
-	_check(_wallet() == wallet and _cq().get("quests", {}).get(C6 + ":s4", {}).get("choice", "") == choice, "终局重复/另一选择回调不改既定结局或复付")
-	await _ending_services(choice)
+	_check(_wallet() == wallet and _same(receipt, _cq().quests[C6+":s4"]), "终局重复和旧选择回调不改证据或复付")
+	await _ending_services()
 
-func _verify_ending_world(choice: String) -> void:
-	for id: String in _campaign_layout.ending_positions(choice):
+func _verify_ending_world(_legacy_label: String = "reunion") -> void:
+	_check(_campaign_data.effective_ending(_cq()) == "reunion", "新旧终局均按唯一团聚解释")
+	for id: String in _campaign_layout.ending_positions():
 		var npc := _cp(id)
-		_check(npc != null and npc.global_position == _campaign_layout.ending_positions(choice)[id], "结局实际驻地变更：" + id)
-		_check(npc != null and not str(npc.get("service")).is_empty(), "结局新增居民具有真实服务状态：" + id)
+		_check(npc != null and npc.global_position == _campaign_layout.ending_positions()[id], "结局实际驻地变更：" + id)
+		_check(npc != null and not str(npc.get("service")).is_empty(), "团聚居民具有真实服务状态：" + id)
 	var shelter := _cp("ending:shelter")
-	_check(shelter != null and shelter.is_visible_in_tree() == (choice == "centralized"), "避难所实体显隐真正对应所选结局")
+	_check(shelter != null and shelter.is_visible_in_tree(), "新旧终局均显示平原避难所实体")
+	for id: String in ["c2:beacon","c3:beacon","c4:beacon","c5:beacon","c6:beacon"]:
+		var beacon := _cp(id)
+		_check(beacon != null and beacon.repaired and str(beacon.service) == "低负载自动转发", "远方信标仍亮着并转为自动转发：" + id)
+		_check(not _campaign._service_available(id), "无人远站不能保留NPC商店：" + id)
 
-func _ending_services(choice: String) -> void:
+func _ending_services(_legacy_label: String = "reunion") -> void:
 	var wallet := _wallet()
-	var cast := {"forest":"c2:liaison","swamp":"c3:survivor","hill":"c4:map_keeper","snow":"c5:leader"}
-	var origin := "c6:beacon"
-	if choice == "centralized":
-		if not await _travel_story("shelter", origin, false): return
-	for terrain: String in cast:
-		var id: String = cast[terrain]
-		if choice == "distributed":
-			if not await _travel_story(terrain, origin, false): return
+	var cast := ["c2:liaison","c3:survivor","c4:map_keeper","c5:leader"]
+	if not await _cw("c6:beacon"): return
+	var payload: Dictionary = _campaign.object_payload("c6:beacon")
+	var remote_shop := false
+	for option: Dictionary in payload.get("options", []):
+		if str(option.get("action", "")).begins_with("campaign|shop|"): remote_shop = true
+	_check(not remote_shop, "远端自动信标菜单不显示无人补给商店")
+	if not await _travel_story("shelter", "c6:beacon", false): return
+	for id: String in cast:
 		if not await _cw(id): return
+		if not await _ci(id, false): return
+		var greeting := str(_hud._dialogue_text.text)
+		_check(greeting == _campaign._reunion_greeting(id) and not greeting.is_empty(), "实际团聚交谈呈现此人独有的牵挂与后续：" + id)
+		_hud._close_dialogue()
 		if not await _choice_ui(id, "campaign|shop|" + id, false, false): return
-		_check(_hud._dialogue_kind == "shop" and _hud._dialogue_yes.visible, "真实驻地居民打开补给确认层：" + id)
+		_check(_hud._dialogue_kind == "shop" and _hud._dialogue_yes.visible, "真实团聚居民打开补给确认层：" + id)
 		if _hud._dialogue_yes.visible: await _tap(_hud._dialogue_yes)
 		_check(_hud.shop_panel.visible, "结局驻地实际可进入原有商店：" + id)
 		if _hud.shop_panel.visible: _hud._toggle_shop()
 		_hud._close_dialogue()
-		origin = id
-	_check(_wallet() == wallet, "四处服务访问与往返不会重复支付终章或偷偷买卖物品")
+	_check(_wallet() == wallet, "四位居民服务访问与返程不会重复支付终章或偷偷买卖物品")
 
 func _run() -> void:
 	Engine.time_scale = 4.0
@@ -432,11 +450,10 @@ func _run() -> void:
 		"c6_prepare_empty": await _c6_prepare_empty()
 		"c6_live": await _c6_live()
 		"read_defeat": _read_defeat()
-		"ending_distributed": await _ending("distributed")
-		"ending_centralized": await _ending("centralized")
+		"ending_reunion": await _ending()
 		"read_ending":
 			_check(_campaign_data.ready(_cq(), C6 + ":s4"), "独立冷进程仍保留六章完成和结局")
-			_verify_ending_world(str(_cq().get("quests",{}).get(C6+":s4",{}).get("choice","")))
+			_verify_ending_world()
 		_:
 			_check(false, "未知完整主线验收阶段：" + args[0])
 	if _fails == 0 and args[0] not in ["read_ending", "read_defeat"]:

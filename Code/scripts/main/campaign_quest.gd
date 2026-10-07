@@ -143,6 +143,7 @@ func object_payload(object_id: String) -> Dictionary:
 		var finish: Dictionary = _stage_cache[stage_id]["actions"][-1]
 		if str(finish["object"]) == object_id:
 			return _action_payload("约好的报酬已经备好，带上它再动身吧。", "领取整笔奖励", "campaign|claim|" + stage_id, object_id, {"rules":"每段奖励仅领取一次；背包放不下的补给存入待领取。"})
+	if object_id == "c6:ending_council" and Data.effective_ending(ledger()) == Data.REUNION: return epilogue_payload()
 	if object_id in _station_origins(): return departure_payload(object_id, _object_title(object_id))
 	for a: Dictionary in _actions.values():
 		if str(a["object"]) == object_id and _proof_exists(str(a["id"])):
@@ -451,8 +452,8 @@ func _at_origin(id: String) -> bool:
 
 func travel_options() -> Array:
 	var options: Array = []
-	if Data.ready(ledger(),"watch_c6_lava:s4") and str(ledger()["quests"]["watch_c6_lava:s4"].get("choice",""))=="centralized":
-		options.append({"terrain":"shelter","chapter":"","title":"集中安置的避难所","repaired":true})
+	if Data.effective_ending(ledger()) == Data.REUNION:
+		options.append({"terrain":"shelter","chapter":"","title":"平原团聚避难所","repaired":true})
 	for chapter: Dictionary in Catalog.main_chapters():
 		if _chapter_available(chapter):
 			options.append({"terrain":chapter["terrain"],"chapter":chapter["id"],"title":chapter["title"],"repaired":Data.ready(ledger(),str(chapter["id"])+":s4")})
@@ -476,15 +477,33 @@ func departure_payload(origin_id: String, giver: String = "远征联络员") -> 
 	if origin_id == "home:patrol" and OutpostQuestData.valid_legacy(GameState.camp_quest):
 		options.append({"label":"原营地调查 / 交付","action":"outpost:legacy","enabled":true,
 			"consequence":"翻出此前的营地委托，继续调查或领取报酬","risk":"已经领取的报酬不会重发"})
+	if not _chapter_history_options().is_empty():
+		options.append({"label":"翻阅已取得的远征记录","action":"campaign|history_menu","enabled":true,"utility":true,"consequence":"按已经走过的章节重读纸页和谈话","risk":"只读，不改变证据与报酬"})
 	options.append({"label":"前哨任务 / 原记录","action":"outpost:menu","enabled":true,"consequence":"翻阅前哨留下的记录","risk":"已经领取的报酬不会重发"})
-	var opening := "巡守提到的旧路书指向林地。那边的联络员一直等着巡守的回信。带上路书吧，我们先去问问，守望究竟从哪里断了。" if origin_id == "home:patrol" else "你带回的路书已经摊开。接下来往哪一站走？"
+	var opening := "石安守住前哨了。林地阿苇还等着远征队的回信。带上旧路书，去问问。" if origin_id == "home:patrol" else "你带回的路书已经摊开。接下来往哪一站走？"
 	if Data.ready(ledger(), "watch_c2_forest:s4") and origin_id == "home:patrol":
 		opening = "你从远方带回了新的路标。路书上能走的几段都在这里，准备好了就动身吧。"
 	if Data.ready(ledger(),"watch_c6_lava:s4"):
-		opening = completed_summary(ledger()) + "\n后记已经收好。你也可以沿旧路，回去看看那些人。"
+		opening = completed_summary(ledger()) + "\n后记已经收好。想起谁的话，可以再找他坐一会儿。"
+		if not _reunion_greeting(origin_id).is_empty(): opening = _reunion_greeting(origin_id)
+	var questions: Array = [{"label":"路上有人接应吗？","answer":"路书标着接应处，我们会沿那条路走。只是消息走得比人慢，到了再看看，别把旧信当成平安的保证。"}]
+	if Data.effective_ending(ledger()) == Data.REUNION:
+		questions = [{"label":"远方的灯还要人守吗？","answer":"低负载回路只自动转发灯码和短讯，补油、排水与除冰仍要人做。队员从平原轮流出发巡检，补给在避难所接待；远站亮灯不表示那里随时有人。"}]
+	if origin_id == "home:patrol" and _proof_exists("watch_c5_snow:s3:causality"):
+		questions.append({"label":"你认识韩铎吗？","answer":"周照摸了摸旧路书：「从前一起巡过路。后来他领远征队出去，我守家园，石安接前哨。他那道撤守令，你已经从两份日志里查清了；如今能把话带回来，总好过只让彼此猜。」"})
 	return {"kind":"camp_choice","giver":giver,"origin":_origin_pos(origin_id),"text":opening,"options":options,
-		"questions":[{"label":"路上有人接应吗？","answer":"路书标着接应处，我们会沿那条路走。只是消息走得比人慢，到了再看看，别把旧信当成平安的保证。"}],
+		"questions":questions,
 		"rules":"选择路线后仍需确认。生命、精力和冷却不会因赶路重置；世界时刻继续保留。只显示已取得线索的路线，联络站修复后可往返。"}
+
+## 团聚后的每个人仍保留自己的牵挂；这里只呈现回访，不额外模拟巡检时钟。
+func _reunion_greeting(origin_id: String) -> String:
+	return {
+		"c2:liaison":"阿苇把沈渡的回话压在杯下。「这回真送到了。他就在这儿，用不着再隔着沼泽猜。下一趟轮到我巡林灯，回来还能接着听他说。」",
+		"c3:survivor":"沈渡挪出一张凳子。「给闻川捎句话，欠着的那顿饭还算数。以前总怕信送不到，这回总算能约个日子了。轮值回来，就到这里坐。」",
+		"c4:map_keeper":"罗墨把原图和撤守令并排铺开。「韩铎就在对面，我们一页页核对。哪一处救下了人，哪一处没顾上，都留原件，谁也不往纸外躲。」",
+		"c5:leader":"韩铎合上日志。「撤守令是我下的，救下了谁、漏算了什么，我都会把原件摊开交代。往后按班去巡检，不让谁再一个人硬撑。阿苇他们回来时，这里会有人等。」"
+	}.get(origin_id, "")
+
 
 func can_travel(terrain: String, origin_id: String) -> bool:
 	if not _at_origin(origin_id): return false
@@ -519,10 +538,43 @@ func _on_travel_completed(terrain: String) -> void:
 	_save()
 	EventBus.hint_requested.emit("已到达远征接应入口；旧记录并不保证前方安全")
 
+## 旧档已完成章节也能重读当前叙事；菜单只列已验证的行动，绝不补记证据或再次结算。
+func _chapter_history_options(chapter_id: String = "") -> Array:
+	var options: Array = []
+	for chapter: Dictionary in Catalog.main_chapters():
+		if not chapter_id.is_empty() and str(chapter["id"]) != chapter_id: continue
+		var found := false
+		for stage: Dictionary in chapter["steps"]:
+			for a: Dictionary in stage["actions"]:
+				if not _proof_exists(str(a["id"])): continue
+				found = true
+				if not chapter_id.is_empty():
+					options.append({"label":str(stage["title"])+" · "+str(a["verb"]),"action":"campaign|history_action|"+str(a["id"]),"enabled":true,"utility":true})
+		if found and chapter_id.is_empty():
+			options.append({"label":str(chapter["title"]),"action":"campaign|history_chapter|"+str(chapter["id"]),"enabled":true,"utility":true})
+	return options
+
+func _chapter_history_payload(chapter_id: String = "") -> Dictionary:
+	var payload := {"kind":"camp_choice","giver":"已取得的远征记录","text":"路书只收着你亲自找到的纸页和已经听过的话。想起哪一段，就翻到哪一页。","options":_chapter_history_options(chapter_id),"rules":"只读回顾；不改动进度、物品、奖励或历史选择。"}
+	if not chapter_id.is_empty(): payload["back_action"] = "campaign|history_menu"
+	return payload
+
+
 func action(action_id: String) -> String:
 	var parts := action_id.split("|")
 	if parts.size() < 2 or parts[0] != "campaign": return perform_action(action_id)
 	match str(parts[1]):
+		"history_menu":
+			EventBus.npc_dialogue.emit(_chapter_history_payload())
+		"history_chapter":
+			if parts.size()>2: EventBus.npc_dialogue.emit(_chapter_history_payload(str(parts[2])))
+		"history_action":
+			if parts.size()>2 and _proof_exists(str(parts[2])):
+				var archived: Dictionary = _actions[str(parts[2])]
+				if not str(archived.get("chapter", "")).is_empty():
+					var text := str(archived.get("text", ""))
+					if archived["id"] == Data.ENDING_ACTION and Data.effective_ending(ledger()) == Data.REUNION: text = epilogue_pages()[1]
+					EventBus.npc_dialogue.emit(QuestPresentation.with_narrative({"kind":"info","giver":archived.get("title", "远征记录"),"text":text,"back_action":"campaign|history_chapter|"+str(archived["chapter"])}, archived))
 		"epilogue_menu":
 			if Data.ready(ledger(),"watch_c6_lava:s4"): EventBus.npc_dialogue.emit(epilogue_payload())
 		"epilogue":
@@ -590,7 +642,7 @@ func _earned_history(stage: Dictionary) -> String:
 func _object_title(object_id: String) -> String:
 	for obj: Dictionary in CampaignLayout.objects():
 		if obj["id"] == object_id: return str(obj["title"])
-	return "营地巡守" if object_id == "home:patrol" else "远征线索"
+	return "营地巡守周照" if object_id == "home:patrol" else "远征线索"
 
 func _chapter_for_object(object_id: String) -> Dictionary:
 	for a: Dictionary in _actions.values():
@@ -640,10 +692,9 @@ static func completed_summary(q: Dictionary, compact := false) -> String:
 		if Data.chapter_complete(q, str(chapter["id"])): latest = chapter
 	if latest.is_empty(): return ""
 	if str(latest["id"])=="watch_c6_lava":
-		var ending := str(q.get("quests",{}).get("watch_c6_lava:s4",{}).get("choice",""))
-		var detail := "在联络站选择「集中安置的避难所」，探望联络员、幸存者、地图保管员和队长" if ending=="centralized" else "联络员、幸存者、地图保管员和队长留守林地、沼泽、丘陵、雪原，可分别找他们补给"
-		if compact: detail = "沿联络站线路探望避难所队员" if ending=="centralized" else "四地驻站提供补给，详见后记"
-		return "《断开的守望》已通关 · %s\n%s"%["集中安置" if ending=="centralized" else "分散派驻", detail]
+		var detail := "在联络站前往「平原团聚避难所」，探望阿苇、沈渡、罗墨和韩铎；远方信标保持低负载自动转发，由队员轮流巡检"
+		if compact: detail = "四人在平原避难所团聚，远方信标自动转发"
+		return "《断开的守望》已通关 · 归途团聚\n%s" % detail
 	return "%s · 已完成\n%s" % [str(latest["title"]), "联络站可远征或返回家园" if compact else "联络站已恢复，可在站点确认远征或返回家园"]
 
 
@@ -661,10 +712,8 @@ func _order_text(action_data: Dictionary) -> String:
 
 
 func _service_available(origin_id: String) -> bool:
-	if not Data.ready(ledger(),"watch_c6_lava:s4"): return origin_id not in ["side_troll:departure","side_troll:giver"]
-	var ending := str(ledger().get("quests",{}).get("watch_c6_lava:s4",{}).get("choice",""))
-	if ending == "centralized": return origin_id in ["ending:shelter","c2:liaison","c3:survivor","c4:map_keeper","c5:leader"]
-	return origin_id not in ["side_troll:departure","side_troll:giver"]
+	if Data.effective_ending(ledger()) != Data.REUNION: return origin_id not in ["side_troll:departure","side_troll:giver"]
+	return origin_id in ["ending:shelter","c2:liaison","c3:survivor","c4:map_keeper","c5:leader"]
 
 
 ## 落点按种子目录的稳定次序选择，实时避让当前敌人；绝不挪怪或清空生态。
@@ -695,13 +744,11 @@ func travel_destination(terrain: String) -> Vector2:
 
 ## 后记只消费此存档实际完成的行动；未发生的生态事件不虚构，也不催促补齐。
 func epilogue() -> String:
-	if not Data.ready(ledger(),"watch_c6_lava:s4"): return "最后的派驻安排还没有确认"
-	var ending := str(ledger()["quests"]["watch_c6_lava:s4"].get("choice",""))
-	var lines: Array[String] = ["《断开的守望》· 此后的道路", "沿途留下的纸页终于接在一起：远征队先分队，人手顾不过来，队长才下令撤守。设备随后失灵，留下的人听不到彼此。如今，那些重新亮起的灯又连在了一起。"]
-	if ending=="centralized":
-		lines.append("集中安置：远征队联络员、沼泽幸存者、地图保管员和远征队长都来到平原的避难所，今后在这里接待补给。他们不用再隔着漫长的路等一个答复。想去探望，可在联络站选择「集中安置的避难所」。")
-	else:
-		lines.append("分散派驻：远征队联络员守着林地，沼泽幸存者留在接应点，地图保管员照看丘陵，远征队长驻留雪原。四处都能找到他们补给。下一次有人沿旧路回来，路上仍有人等候。")
+	if Data.effective_ending(ledger()) != Data.REUNION: return "团聚名册还没有传回各站"
+	var lines: Array[String] = ["《断开的守望》· 此后的道路", "沿途留下的纸页终于接在一起：远征队先分队，人手顾不过来，韩铎才下令撤守。设备随后失灵，留下的人听不到彼此。世界之心重新接通了信标，却没有抹去各人走过的路。"]
+	var historical_choice := str(ledger().get("quests",{}).get("watch_c6_lava:s4",{}).get("choice",""))
+	var earlier_arrangement := "最初分散守站的安排仍记在旧名册上。后来，四人商定回营轮值。" if historical_choice == "distributed" else ("旧名册保留了集中安置的安排，四人又约好了后续轮值。" if historical_choice == "centralized" else "")
+	lines.append(earlier_arrangement + "阿苇、沈渡、罗墨和韩铎在平原避难所团聚，四人都在这里接待来访与补给。远方信标保持亮着，以低负载自动转发消息；他们约好轮流出发巡检，不再各自留守。想去探望，可在联络站选择「平原团聚避难所」。")
 	for chapter: String in ["watch_c4_hill","watch_c6_lava"]:
 		var stage := chapter+(":s3" if chapter=="watch_c4_hill" else ":s2")
 		var outcome := str(ledger().get("quests",{}).get(stage,{}).get("evidence",{}).get(stage+":passage",{}).get("outcome",""))
@@ -714,8 +761,10 @@ func epilogue() -> String:
 		if Data.ready(ledger(),str(chain["id"])+":s2"): sides+=1
 	for chain: Dictionary in Catalog.regional_arcs():
 		if Data.ready(ledger(),str(chain["id"])+":s3"): regions+=1
-	lines.append("除此之外，%d份托付有了回应，%d处区域的通路或接应点完成了修整。那些未曾走近的人和地方，还留着各自的故事。"%[sides,regions])
-	lines.append("前哨巡守仍守在最初的那条路旁。旧检查点照常可用，你也仍能返回家园。路上的生灵继续来去，往后每一次出发，都还值得先看一眼脚下。")
+	var swamp_route := str(ledger().get("quests",{}).get("watch_c3_swamp:s3",{}).get("choice",""))
+	var route_memory := "沼泽的浅滩石障被你打开，沈渡记得那条亲自走通的近路。" if swamp_route=="near" else "你沿沼泽西侧外缘接应沈渡，他记得那两个绕过危险的转折。"
+	lines.append("除此之外，%d份托付有了回应，%d处区域的通路或接应点完成了修整。%s那些未曾走近的人和地方，还留着各自的故事。"%[sides,regions,route_memory])
+	lines.append("石安仍守在最初的前哨路旁。旧检查点照常可用，你也仍能返回家园。路上的生灵继续来去，往后每一次出发，都还值得先看一眼脚下。")
 	return "\n".join(lines)
 
 
@@ -730,7 +779,7 @@ func epilogue_payload() -> Dictionary:
 	for i in titles.size():
 		options.append({"label":titles[i],"action":"campaign|epilogue|"+str(i),"enabled":true,"utility":true,"consequence":"回看这段经过","risk":""})
 	return {"kind":"camp_choice","giver":"《断开的守望》· 后记","text":completed_summary(ledger()),"options":options,
-		"rules":"后记按已经完成的行动回顾。阅读不会改变派驻、进度或奖励；城塞首领今后复生，也不会撤销既有救援、修复与支付收据。世界之心只恢复联络，不改变野外种群。"}
+		"rules":"后记按已经完成的行动回顾。阅读不会改变团聚驻地、进度或奖励；城塞首领今后复生，也不会撤销既有救援、修复与支付收据。世界之心只恢复联络，不改变野外种群。"}
 
 
 func _troll_departure_menu(story: Dictionary) -> Dictionary:

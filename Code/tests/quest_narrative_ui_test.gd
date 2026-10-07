@@ -274,12 +274,16 @@ func _campaign_reveal_projection() -> void:
 	_check(view.gold == Data.reward(q,sid).gold and view.xp == Data.reward(q,sid).xp, "奖励预览严格使用原冻结预算")
 
 func _branch_consequences() -> void:
-	for id: String in ["watch_c3_swamp:s3:route_choice","watch_c6_lava:s4:ending"]:
+	for id: String in ["watch_c3_swamp:s3:route_choice"]:
 		var a: Dictionary = _qm._campaign._actions[id]
 		var payload := _qm._campaign._main.payload(a)
 		var options: Array = payload.get("options", [])
 		_check(options.size() == 2 and str(options[0].consequence) != str(options[1].consequence), id + "两条方案有不同的实际后果")
 		_check(str(payload.text).contains(str(a.prompt)) and not str(payload.text).contains(str(a.text)), id + "决定前显示待选处境，不把确认结果提前叙述为已发生")
+	var ending: Dictionary = _qm._campaign._actions["watch_c6_lava:s4:ending"]
+	var ending_payload: Dictionary = _qm._campaign._action_payload(str(ending.prompt), str(ending.verb), "campaign|act|"+str(ending.id), str(ending.object), ending)
+	_check(ending.kind == "conclude" and not ending.has("choices") and ending_payload.kind == "camp_action" and ending_payload.get("options", []).is_empty(), "获批单结局使用普通确认，无隐藏分散/集中选项")
+	_check(str(ending_payload.text) == str(ending.prompt) and ending_payload.text != ending.text, "团聚确认前后分层，未执行的归途消息不提前记为完成")
 	for id: String in ["side_patrol:s2:station","side_herbalist:s2:purpose","side_scholar:s2:choice","side_merchant:s2:destination"]:
 		var a: Dictionary = _qm._campaign._actions.get(id,{})
 		if a.is_empty():

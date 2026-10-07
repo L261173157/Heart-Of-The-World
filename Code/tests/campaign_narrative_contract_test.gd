@@ -42,6 +42,22 @@ func _same(a: Variant, b: Variant) -> bool:
 		return true
 	return a == b
 
+## 只白名单批准的一项终局转换；原始机械基线文件不改，其他字段逐项仍须一致。
+func _reunion_exception(expected: Dictionary) -> Dictionary:
+	var approved := expected.duplicate(true)
+	if str(approved.get("id", "")) != "watch_c6_lava": return approved
+	var found := 0
+	for stage: Dictionary in approved.get("steps", []):
+		if str(stage.get("id", "")) != "watch_c6_lava:s4": continue
+		for action: Dictionary in stage.get("actions", []):
+			if str(action.get("id", "")) != "watch_c6_lava:s4:ending": continue
+			found += 1
+			_check(action.get("kind", "") == "choice" and action.get("choices", []) == [{"id":"distributed"}, {"id":"centralized"}], "仅放行历史终局choice及原来的两个选项")
+			action["kind"] = "conclude"
+			action.erase("choices")
+	_check(found == 1, "终局机械例外必须且仅命中一个稳定行动ID")
+	return approved
+
 func _initialize() -> void:
 	var baseline: Variant = JSON.parse_string(FileAccess.get_file_as_string(BASELINE))
 	_check(baseline is Dictionary and baseline.get("source_tree", "") == "24fa8381633150cc397ae631f050df2c0dca75bc", "机械基线来自改写前已核实的主线 Git tree")
@@ -50,7 +66,7 @@ func _initialize() -> void:
 		_check(chains.size() == baseline.get("chains", []).size(), "所有家族链数量保持原合同")
 		for index in mini(chains.size(), baseline.get("chains", []).size()):
 			var expected: Dictionary = baseline["chains"][index]
-			_check(_same(_mechanics(chains[index]), expected), str(expected.get("id", "")) + "全部非呈现字段不变：ID、前置、支路、物件、结果与开放条件")
+			_check(_same(_mechanics(chains[index]), _reunion_exception(expected)), str(expected.get("id", "")) + "除已批准终局kind/choices外全部非呈现字段不变：ID、前置、支路、物件、结果与开放条件")
 	_check(Outpost.REWARDS_V1 == {"investigation":{"gold":6,"xp":8,"bonus":""}, "rescue":{"gold":9,"xp":12,"bonus":""}, "restoration":{"gold":24,"xp":24,"bonus":"onigiri"}}, "首章分段39金币44经验1饭团的原承诺未改")
 	_check(Data.REWARD_VERSION == 1 and Data.REWARD_V1 == {"gold_base":12,"gold_target":6,"gold_level":3,"xp_base":20,"xp_target":8}, "战役冻结奖励版本与金额公式未改")
 	_check(Outpost.ID == "lost_outpost_v1" and Outpost.VERSION == 1 and Catalog.ID == "campaign_watch_v1" and Catalog.VERSION == 1, "叙事改写未重建章节或存档身份")
