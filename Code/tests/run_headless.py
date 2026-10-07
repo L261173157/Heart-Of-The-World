@@ -14,6 +14,8 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "campaign_narrative_contract": (["-s", "tests/campaign_narrative_contract_test.gd"], "=== CAMPAIGN NARRATIVE CONTRACT PASS"),
+    "quest_narrative_ui": (["res://tests/quest_narrative_ui_test.tscn", "--quit-after", "30000"], "=== QUEST NARRATIVE UI PASS"),
     "reward_feedback": (["res://tests/reward_feedback_test.tscn", "--quit-after", "1000"], "=== REWARD FEEDBACK PASS"),
     "chest_transaction": ([str(PROJECT / "tests/run_chest_transaction_test.py")], "=== CHEST TRANSACTION LIFECYCLE PASS ==="),
     "pickup_affordance": ([str(PROJECT / "tests/run_pickup_affordance_lifecycle_test.py")], "=== PICKUP AFFORDANCE LIFECYCLE PASS ==="),

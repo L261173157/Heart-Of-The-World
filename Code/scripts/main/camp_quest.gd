@@ -33,29 +33,34 @@ func is_active() -> bool:
 func offer(giver: String = "营地巡守") -> Dictionary:
 	var q := ledger()
 	if q.get("paid", false):
-		return {"kind": "info", "state": "completed", "text": "营地外的动静 · 已领奖\n%s\n%s" % [history_text(), q.get("next_clue", "继续探索周边地区。") ]}
+		return {"kind": "info", "giver": giver, "state": "completed", "text": "你带回的经过，我已经记下了。以后有人出营，至少知道该留意什么。\n" + str(q.get("next_clue", "周围的路还长，出门多留意。")), "rules": receipt_text()}
 	if q.is_empty():
 		if not _preview_current():
 			_preview = {}
 		if _preview.is_empty():
 			if not _searching:
 				_prepare_offer()
-			return {"kind": "info", "state": "unavailable", "text": "正在核对真实种群和可达路线，请稍后再交谈。" if _searching else "附近暂无安全可达的调查目标。可继续探索，之后回来核对线索。"}
-		return {"kind": "quest", "state": "available", "confirm_text": "接取调查", "quest": {
+			return {"kind": "info", "giver": giver, "state": "unavailable", "text": "先等等，我得把附近的路和消息对一对，免得让你白跑。" if _searching else "眼下没有合适的去处能指给你。先忙你的吧，有了线索再说。"}
+		return {"kind": "quest", "giver": giver, "state": "available", "confirm_text": "我去看看", "quest": {
 			"id": Data.ID, "landmark_id": Data.LANDMARK, "kind": "camp_ecology", "giver": giver,
 			"title": Data.TITLE, "need": 1, "progress": 0, "gold": Data.REWARD_GOLD, "xp": Data.REWARD_XP, "bonus": Data.REWARD_BONUS},
-			"text": "营地外有怪物活动。先到真实据点调查，再决定有限狩猎或捣毁巢穴；两种办法任选其一，最后回营地交付。\n营地可免费休息恢复；商人有补给。此事不限制自由探索。\n两种处理奖励相同：%d金币、%d经验、%s×1。若实地确认线索消失且无替代目标，则按调查与已有贡献结算（12–24金币、20–36经验，无补给）。" % [Data.REWARD_GOLD, Data.REWARD_XP, ItemCatalog.name_of(Data.REWARD_BONUS)]}
+			"text": "营地外那处据点，让我有些放心不下。我得守着这里，可出营的人总不能只凭旧消息赶路。\n你愿意替我去看看吗？先看清现在的情形，别急着动手。",
+			"questions": [{"label": "出门前准备什么？", "answer": "累了先在营地歇一歇，休息不用钱。缺补给就找商人，别带着一身伤赶路。"}], "rules": _reward_rules()}
 	if not is_active():
-		return {"kind": "camp_action", "action": "resume", "state": "available", "confirm_text": "继续调查",
-			"text": "继续「营地外的动静」？此前调查、行动和奖励记录都会保留。\n" + history_text()}
+		return {"kind": "camp_action", "giver": giver, "action": "resume", "state": "available", "confirm_text": "继续调查",
+			"text": "还想接着看看营地外的事？你先前带回的消息我都留着，从上回停下的地方继续吧。", "rules": "此前调查、行动和报酬记录保留。\n" + _reward_rules()}
 	if q["stage"] == "return":
-		return {"kind": "claim", "state": "claimable", "quest": snapshot(), "confirm_text": "交付领奖",
-			"text": "%s\n%s\n确认向营地提交记录并领取%s？" % [history_text(), "当前据点已离开视野；巢穴可能重建，种群可能继续变化", QuestPresentation.reward(snapshot())]}
+		return {"kind": "claim", "giver": giver, "state": "claimable", "quest": snapshot(), "confirm_text": "交付调查记录",
+			"text": "路上已经变了样？你亲自去看过，这些消息一样有用。把经过告诉我吧，后来的人用得上。" if q.get("outcome", "") == "survey" else "回来了。把你在巢边做过、看过的事告诉我吧，我也好提醒下一个出营的人。",
+			"rules": "交付后领取" + QuestPresentation.reward(snapshot()) + "。\n当前据点可能继续变化，既有行动与报酬按本次记录结算；背包放不下的补给存入待领取。"}
 	if q["stage"] == "choose" and context()["on_site"]:
 		return choice_payload()
 	if q.get("target", {}).is_empty() and not _searching:
 		_select_target(false)
-	return {"kind": "info", "state": "in_progress", "text": objective() + "\n" + history_text()}
+	return {"kind": "info", "giver": giver, "state": "in_progress", "text": "先照这条线索找找，遇到变化再回来告诉我。\n" + next_action(), "rules": _reward_rules()}
+
+func _reward_rules() -> String:
+	return "有限狩猎与捣巢报酬相同：%d金币、%d经验、%s×1。若实地确认线索消失且无替代目标，则按调查与已有贡献结算（12–24金币、20–36经验，无补给）。需返回营地巡守交付；已结算的报酬不会重复领取。" % [Data.REWARD_GOLD, Data.REWARD_XP, ItemCatalog.name_of(Data.REWARD_BONUS)]
 
 func accept() -> String:
 	# 新章节已含同一份生态预算，陈旧旧单对话不能在领奖后再开第二份。
@@ -136,9 +141,10 @@ func choice_payload() -> Dictionary:
 	var hunt_enabled := _hunt_possible(current)
 	var nest_enabled: bool = current["nest_active"] and int(current["alive_count"]) > 0
 	var reason := "需至少%d只可应对目标，当前%d只；可改选捣巢或重新调查" % [remaining + 1, current["viable_count"]]
-	var payload := {"kind": "camp_choice", "giver": "营地调查记录", "faceset": 0,
+	var payload := {"kind": "camp_choice", "giver": "巢边的调查", "faceset": 0,
 		"origin": player.global_position if player != null else WorldConfig.spawn_pos(),
-		"text": "现场：%s\n累计真实猎杀%d/2。选一项可用处理；返回营地手动交付。" % [live_text(), mini(_hunt_progress(), 2)],
+		"text": "你已经到了据点旁。眼下%s\n要让出营的人少些危险，你打算怎样处理？" % live_text(),
+		"rules": "已有狩猎%d/2；处理后返回营地巡守交付。\n%s" % [mini(_hunt_progress(), 2), _reward_rules()],
 		"options": [
 			{"label": "有限狩猎" if hunt_enabled else "有限狩猎（当前不可用）", "action": "choose_hunt", "enabled": hunt_enabled,
 				"disabled_reason": "" if hunt_enabled else reason,
@@ -146,7 +152,7 @@ func choice_payload() -> Dictionary:
 				"risk": "种群会继续繁衍；已有贡献保留，现场变化时可重新调查" if hunt_enabled else reason},
 			{"label": "捣毁巢穴" if nest_enabled else "捣毁巢穴（当前不可用）", "action": "choose_ransack", "enabled": nest_enabled,
 				"disabled_reason": "" if nest_enabled else "当前没有有效巢穴或存活种群，请重新调查",
-				"consequence": "当地繁衍暂停120刻，存活怪物不会被清除", "risk": "附近已加载同族狂怒60秒；巢穴之后重建，压制并非永久"}]}
+				"consequence": "当地繁衍暂停120刻，存活怪物仍留在周围", "risk": "附近同族狂怒60秒；巢穴之后会重建，这条路仍需留意"}]}
 	if not hunt_enabled:
 		payload["options"].append({"label": "寻找其他狩猎线索", "action": "find_hunt_clue", "utility": true, "enabled": true,
 			"consequence": "保留调查和猎杀贡献，核对其他可达据点", "risk": "不改变当前种群或巢穴；无替代时按实地调查交付"})
@@ -211,7 +217,7 @@ func claim() -> String:
 	SfxManager.play("gold3")
 	EventBus.fx_requested.emit("flash_yellow", _player().global_position, 1.3)
 	EventBus.quest_completed.emit("✓ 营地外的动静 · 交付领奖成功 · " + q["next_clue"])
-	return "交付成功 · " + str(q["next_clue"])
+	return "交付成功 · 巡守收好了调查记录：这些消息，我会告诉接下来出营的人。\n" + str(q["next_clue"])
 
 func _next_clue() -> String:
 	var home := WorldConfig.spawn_pos()
@@ -252,6 +258,7 @@ func snapshot() -> Dictionary:
 		"species": "" if done else t.get("species", ""), "hunt_region": t.get("region_id", ""),
 		"ui_knowledge": "visible" if _on_site() else ("last_seen" if q.get("investigated", false) else "npc_intel")}
 	view["ui_reward"] = QuestPresentation.reward(view)
+	view["rules"] = _reward_rules()
 	return view
 
 func next_action() -> String:

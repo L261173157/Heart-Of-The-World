@@ -460,13 +460,13 @@ static func _reserve_wing(terrain: String,at: Vector2,half := Vector2(416,416)) 
 static func _build_optional_objects() -> void:
 	var sides := {
 		"side_patrol":["plains","新巡守","watchman",0,["station_camp","station_forest"]],
-		"side_herbalist":["forest","草药师的学徒","herbalist",0,["medicine","patient","station_reserve"]],
-		"side_hunter":["plains","老猎人","hunter",1,["warning_sign"]],
-		"side_scholar":["hill","碑文学者","scholar",0,["shortcut_gate"]],
-		"side_merchant":["swamp","迟归的货商","merchant",0,["crate","station_near","station_outer"]],
-		"side_watchman":["hill","候班瞭望者","watchman",1,["watch_near","watch_high"]],
-		"side_letter":["snow","护信人","keeper",0,["letter_case","recipient"]],
-		"side_troll":["forest","旧旗守望者","hunter",1,["room_runes","room_gate","room_record","rune_leaf","rune_stone","rune_lamp"]],
+		"side_herbalist":["forest","草药师","herbalist",0,["medicine","patient","station_reserve"]],
+		"side_hunter":["plains","营地猎人","hunter",1,["warning_sign"]],
+		"side_scholar":["hill","拓印学者","scholar",0,["shortcut_gate"]],
+		"side_merchant":["swamp","赶路的行商","merchant",0,["crate","station_near","station_outer"]],
+		"side_watchman":["hill","瞭望者","watchman",1,["watch_near","watch_high"]],
+		"side_letter":["snow","守信人","keeper",0,["letter_case","recipient"]],
+		"side_troll":["forest","旧营地知情者","hunter",1,["room_runes","room_gate","room_record","rune_leaf","rune_stone","rune_lamp"]],
 	}
 	var offsets := [Vector2(-192,224),Vector2(0,32),Vector2(192,-160),Vector2(192,224),
 		Vector2(-192,-192),Vector2(0,-192),Vector2(192,32),Vector2(-192,32),Vector2(0,224),Vector2(-320,-64)]
@@ -501,13 +501,13 @@ static func _build_optional_objects() -> void:
 				title = str(config[1])+"的抉择"
 			elif suffix in ["target","crate","medicine","letter_case"]:
 				kind = "cargo" if suffix != "medicine" else "aid"
-				title = {"target":"待回收的故事物件","crate":"遗落的专用货箱","medicine":"一份两用的药","letter_case":"冻结的信筒"}[suffix]
+				title = {"target":"待回收的故事物件","crate":"落下的封存货箱","medicine":"学徒封存药包","letter_case":"冻结的信筒"}[suffix]
 			elif suffix == "patient":
 				kind = "injured"
-				title = "受伤的学徒伙伴"
+				title = "等待药包的伤者"
 			elif suffix == "recipient":
 				kind = "npc"
-				title = "等候回信的亲人"
+				title = "等信的旧队员"
 			elif suffix.ends_with("gate"):
 				kind = "gate"
 				title = "遗迹机关门"
@@ -516,7 +516,7 @@ static func _build_optional_objects() -> void:
 				title = {"rune_leaf":"树叶符记","rune_stone":"石块符记","rune_lamp":"灯火符记"}[suffix]
 			elif suffix.begins_with("station_") or suffix.begins_with("watch_") or suffix == "warning_sign":
 				kind = "flag"
-				title = {"station_camp":"家园新巡守席","station_forest":"林间新巡守席","station_reserve":"站点药物储备","station_near":"近路补给台","station_outer":"外环补给台","watch_near":"近路瞭望旗","watch_high":"高地瞭望旗","warning_sign":"临路警示牌"}.get(suffix,"候选驻站")
+				title = {"station_camp":"营地驻守点","station_forest":"林地驻守点","station_reserve":"站点药物储备","station_near":"近路收货台","station_outer":"外缘收货台","watch_near":"近处新旗位","watch_high":"高处新旗位","warning_sign":"旧猎场警示牌"}.get(suffix,"候选驻站")
 			_register_object(chain+":"+suffix,terrain,title,kind,at+offsets[index],{"portrait":config[2],"initial_hidden":false})
 		if chain == "side_patrol":
 			_extra_objects[chain+":station_camp"]["position"] = BiomeMap.spawn_pos()+Vector2(160,128)
@@ -544,20 +544,20 @@ static func _build_optional_objects() -> void:
 			var room_center := at+Vector2(192,-160)
 			_build_small_room(room_center,gate_id,target_id)
 	var specific_titles := {
-		"side_patrol":["旧巡逻名册","旧巡逻队徽记","新巡守派驻案"],
-		"side_herbalist":["学徒用药记录","学徒遗漏的药方","专用药的去向"],
-		"side_hunter":["昨日猎数登记","猎场实况观测桩","收起的悬赏"],
-		"side_scholar":["残碑位置记录","遗失的拓印","铭文保留或拆取"],
-		"side_merchant":["漏签的货运单","遗落的签收牌","这一箱送往哪里"],
-		"side_watchman":["缺旗巡查记录","山口视线观察桩","换岗安排图"],
-		"side_letter":["寄信登记","收信人的姓名牌","冻结信件交接"],
-		"side_troll":["巨魔旧旗残记","旧旗遗址现场","遗留房间铭文"],
+		"side_patrol":["旧巡逻名册","遗留的身份徽记","巡守驻地名册"],
+		"side_herbalist":["学徒用途记录","学徒遗漏的药方","药包用途牌"],
+		"side_hunter":["昨日猎数账","猎场足迹核对点","猎人的新决定"],
+		"side_scholar":["旧道铭文","遗失的拓印","铭文处置案"],
+		"side_merchant":["湿透的运单","遗落的签收牌","补给去向板"],
+		"side_watchman":["值守视线草图","旧旗视线核对点","新旗位置图"],
+		"side_letter":["收信登记","收信人的姓名牌","收信后的回执"],
+		"side_troll":["褪色的人类旗记","巨魔盘踞处旧遗迹","遗留房间铭文"],
 	}
 	for chain: String in specific_titles:
 		for i in 3:
 			_extra_objects[chain+":"+["record","target","resolution"][i]]["title"] = specific_titles[chain][i]
-	_extra_objects["side_troll:room_runes"]["title"] = "树叶、石块与灯的铭文"
-	_extra_objects["side_troll:room_record"]["title"] = "房间内的驻守日记"
+	_extra_objects["side_troll:room_runes"]["title"] = "旧房间符记"
+	_extra_objects["side_troll:room_record"]["title"] = "旧房间居住记录"
 	_register_object("side_troll:departure","forest","旧旗远征接引员","npc",site_center("forest")+Vector2(288,576),{"portrait":"hunter","initial_hidden":true})
 	for terrain: String in TERRAINS:
 		var chain := "region_"+terrain

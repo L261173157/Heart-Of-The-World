@@ -277,7 +277,10 @@ func _read_final() -> void:
 	for id: String in ["region_snow:station","world_relief:need_a","world_relief:need_b","world_relief:coordination_post"]:
 		var node:=_cp(id)
 		_check(node!=null and bool(node.get("repaired")) and not str(node.get("service")).is_empty(),"终局冷读保持另一家族的真实施工和服务实体 "+id)
-	_check(_campaign.epilogue().contains("另已收尾2条人物故事、修复1处区域工程"),"后记只汇总实际完成的两条人物/一处区域，不假装全目录完成")
+	var summary := RegEx.new()
+	summary.compile("(?:^|[^0-9])([0-9]+)份托付[^\\n]*?([0-9]+)处区域")
+	var counts := summary.search(_campaign.epilogue())
+	_check(counts != null and int(counts.get_string(1)) == 2 and int(counts.get_string(2)) == 1,"后记只汇总实际完成的两条人物/一处区域，不假装全目录完成")
 	for service: String in ["world_relief_station","patrol_station","region_snow_station"]:
 		_check(_campaign_data.service_claimed(_cq(),service),"最终冷读保持唯一服务墓碑 "+service)
 	var wallet:=_wallet()
@@ -289,8 +292,10 @@ func _read_final() -> void:
 		var family: String="dynamic" if id.begins_with("world_") else "optional"
 		# 已领菜单应展示收据并移除领取选项，不再要求点一个本不该存在的旧按钮。
 		if not await _ci(id, false): return
-		_check(_hud._dialogue_text.text.contains("已领取") and _option("campaign|"+family+"|supply|"+id) == null,
-			"终局独立冷读后真实菜单已领取且没有领取按钮 " + id)
+		var received_text: String = _hud._dialogue_text.text
+		_check(received_text.contains("饭团") and (received_text.contains("已领取") or received_text.contains("已经领过"))
+			and not received_text.contains("选一处就好") and _option("campaign|"+family+"|supply|"+id) == null,
+			"终局独立冷读后真实菜单明确饭团已领且没有领取按钮或再次领取邀请 " + id)
 		if family == "optional":
 			var shop := _option("campaign|optional|shop|" + id)
 			_check(shop != null and shop.visible and not shop.disabled, "已领补给仍保留真实站点商店 " + id)

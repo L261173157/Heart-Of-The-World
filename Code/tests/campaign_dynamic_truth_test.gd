@@ -224,7 +224,9 @@ func check_archive(base: Dictionary, chain: String, outcome: String, hud: Node) 
 	var money := [GameState.gold,GameState.stats.xp,GameState.codex.duplicate(true)]
 	for repeat in 3:
 		var payload := dynamic.object_payload(object_id)
-		check(str(payload.get("text","")).contains(Dynamic.INVESTIGATION_OUTCOMES[outcome]) and str(payload.get("text","")).contains("结案：") and str(payload.get("text","")).contains("当前："),"completed actual endpoint opens saved archive and separately labelled live state "+outcome)
+		var lines := str(payload.get("text", "")).split("\n")
+		var current: Dictionary = dynamic.facts.migration_status(record.trigger) if chain == "world_migration" else dynamic.facts.decline_status(record.trigger)
+		check(lines.size() >= 2 and lines[0].contains(str(record.trigger.species)) and lines[0].contains(Dynamic.INVESTIGATION_OUTCOMES[outcome]) and lines[1].contains("现在") and lines[1].contains(str(Dynamic.INVESTIGATION_OUTCOMES.get(current.get("state", ""), current.get("state", "")))), "completed endpoint distinguishes the saved species/outcome from the separately labelled actual current outcome " + outcome)
 		hud.call("_refresh_codex")
 		var label: Label=hud.get("codex_content")
 		check(label.text.contains(text),"actual codex label includes saved factual note "+outcome)

@@ -210,7 +210,7 @@ func _select_target(candidates: Array[Dictionary]) -> Dictionary:
 	if _seen_target_identity.get(id, "") != identity:
 		_seen_targets.erase(id)
 		_seen_target_identity[id] = identity
-	if not returning and int(quest.get("progress", 0)) >= int(quest.get("need", 1)):
+	if not returning and not bool(quest.get("guidance_pending", false)) and int(quest.get("progress", 0)) >= int(quest.get("need", 1)):
 		_seen_targets.erase(id)
 		return {}
 	var best: Dictionary = {}

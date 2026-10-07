@@ -41,6 +41,12 @@ func ledger() -> Dictionary:
 func is_active() -> bool:
 	return not ledger().is_empty() and ledger().get("active", false) and ledger().get("stage", "") != "completed"
 
+## 完章后的交谈与回营只保留指引，不重开章节或增加任务前置。
+func guidance_pending() -> bool:
+	if ledger().get("stage", "") != "completed": return false
+	if not evidence("next_clue_received"): return true
+	return not GameState.campaign_quest.get("quests", {}).get("watch_c2_forest:s1", {}).get("accepted", false)
+
 func evidence(key: String) -> bool:
 	return ledger().get("evidence", {}).get(key, false)
 
@@ -50,7 +56,7 @@ func visual_state() -> Dictionary:
 	state["stage"] = ledger().get("stage", "")
 	state["active"] = is_active()
 	state["id"] = Data.ID
-	state["target_object_id"] = _target_object() if is_active() and GameState.tracked_quest_id == Data.ID else ""
+	state["target_object_id"] = _target_object() if (is_active() or guidance_pending()) and GameState.tracked_quest_id == Data.ID else ""
 	state["object_states"] = {}
 	for id: String in Layout.OBJECTS:
 		var key := str({"patrol_record":"patrol_read", "entrance_record":"entrance_read", "supply_record":"supply_read", "aid_bag":"aid_taken", "repair_tools":"tools_taken"}.get(id, ""))
@@ -60,30 +66,34 @@ func visual_state() -> Dictionary:
 	return state
 
 func offer(giver: String = "营地巡守") -> Dictionary:
-	var text := "前哨巡逻队失联了。先沿旧道寻找巡逻记录，再去前哨救援。\n"
-	var reserved := Data.valid_legacy(GameState.camp_quest) if ledger().is_empty() else bool(ledger().get("legacy_reserved", false))
-	text += "原营地调查奖励仍在旧单领取；前哨行动另记进度。" if reserved else "全章奖励：39金币、44经验、饭团×1，随调查、救援、修复分段领取。"
+	var text := "前哨的人一直没来取药。上回见他，腿伤还没好。\n我得守着营地。你能沿旧道去看看，他还在不在吗？"
+	var questions: Array = [{"label": "最后在哪里见过他？", "answer": "去前哨的旧道上。他总把巡逻札记带在身边；沿路留意有没有落下的纸页。"}]
 	var q := ledger()
 	var action := "accept" if q.is_empty() else "resume"
-	var label := "接取失联前哨" if q.is_empty() else "继续前哨任务"
+	var label := "我去看看" if q.is_empty() else "继续寻找"
 	if q.get("stage", "") == "completed":
-		text = "前哨已恢复，奖励收据已保存。留守巡逻员仍在前哨。\n" + str(q.get("next_clue", ""))
+		text = "他还守在前哨，路标也重新立起来了。这条路总算又有人照看。\n回去向他报个平安，也听听他接下来的打算。"
+		questions = []
 		action = "status"
 		label = "查看前哨记录"
 	elif is_active():
-		text = next_action() + "\n" + step_progress()
+		text = "还没见到他吗？沿旧道慢慢找，别漏了路边的痕迹。" if not evidence("wounded_found") else ("你找到他了。先把伤照料好，路上的事以后再说。" if not evidence("rescued") else "他能重新站起来就好。前哨还有什么需要帮忙的，听听他的打算。")
+		questions = [{"label": "接下来去哪里？", "answer": next_action()}]
 		action = "status"
-		label = "查看当前进度"
-	if Data.valid_legacy(GameState.camp_quest):
-		return {"kind": "camp_choice", "giver": giver, "origin": WorldConfig.spawn_pos(), "text": text,
-			"options": [{"label": label, "action": "outpost:" + action, "enabled": true,
-				"consequence": "保留前哨的独立行动与分段收据", "risk": "可随时暂停并继续"},
-				{"label": "原营地调查 / 交付", "action": "outpost:legacy", "enabled": true,
-				"consequence": "查看或领取原委托，金额和贡献不变", "risk": "旧奖励只支付一次"}]}
-	if action == "status":
-		return {"kind": "info", "giver": giver, "text": text}
-	return {"kind": "quest", "giver": giver, "state": "available", "confirm_text": label, "text": text,
+		label = "查看当前线索"
+	var payload := {"kind": "quest", "giver": giver, "state": "available", "confirm_text": label, "text": text,
+		"questions": questions, "rules": reward_policy(),
 		"quest": {"id": Data.ID, "kind": "outpost", "title": Data.TITLE, "giver": giver, "need": 3, "progress": 0}}
+	if Data.valid_legacy(GameState.camp_quest):
+		payload["kind"] = "camp_choice"
+		payload["origin"] = WorldConfig.spawn_pos()
+		payload["options"] = [{"label": label, "action": "outpost:" + action, "enabled": true,
+			"consequence": "沿现有线索继续寻找前哨", "risk": "可以暂时离开，已做过的事会保留"},
+			{"label": "原营地调查 / 交付", "action": "outpost:legacy", "enabled": true,
+				"consequence": "继续此前的调查，或领取已完成的报酬", "risk": "原委托的目标与报酬不变"}]
+	elif action == "status":
+		payload["kind"] = "info"
+	return payload
 
 func accept() -> String:
 	if ledger().get("stage", "") == "completed":
@@ -110,7 +120,8 @@ func abandon() -> String:
 	return "已暂停前哨任务，专用物件、救援和支付收据全部保留"
 
 func reward_policy() -> String:
-	if ledger().get("legacy_reserved", false):
+	var reserved := Data.valid_legacy(GameState.camp_quest) if ledger().is_empty() else bool(ledger().get("legacy_reserved", false))
+	if reserved:
 		return "原调查奖励仍按原巢边条件在旧委托领取；本章新增行动不重复发数值奖励"
 	return "全章基础39金币、44经验、饭团×1（养成加成生效）。调查6金币/8经验，救援9金币/12经验，修复24金币/24经验/饭团；各段一次。"
 
@@ -130,58 +141,88 @@ func object_state(id: String) -> Dictionary:
 
 func object_payload(id: String) -> Dictionary:
 	if not _at_object(id):
-		return {"kind": "info", "text": "请走到物件旁边，确认没有墙体遮挡后再交互"}
+		return {"kind": "info", "text": "走到物件旁再查看，墙后看不清这里的情况"}
 	if ledger().is_empty():
-		return {"kind": "info", "text": "这里留有巡逻痕迹。先向营地巡守询问失联前哨的线索。"}
+		return {"kind": "info", "text": "这里留有巡逻的痕迹。营地巡守或许知道是谁留下的。"}
 	if not is_active() and ledger().get("stage", "") != "completed":
-		return {"kind": "camp_action", "action": "outpost:resume", "confirm_text": "继续前哨任务", "text": "此前证据与专用物件仍保留。要继续调查前哨吗？", "origin": Layout.object_position(id)}
+		return {"kind": "camp_action", "action": "outpost:resume", "confirm_text": "继续寻找", "text": "前哨的事还没办完。要沿之前的线索继续吗？", "origin": Layout.object_position(id)}
+	# 走错顺序仍可查看场景，但不提前讲出尚未发现的人、物与后续工作。
+	if not object_state(id).get("known", false):
+		return {"kind": "info", "giver": _object_name(id), "text": "这里似乎也有线索。先弄清手头的发现：" + next_action()}
 	var text := ""
-	var confirm := "记录线索"
+	var confirm := "记下线索"
+	var questions: Array = []
+	var rules := ""
 	match id:
 		"patrol_record":
-			text = "巡逻记录：『前哨的路标倒了，正门有碎岩封堵。先沿旧道到门口核对入口图，伤员留在西侧棚屋。』\n这条记录只指出入口，未确认伤员和当地怪物的现状。"
+			text = "纸页被露水浸皱，末行的字写得很急：『腿又疼了。先回前哨。』\n后面没有新的日期。旧道还向前延伸。"
+			confirm = "循旧道去前哨"
 		"entrance_record":
-			text = "入口草图：正门有可清理的碎岩，敲开后可直接进入；西侧缺口能绕过正门，但要多走一段残墙边的路。两条路都不是安全保证，注意眼前的真实敌人。\n确认入口后，去西侧棚屋查看留守巡逻员。"
+			text = "门前的泥里有一道拖痕，夹着几点暗红，朝院内延伸。\n正门堵着碎岩；沿西侧残墙走，能看见一个缺口。"
+			confirm = "沿拖痕寻找巡守"
+			questions = [{"label": "从哪里进去？", "answer": "敲碎正门的碎岩可以直走；也能绕到西侧缺口，沿残墙进入。两边都要留意附近的怪物。"}]
 		"wounded_patrol":
 			if evidence("signpost_repaired"):
-				text = "留守巡逻员：谢谢，路标已经立好，我会留在这里。\n" + str(ledger().get("next_clue", _next_clue()))
-				confirm = "记下区域线索"
+				text = "你看，路标又立起来了。下个走过来的人，总算不会再错过这道门。\n我留在这里。还有一句话，想托你带回营地。"
+				confirm = "听听后续线索"
+				questions = [{"label": "你还要留在这里？", "answer": "『走散的人认得这道门。我守着，至少他们回来时，不会只看见一间空屋。』"}]
 			elif evidence("rescued"):
-				text = "留守巡逻员：伤口包扎好了，我能继续守在这里。带回工具，核查周边生态，再把路标修好。\n" + objective()
+				text = "好多了……绷带扎得很稳。\n门口的路标倒了，后来的人也会走岔。南侧拐角还放着前哨维修工具，帮我取来吧。" if not evidence("tools_taken") else "工具也找到了。动手立路标前，得看看附近的巢址；别让后来的人毫无防备地走过去。"
+				questions = [{"label": "附近的巢要怎么处理？", "answer": "先看清楚再决定。少猎几只能让路好走些，也可以暂时毁巢。别以为巢倒了，周围的怪物就都没了。"}]
 			elif not evidence("wounded_found"):
-				text = "巡逻员靠在棚屋边，腿上缠着破布：『补给被分放在两边。先看院中的补给记录，北边有我们专用的急救包，南边是修路标的工具。』\n他会留在原地，不需要护送。"
-				confirm = "查看伤势与求助"
+				text = "巡守按住腿上的破布，抬眼看向你。\n『营地来的？……先别扶我。巡守急救包还在补给区。院里的清单记着位置，替我找来。』"
+				confirm = "我去找急救包"
+				questions = [{"label": "你怎么伤成这样？", "answer": "『腿撑不住，最后一段是拖着回来的。先把血止住……别的等会儿再说。』"}]
 			elif evidence("aid_taken"):
-				text = "专用急救包已找回。确认替这位留守巡逻员清理伤口并包扎？\n只使用这份任务急救包，不消耗普通药品；救援后他继续留守前哨。"
-				confirm = "使用急救包救援"
+				text = "『是这个红结……打开吧，干净的绷带在最上面。』\n巡守松开压着伤口的手，等你包扎。"
+				confirm = "用巡守急救包包扎"
+				rules = "使用已取回的巡守急救包；不消耗背包里的普通药品。"
 			else:
-				text = "留守巡逻员：急救包在北侧的废棚后，得先找到院中的补给记录。普通补给无法代替遗失的任务急救包。"
+				text = "『补给区清单就在院里。照着找，急救包在东侧补给架北端，系着红结。』"
+				confirm = "记住急救包的位置"
 		"supply_record":
-			text = "补给记录：带红结的急救包放在北侧废棚后；绑着绳子的修理工具留在南侧拐角。两处都能从院内走到，要绕开各自的残墙。\n这是两件独立的任务物件，不能买卖，也不占普通补给上限。"
+			text = "补给区清单上，『巡守急救包』一行被红圈勾出：东侧补给架北端。\n纸角压在木箱下，没有被风吹走。"
+			confirm = "记下急救包位置"
+			if evidence("rescued"):
+				text += "\n下方还记着：前哨维修工具，南侧拐角。"
 		"aid_bag":
-			text = "红结急救包封着巡逻队的标记。取回后，回到受伤巡逻员身旁救治。"
-			confirm = "取回专用急救包"
+			text = "巡守急救包的红结还没解开，里面能摸到卷好的绷带。\n伤员还在西侧棚屋等着。"
+			confirm = "拿起巡守急救包"
+			rules = "任务物件单独保管，不占普通补给上限；带回受伤的前哨巡守身旁使用。"
 		"repair_tools":
-			text = "工具里有锤子、木钉和路标支架。取回后，救援并核查周边，再到路标旁修复。"
-			confirm = "取回修理工具"
+			text = "前哨维修工具裹在旧布里：锤子、木钉，还有一副路标支架。"
+			if evidence("rescued"): text += "\n巡守说，立路标前还得看看附近的巢址。"
+			confirm = "拿起前哨维修工具"
+			rules = "任务物件单独保管，不占普通补给上限。救援并完成现场调查后，可在路标处修复。"
 		"survey_marker":
-			text = "在前哨院中核查周边活动痕迹。只记录当前亲眼核实的情况；若没有安全可行的处理对象，就提交现场勘察，不虚构猎杀或捣巢。"
-			confirm = "现场勘察"
+			text = "前哨观测点正对院外的小路。地上新旧足迹交错，得再看看附近有没有活跃的巢。"
+			confirm = "观察周边痕迹"
+			rules = "根据当前可达的现场继续调查；没有可行处理对象时，可凭实地勘察继续修复。"
 		"signpost":
 			if evidence("signpost_repaired"):
-				text = "路标已修好，前哨检查点已启用。\n" + ("修复尾款待领取。背包放不下的补给会存入背包→待领取。" if ledger()["stage"] == "claim" else "修复奖励已领取。")
-				confirm = "领取修复尾款"
+				text = "前哨路标稳稳立在路口，箭头又指向旧道。巡守在棚屋旁朝这边招了招手。"
+				confirm = "领取修复报酬"
+				rules = "前哨检查点已启用。" + ("修复尾款待领取；背包放不下的补给会存入背包→待领取。" if ledger()["stage"] == "claim" else "修复奖励已领取。")
+			elif not evidence("rescued"):
+				text = "损坏的前哨路标斜倒在地，木钉从支架里脱出。院内的拖痕更值得留意。"
+				confirm = "检查损坏处"
 			else:
-				text = "倒下的路标需要专用工具。确认修复前，需先救援巡逻员，并取得真实生态处理或现场勘察结果。\n修好后这里才成为可用检查点，不会把到访误算成修复。"
+				text = "支架还在，木板也没裂。把前哨维修工具带来，就能让这条路重新有个方向。"
 				confirm = "修复前哨路标"
+				rules = "先取回维修工具并调查附近巢址。修复后启用前哨检查点。"
 		_:
-			return {"kind": "info", "text": "未知前哨物件"}
+			return {"kind": "info", "text": "这里没有可查看的前哨线索"}
 	var state := object_state(id)
+	var payload := {"kind": "camp_action", "action": "outpost:" + id, "giver": _object_name(id),
+		"origin": Layout.object_position(id), "confirm_text": confirm, "text": text, "questions": questions, "rules": rules}
+	if id == "wounded_patrol" and not evidence("signpost_repaired") and evidence("wounded_found") and (evidence("rescued") or not evidence("aid_taken")):
+		payload["kind"] = "info"
+	if id == "signpost" and not evidence("signpost_repaired") and not (Data.rescue_done(ledger()) and Data.has_ecology_result(ledger())):
+		payload["kind"] = "info"
 	if bool(state.get("done", false)) and id != "wounded_patrol" and not (id == "signpost" and ledger().get("stage", "") == "claim"):
-		var label := "已读" if id.ends_with("record") else "已完成"
-		return {"kind":"info", "giver":"前哨记录", "text":label + " · " + text}
-	return {"kind": "camp_action", "action": "outpost:" + id, "giver": "留守巡逻员" if id == "wounded_patrol" else "前哨调查",
-		"origin": Layout.object_position(id), "confirm_text": confirm, "text": text}
+		payload["kind"] = "info"
+		payload["text"] = ("已读 · " if id.ends_with("record") else "已完成 · ") + text
+	return payload
 
 func object_action(id: String) -> String:
 	if _mutating: return "正在记录本次行动"
@@ -193,35 +234,38 @@ func object_action(id: String) -> String:
 	var message := ""
 	var changed_evidence := ""
 	match id:
-		"patrol_record": changed_evidence = "patrol_read"; message = "已记录巡逻去向：前往前哨入口核对草图"
+		"patrol_record": changed_evidence = "patrol_read"; message = "札记到这里就断了；沿旧道去前哨看看"
 		"entrance_record":
-			if not evidence("patrol_read"): return "先阅读沿途的巡逻记录，才能对照入口草图"
-			changed_evidence = "entrance_read"; message = "已确认入口：可清理正门碎岩或绕行西侧缺口，再去棚屋查看巡逻员"
+			if not evidence("patrol_read"): return "先沿旧道找到遗落的巡逻札记"
+			changed_evidence = "entrance_read"; message = "拖痕通向院内：敲开正门碎岩或绕西侧缺口，到棚屋找人"
 		"wounded_patrol":
-			if not evidence("entrance_read"): return "先核对前哨入口草图"
+			if not evidence("entrance_read"): return "先调查门前的拖行痕迹"
 			if evidence("signpost_repaired"):
 				changed_evidence = "next_clue_received"; message = str(q.get("next_clue", _next_clue()))
 			elif not evidence("wounded_found"):
-				changed_evidence = "wounded_found"; message = "发现受伤巡逻员：先查看院中的补给记录"
-			elif evidence("rescued"): return "巡逻员已获救并继续留守 · " + objective()
-			elif not evidence("aid_taken"): return "需要先取回巡逻队的专用急救包"
-			else: changed_evidence = "rescued"; message = "已用专用急救包包扎伤口，巡逻员留在前哨；普通药品未消耗"
+				changed_evidence = "wounded_found"; message = "巡守还活着。去看补给区清单，替他找巡守急救包"
+			elif evidence("rescued"): return "巡守的伤已经包扎好 · " + objective()
+			elif not evidence("aid_taken"): return "先找回巡守急救包，再来替他包扎"
+			else:
+				changed_evidence = "rescued"
+				message = "巡守：好多了。我还以为，这条路已经没人走了。"
+				message += "工具也带来了？先看看附近的巢址，再把路标立起来吧。" if evidence("tools_taken") else "南侧拐角有前哨维修工具，帮我取来吧。"
 		"supply_record":
-			if not evidence("wounded_found"): return "先亲自查看受伤巡逻员，确认缺失的补给"
-			changed_evidence = "supply_read"; message = "已确认两条补给路线：北侧急救包，南侧修理工具"
+			if not evidence("wounded_found"): return "先去西侧棚屋看看受伤的前哨巡守"
+			changed_evidence = "supply_read"; message = "清单写着：巡守急救包在东侧补给架北端"
 		"aid_bag", "repair_tools":
-			if not evidence("supply_read"): return "先查看补给记录，核对这件物品的用途"
+			if not evidence("supply_read"): return "先查看补给区清单，核对这件物品"
 			changed_evidence = "aid_taken" if id == "aid_bag" else "tools_taken"
-			message = "已取回专用急救包，请到伤员身边明确救援" if id == "aid_bag" else "已取回修理工具，修复需在路标处亲自完成"
+			message = "拿到巡守急救包了，回西侧棚屋替巡守包扎" if id == "aid_bag" else "拿到前哨维修工具了"
 		"survey_marker":
 			return investigate(true)
 		"signpost":
 			if evidence("signpost_repaired"):
 				return claim()
-			if not Data.rescue_done(q): return "先取回两件专用补给，并亲手救援巡逻员"
+			if not Data.rescue_done(q): return "先救治前哨巡守，再带来前哨维修工具"
 			_sync_legacy()
-			if not Data.has_ecology_result(q): return "先取得真实生态处理或现场勘察结果，再修路标"
-			changed_evidence = "signpost_repaired"; message = "路标已修复，前哨检查点已启用；巡逻员会继续留守"
+			if not Data.has_ecology_result(q): return "先调查附近巢址，再回来立路标"
+			changed_evidence = "signpost_repaired"; message = "路标重新立起来了，前哨检查点已启用。去和前哨巡守说一声吧"
 		_: return "未知前哨行动"
 	if e.get(changed_evidence, false): return "这项行动已有记录 · " + objective()
 	_mutating = true
@@ -250,7 +294,7 @@ func claim() -> String:
 	_save()
 	GameState.end_world_reward()
 	_mutating = false
-	return "修复尾款已完整领取 · " + str(ledger()["next_clue"]) if ledger()["receipts"]["restoration"]["paid"] else "修复尾款仍待领取，请重新确认；背包放不下的补给会存入背包→待领取"
+	return "修复报酬已领取 · 与前哨巡守交谈" if ledger()["receipts"]["restoration"]["paid"] else "修复尾款仍待领取，请重新确认；背包放不下的补给会存入背包→待领取"
 
 func _settle_ready(allow_restoration: bool = false) -> void:
 	var q := ledger()
@@ -374,7 +418,7 @@ func _select_target(after_survey: bool) -> void:
 func context() -> Dictionary:
 	var on_site := _on_site()
 	return {"on_site": on_site, "can_investigate": is_active() and ledger().get("stage", "") == "ecology" and on_site,
-		"action": "outpost:investigate", "label": "核查前哨生态", "target_id": str(ledger().get("target", {}).get("key", "survey_marker"))}
+		"action": "outpost:investigate", "label": "调查巢址", "target_id": str(ledger().get("target", {}).get("key", "survey_marker"))}
 
 func investigate(at_marker: bool = false) -> String:
 	if not is_active() or not Data.rescue_done(ledger()): return "先救援巡逻员并取回修理工具，再核查生态"
@@ -398,21 +442,21 @@ func investigate(at_marker: bool = false) -> String:
 	_note("已亲自调查%s巢址；周边个体会巡猎，旧位置与线索不代表当前目视存量" % q["target"]["species"])
 	_save()
 	_refresh_roster(true)
-	return "已调查真实巢址，正在复核实名族群与可达处理方案"
+	return "已记下巢边足迹，正在查看能否接近附近族群"
 
 func choice_payload() -> Dictionary:
 	var f := _current_facts()
 	var remaining := maxi(0, 2 - ledger().get("kills", []).size())
 	var hunt: bool = f["nest_active"] and int(f["viable_count"]) >= remaining + 1
 	var nest: bool = f["nest_active"] and int(f["viable_count"]) > 0
-	var payload := {"kind": "camp_choice", "giver": "前哨生态记录", "origin": _position(ledger()["target"]),
-		"text": "巢址已调查，已有猎杀%d/2。\n%s\n个体会持续巡猎；任选可行方案，不需回营。" % [mini(ledger()["kills"].size(), 2), live_text()],
+	var payload := {"kind": "camp_choice", "giver": "巢址旁的发现", "origin": _position(ledger()["target"]),
+		"text": "新鲜足迹从巢边散向小路。已有狩猎%d/2。\n%s\n让这段路好走些，你打算怎么做？" % [mini(ledger()["kills"].size(), 2), live_text()],
 		"options": [{"label": "有限狩猎", "action": "outpost:choose_hunt", "enabled": hunt,
-			"disabled_reason": "当前存量不足以保留至少一只，可改选捣巢或重新核查", "consequence": "再猎杀%d只，保留巢穴与幸存族群" % remaining, "risk": "种群会继续繁衍，需真实行动"},
+			"disabled_reason": "当前存量不足以保留至少一只，可改选捣巢或重新核查", "consequence": "再猎杀%d只，保留巢穴与幸存族群" % remaining, "risk": "巢穴仍会繁衍，今后还可能出现新的个体"},
 			{"label": "暂时捣巢", "action": "outpost:choose_ransack", "enabled": nest,
 			"disabled_reason": "没有有效巢穴或可应对存活个体", "consequence": "暂停当地繁衍120刻", "risk": "存活怪物不会被清除，附近同族狂怒60秒；巢穴会重建"},
 			{"label": "重新核查现场", "action": "outpost:investigate", "enabled": true, "utility": true,
-			"consequence": "保留已有行动，记录变化", "risk": "不会虚构猎杀或立即清空据点"}]}
+			"consequence": "保留已有行动，记录变化", "risk": "再看看足迹与巢穴，原有行动保留"}]}
 
 	if not hunt:
 		payload["options"].append({"label": "寻找其他狩猎线索", "action": "outpost:find_hunt_clue", "enabled": true, "utility": true,
@@ -489,7 +533,7 @@ func _finish(outcome: String) -> void:
 	_carry_result_to_legacy()
 	Data.refresh_stage(ledger())
 	_save()
-	EventBus.hint_requested.emit("前哨生态已有结果 · 到倒下的路标处明确修复")
+	EventBus.hint_requested.emit("周边调查已有结果 · 带工具修复损坏的前哨路标")
 
 func sync_legacy_contract() -> void:
 	if ledger().is_empty() or not ledger().get("legacy_reserved", false): return
@@ -588,13 +632,19 @@ func _visible_position(pos: Vector2) -> bool:
 
 func live_text() -> String:
 	var f := facts()
-	if f.is_empty(): return "当前生态现场尚待调查，旧记录不代表现状"
+	if f.is_empty(): return "附近的情况还没看清，需要到场调查"
 	var nest_text := "眼前巢穴活跃" if f.get("nest_active", false) else ("眼前巢穴已毁" if f.get("nest_visible", false) else "巢址当前不在视野内")
-	return "当前目视已核实个体%d只；%s。未目视个体只作已核实线索，不能据此断言当前现场存量" % [f["visible_count"], nest_text]
+	return "眼前可见%d只；%s。视野外的情况还不清楚。" % [f["visible_count"], nest_text]
 
 func target() -> Dictionary:
-	if not is_active(): return {}
+	if not is_active() and not guidance_pending(): return {}
 	var id := _target_object()
+	if id == "home:patrol":
+		for npc: Node in get_tree().get_nodes_in_group("npcs"):
+			if npc is Node2D and npc.get("landmark_id") == "camp_ecology" and npc.get("quest_kind") == "outpost":
+				return {"position": npc.global_position, "kind": "outpost", "object_id": id, "name": "营地巡守",
+					"species": "", "region_id": "", "knowledge": "npc_intel", "live_facts": {}}
+		return {}
 	if id == "ecology":
 		var t: Dictionary = ledger()["target"]
 		return {"position": _position(t), "kind": "outpost", "object_id": "ecology:" + t["key"], "name": str(t["species"]) + "据点",
@@ -607,6 +657,7 @@ func target() -> Dictionary:
 		"species": "", "region_id": "", "knowledge": "visible" if _at_object(id) else "npc_intel", "live_facts": {}}
 
 func _target_object() -> String:
+	if ledger().get("stage", "") == "completed": return "home:patrol" if evidence("next_clue_received") else "wounded_patrol"
 	if not evidence("patrol_read"): return "patrol_record"
 	if not evidence("entrance_read"): return "entrance_record"
 	if not evidence("wounded_found"): return "wounded_patrol"
@@ -618,29 +669,10 @@ func _target_object() -> String:
 	return "signpost"
 
 func objective() -> String:
-	if ledger().is_empty(): return "与营地巡守交谈，接取失联前哨"
-	if _searching: return "第三段 · 正在核对真实生态线索与可达路线"
-	if ledger()["stage"] == "completed": return str(ledger().get("next_clue", "前哨已恢复，巡逻员仍在原处留守"))
-	if ledger()["stage"] == "claim": return "路标与检查点已恢复 · 到路标旁领取修复尾款"
-	match _target_object():
-		"patrol_record": return "第一段 · 沿旧道阅读巡逻记录"
-		"entrance_record": return "第一段 · 在前哨入口核对草图，找可步行进入的缺口"
-		"wounded_patrol": return "第二段 · 回到巡逻员身旁，明确使用专用急救包救援" if evidence("wounded_found") else "第二段 · 清理正门碎岩或绕行西侧缺口，查看留守巡逻员"
-		"supply_record": return "第二段 · 查看院中的补给记录，确认两条回收路线"
-		"aid_bag": return "第二段 · 绕过北侧残墙，取回专用急救包"
-		"repair_tools": return "第二段 · 走南侧路径，取回修理工具"
-		"survey_marker": return "第三段 · 到前哨院中的勘察点，亲自核查现场"
-		"ecology":
-			if not evidence("site_surveyed"): return "第三段 · 到%s据点明确调查；现状待到场确认" % ledger()["target"]["species"]
-			if ledger()["choice"] == "hunt":
-				if not _hunt_possible(_current_facts()): return "第三段 · 族群或路线已变化，回已调查巢址重新核查；猎杀%d/2保留" % mini(ledger()["kills"].size(), 2)
-				return "第三段 · 真实有限狩猎%d/2，寻找已核实族群，保留巢穴与幸存个体" % mini(ledger()["kills"].size(), 2)
-			if ledger()["choice"] == "ransack": return "第三段 · 实际捣毁目标巢穴，暂时抑制繁衍；幸存个体不清除"
-			return "第三段 · 选择当前可行的有限狩猎或暂时捣巢"
-		_: return "第三段 · 到倒下的路标旁亲手修复，启用前哨检查点"
+	return next_action()
 
-## 章节计数保留原合同，界面另用正在执行的一组动作计数。
 func step_progress() -> String:
+	if ledger().get("stage", "") == "completed": return "后续线索"
 	if not Data.investigation_done(ledger()):
 		return "调查 %d/2" % (int(evidence("patrol_read")) + int(evidence("entrance_read")))
 	if not Data.rescue_done(ledger()):
@@ -653,19 +685,27 @@ func step_progress() -> String:
 	return "修复 %d/2" % (int(Data.has_ecology_result(ledger())) + int(evidence("signpost_repaired")))
 
 func next_action() -> String:
-	if ledger().get("stage", "") == "completed": return "与前哨巡守交谈，了解下一处线索"
-	if ledger().get("stage", "") == "claim": return "到前哨路标领取修复尾款"
-	if _searching: return "正在核对可达的生态线索"
+	if ledger().is_empty(): return "与营地巡守交谈，询问失联的前哨"
+	if ledger().get("stage", "") == "completed": return "回营地与营地巡守交谈，询问林地路书" if evidence("next_clue_received") else "与前哨巡守交谈，了解后续线索"
+	if ledger().get("stage", "") == "claim": return "到前哨路标领取修复报酬"
+	if _searching: return "正在寻找附近可达的巢址线索"
 	match _target_object():
-		"patrol_record": return "沿旧道阅读巡逻记录"
-		"entrance_record": return "到前哨入口阅读入口草图"
-		"wounded_patrol": return "回到巡逻员旁救治" if evidence("wounded_found") else "到西侧棚屋查看巡逻员"
-		"supply_record": return "阅读院中的补给记录"
-		"aid_bag": return "到北侧废棚取急救包"
-		"repair_tools": return "到南侧拐角取修理工具"
-		"survey_marker": return "到院中勘察点核查现场"
-		"ecology": return objective().trim_prefix("第三段 · ")
-	return "到前哨路标旁修复"
+		"patrol_record": return "沿旧道寻找遗落的巡逻札记"
+		"entrance_record": return "调查门前的拖行痕迹"
+		"wounded_patrol": return "把巡守急救包带给受伤的前哨巡守" if evidence("wounded_found") else "沿拖痕到西侧棚屋寻找受伤的前哨巡守"
+		"supply_record": return "查看院内的补给区清单"
+		"aid_bag": return "到东侧补给架北端寻找巡守急救包"
+		"repair_tools": return "到南侧拐角取回前哨维修工具"
+		"survey_marker": return "到前哨观测点观察周边痕迹"
+		"ecology":
+			var species := str(ledger()["target"]["species"])
+			if not evidence("site_surveyed"): return "到%s据点调查巢址" % species
+			if ledger()["choice"] == "hunt":
+				if not _hunt_possible(_current_facts()): return "回%s巢址重新核查，已有狩猎%d/2保留" % [species, mini(ledger()["kills"].size(), 2)]
+				return "狩猎%s %d/2，保留巢穴与至少一只幸存个体" % [species, mini(ledger()["kills"].size(), 2)]
+			if ledger()["choice"] == "ransack": return "捣毁%s巢穴，留意附近幸存怪物" % species
+			return "在%s巢址选择有限狩猎或暂时捣巢" % species
+	return "带工具修复损坏的前哨路标"
 
 func snapshot() -> Dictionary:
 	if ledger().is_empty(): return {}
@@ -673,7 +713,7 @@ func snapshot() -> Dictionary:
 	var pos: Vector2 = t.get("position", Vector2.INF)
 	var reward := Data.reward("restoration", ledger()["legacy_reserved"])
 	var view := {"id": Data.ID, "landmark_id": Legacy.LANDMARK, "kind": "outpost", "title": Data.TITLE,
-		"giver": "留守巡逻员", "need": 3, "progress": (1 if Data.investigation_done(ledger()) else 0) + (1 if Data.rescue_done(ledger()) else 0) + (1 if evidence("signpost_repaired") else 0),
+		"giver": "前哨巡守", "need": 3, "progress": (1 if Data.investigation_done(ledger()) else 0) + (1 if Data.rescue_done(ledger()) else 0) + (1 if evidence("signpost_repaired") else 0),
 		"claim_at_npc": true, "chapter_stage": ledger()["stage"], "ui_state": "claimable" if ledger()["stage"] == "claim" else "in_progress",
 		"ui_status": "尾款待领取" if ledger()["stage"] == "claim" else "前哨章节", "ui_objective": objective(),
 		"next_action": next_action(), "target_title": t.get("name", ""), "step_progress": step_progress(),
@@ -681,8 +721,21 @@ func snapshot() -> Dictionary:
 		"target_object_id": t.get("object_id", ""), "target_name": t.get("name", ""), "target_pos": [pos.x, pos.y] if pos.is_finite() else [],
 		"species": t.get("species", ""), "hunt_region": t.get("region_id", ""), "target_instance_ids": t.get("target_instance_ids", []),
 		"ui_guide_mode": t.get("guide_mode", "object"), "ui_target_label": t.get("knowledge_label", t.get("name", "")),
-		"ui_knowledge": t.get("knowledge", "unknown"), "history": history_text(), "live_facts": live_text()}
+		"ui_knowledge": t.get("knowledge", "unknown"), "history": history_text(), "live_facts": live_text(), "rules": _journal_rules()}
+	if ledger().get("stage", "") == "completed":
+		view["ui_state"] = "completed"
+		view["ui_status"] = "前哨已恢复"
+		view["claim_at_npc"] = false
+		view["can_abandon"] = false
+		view["guidance_pending"] = guidance_pending()
 	return view
+
+func _journal_rules() -> String:
+	var rules := "可暂停后继续，已调查的线索与已获得的物件会保留。"
+	if evidence("wounded_found"): rules += "\n巡守急救包与维修工具单独保管，不占普通补给上限；救援只使用任务急救包。"
+	if Data.rescue_done(ledger()): rules += "\n有限狩猎需击杀2只并保留巢穴及至少1只幸存个体；暂时捣巢抑制繁衍120刻，附近同族狂怒60秒，幸存怪物仍在。"
+	if evidence("signpost_repaired"): rules += "\n前哨检查点已启用；修复报酬中放不下的补给进入背包→待领取。"
+	return rules
 
 func npc_status() -> Dictionary:
 	if ledger().get("stage", "") == "completed": return {"state": "completed", "marker": "✓ 前哨已恢复", "color": QuestPresentation.COMPLETED_COLOR}
@@ -692,7 +745,7 @@ func history_text() -> String:
 	return "记录：" + "；".join(ledger().get("history", []))
 
 func receipt_text() -> String:
-	return "✓ 失联的前哨已完成 · " + reward_policy() + " · " + str(ledger().get("next_clue", ""))
+	return "✓ 失联的前哨已完成 · " + next_action()
 
 func _on_object_interaction(id: String) -> void:
 	EventBus.npc_dialogue.emit(object_payload(id))
@@ -700,6 +753,7 @@ func _on_object_interaction(id: String) -> void:
 func _on_action(action: String) -> void:
 	if not action.begins_with("outpost:"): return
 	var id := action.trim_prefix("outpost:")
+	var prior_evidence: Dictionary = ledger().get("evidence", {}).duplicate(true)
 	var message := ""
 	match id:
 		"accept", "resume": message = accept()
@@ -713,7 +767,16 @@ func _on_action(action: String) -> void:
 		"choose_ransack": message = choose("ransack")
 		"find_hunt_clue": message = find_hunt_clue()
 		_: message = object_action(id)
-	if not message.is_empty(): EventBus.hint_requested.emit(message)
+	if not message.is_empty():
+		var earned_story := false
+		for key: String in ["rescued", "signpost_repaired", "next_clue_received"]:
+			if evidence(key) and not prior_evidence.get(key, false): earned_story = true
+		if earned_story and not GameState.dialogue_open:
+			# 只读回响：故事已经由原动作入账，继续/返回都不会再次执行它。
+			EventBus.npc_dialogue.emit({"kind": "story_result", "giver": _object_name(id), "text": message,
+				"confirm_text": "继续", "origin": Layout.object_position(id)})
+		else:
+			EventBus.hint_requested.emit(message)
 
 func _on_tick(_summary: Dictionary) -> void:
 	if not is_active(): return
@@ -753,7 +816,9 @@ func _position(target_data: Dictionary) -> Vector2:
 	return Vector2(float(pos[0]), float(pos[1]))
 
 func _object_name(id: String) -> String:
-	return {"patrol_record": "沿途巡逻记录", "entrance_record": "前哨入口草图", "wounded_patrol": "留守巡逻员", "supply_record": "补给记录", "aid_bag": "专用急救包", "repair_tools": "修理工具", "survey_marker": "前哨勘察点", "signpost": "前哨路标"}.get(id, "前哨线索")
+	if id == "wounded_patrol" and evidence("rescued"): return "前哨巡守"
+	if id == "signpost" and evidence("signpost_repaired"): return "前哨路标"
+	return str(Layout.OBJECTS.get(id, {}).get("title", "前哨线索"))
 
 func _next_clue() -> String:
 	var here: SimRegion = WorldSim.sim.region_of_point(Layout.center()) if WorldSim.sim != null else null
@@ -763,8 +828,8 @@ func _next_clue() -> String:
 			if region != null and region.terrain != here.terrain:
 				var d: Vector2 = region.center - Layout.center()
 				var direction := ("东" if d.x >= 0 else "西") + ("南" if d.y >= 0 else "北")
-				return "后续线索：前哨%s方向有%s，可继续探索当地生态；这只是区域线索，未确认远处的当前状态。" % [direction, region.display_name]
-	return "后续线索：前哨外的邻近区域还有新的巡逻路线，可以自由探索；远处现状尚未确认。"
+				return "回营地找营地巡守，他有通往林地联络站的旧路书。替我告诉那边的人：前哨又有人守着了。\n往前哨%s走是%s；那边的现状，还得亲自去看看。" % [direction, region.display_name]
+	return "回营地找营地巡守，他有通往林地联络站的旧路书。替我告诉那边的人：前哨又有人守着了。"
 
 func _note(text: String) -> void:
 	if not text in ledger()["history"]: ledger()["history"].append(text)

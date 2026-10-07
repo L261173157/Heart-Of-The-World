@@ -10,7 +10,7 @@ const OFFSET := Vector2(3456, -1536)
 const INTERACT_DISTANCE := 94.0
 const OBJECTS := {
 	"patrol_record": {"title": "遗落的巡逻札记", "kind": "record", "interaction_label": "调查札记"},
-	"entrance_record": {"title": "门前的拖行痕迹", "kind": "record", "offset": Vector2(-128, 544), "interaction_label": "调查入口"},
+	"entrance_record": {"title": "门前的拖行痕迹", "kind": "record", "offset": Vector2(-128, 544), "interaction_label": "调查拖痕"},
 	"wounded_patrol": {"title": "受伤的前哨巡守", "kind": "patrol", "offset": Vector2(-352, -192), "interaction_label": "交谈"},
 	"supply_record": {"title": "补给区清单", "kind": "record", "offset": Vector2(256, 96), "interaction_label": "查看清单"},
 	"aid_bag": {"title": "巡守急救包", "kind": "aid", "offset": Vector2(448, -320), "interaction_label": "拾取急救包"},

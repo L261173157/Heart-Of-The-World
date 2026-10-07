@@ -23,7 +23,7 @@ jobs:
       matrix:
         include:
           - suite: quest_pickup_feedback
-            tests: reward_feedback,chest_transaction,pickup_affordance,quest_guidance_feedback
+            tests: campaign_narrative_contract,quest_narrative_ui,reward_feedback,chest_transaction,pickup_affordance,quest_guidance_feedback
           - suite: equipment_earned_budget
             tests: equipment_earned_budget
           - suite: equipment

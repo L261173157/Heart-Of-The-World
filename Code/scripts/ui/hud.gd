@@ -341,6 +341,7 @@ func _swap_title_ribbon(node_path: String, color_idx: int, min_width := 240.0) -
 var _dialogue_panel: Control
 var _dialogue_tag: Control
 var _dialogue_text: Label
+var _dialogue_text_scroll: ScrollContainer
 var _dialogue_name: Label
 var _dialogue_faceset: TextureRect
 var _dialogue_yes: Button
@@ -440,7 +441,25 @@ func _setup_dialogue_bubble() -> void:
 	_dialogue_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_dialogue_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_dialogue_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_dialogue_panel.add_child(_dialogue_text)
+	_dialogue_text_scroll = ScrollContainer.new()
+	_dialogue_text_scroll.name = "DialogueTextScroll"
+	_dialogue_text_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_dialogue_text_scroll.follow_focus = true
+	_dialogue_panel.add_child(_dialogue_text_scroll)
+	_dialogue_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_dialogue_text.size = Vector2.ZERO
+	_dialogue_text_scroll.add_child(_dialogue_text)
+	# 无操作透明表面复用已验证的独立触点/滚动取消，不依赖单指鼠标模拟。
+	var reading_surface := DialogueScrollSurface.new()
+	reading_surface.name = "DialogueReadingSurface"
+	reading_surface.disabled = true
+	reading_surface.focus_mode = Control.FOCUS_NONE
+	reading_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	reading_surface.input_allowed = _can_use_reading_control
+	for state_name: String in ["normal", "hover", "pressed", "disabled", "focus"]:
+		reading_surface.add_theme_stylebox_override(state_name, StyleBoxEmpty.new())
+	_dialogue_text.add_child(reading_surface)
+	reading_surface.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	# 明确的文字按钮取代无字方块；正文和操作各占一行，不把标签挤在纸面外。
 	_dialogue_yes = Button.new()
@@ -498,18 +517,25 @@ func _open_dialogue(payload: Dictionary) -> void:
 	_dialogue_origin = origin if origin is Vector2 else Vector2.INF
 	_dialogue_quest = payload.get("quest", {}) if _dialogue_kind in ["quest", "claim"] else {}
 	_dialogue_options = payload.get("options", []).duplicate(true)
+	_dialogue_questions = QuestPresentation.dialogue_questions(payload)
+	_dialogue_rules = QuestPresentation.dialogue_rules(payload)
+	_dialogue_reading_page = ""
+	_dialogue_question_index = -1
 	_dialogue_selected_option = {}
 	_dialogue_name.text = str(payload.get("giver", ""))
-	_dialogue_text.text = str(payload.get("text", ""))
+	_dialogue_text.text = QuestPresentation.action_prompt(payload)
 	_dialogue_text.set_meta("opening_text", _dialogue_text.text)
+	_dialogue_text_scroll.scroll_vertical = 0
 	var face_path := str(payload.get("faceset", ""))
 	_dialogue_faceset.texture = load(face_path) if not face_path.is_empty() and ResourceLoader.exists(face_path) else null
-	var has_offer := not _dialogue_quest.is_empty() or _dialogue_kind in ["shop", "camp_action"]
+	var has_offer := not _dialogue_quest.is_empty() or _dialogue_kind in ["shop", "camp_action", "story_result"]
+	_dialogue_has_offer = has_offer
 	_dialogue_yes.visible = has_offer
 	_dialogue_no.visible = true
 	_dialogue_yes_label.visible = true
 	_dialogue_no_label.visible = true
 	_dialogue_yes_label.text = str(payload.get("confirm_text", "交付领奖" if _dialogue_kind == "claim" else ("进入商店" if _dialogue_kind == "shop" else ("继续委托" if _dialogue_kind == "camp_action" else "接取委托"))))
+	_dialogue_confirm_text = _dialogue_yes_label.text
 	_dialogue_no_label.text = "返回上一层" if not _dialogue_back_action_name.is_empty() else "返回 / 关闭"
 	_show_dialogue_options()
 	_push_modal(_dialogue_panel)
@@ -522,7 +548,9 @@ func _on_dialogue_action(action: String) -> void:
 	if not _dialogue_panel.visible:
 		return
 	if action != "confirm":
-		if not _dialogue_selected_option.is_empty():
+		if not _dialogue_reading_page.is_empty():
+			_return_dialogue_reading()
+		elif not _dialogue_selected_option.is_empty():
 			_dialogue_selected_option = {}
 			_show_dialogue_options()
 		else:
@@ -558,6 +586,12 @@ func _close_dialogue() -> void:
 	_dialogue_action_name = ""
 	_dialogue_back_action_name = ""
 	_dialogue_options.clear()
+	_dialogue_questions.clear()
+	_dialogue_rules = ""
+	_dialogue_reading_page = ""
+	_dialogue_question_index = -1
+	_dialogue_has_offer = false
+	_dialogue_confirm_text = ""
 	_dialogue_selected_option.clear()
 	_dialogue_origin = Vector2.INF
 	GameState.dialogue_open = false
@@ -1188,6 +1222,9 @@ func _unhandled_input(event: InputEvent) -> void:
 func _close_top_layer_or_toggle_pause() -> void:
 	if _more_panel != null and _more_panel.visible:
 		_more_panel.hide()
+		return
+	if _dialogue_panel.visible and not _dialogue_reading_page.is_empty():
+		_return_dialogue_reading()
 		return
 	if _dialogue_panel.visible and not _dialogue_selected_option.is_empty():
 		_dialogue_selected_option = {}
@@ -2284,9 +2321,11 @@ func _refresh_task_list() -> void:
 		abandon.name = "Abandon_" + id
 		abandon.text = "放弃委托"
 		abandon.custom_minimum_size = Vector2(148, 56)
+		abandon.visible = bool(quest.get("can_abandon", true))
+		abandon.disabled = not abandon.visible
 		abandon.pressed.connect(_request_quest_action.bind(id, true))
 		actions.add_child(abandon)
-		if id == _pending_abandon_id:
+		if id == _pending_abandon_id and bool(quest.get("can_abandon", true)):
 			row.add_child(_readable_label("暂停此调查？已发生的世界变化、任务物件和已支付记录仍会保留，可向巡守继续。" if quest.get("kind", "") in ["camp_ecology", "outpost", "campaign"] else "放弃后当前进度不会保留，确定放弃？", 16))
 			var confirm := Button.new()
 			confirm.name = "ConfirmAbandon_" + id
@@ -2314,9 +2353,9 @@ func _refresh_task_list() -> void:
 		details.name = "QuestDetails_" + id
 		details.visible = _task_details_open.get(id, false)
 		row.add_child(details)
-		for field: String in ["ui_objective", "ui_reward", "history", "live_facts"]:
+		for field: String in ["ui_objective", "ui_reward", "history", "live_facts", "rules"]:
 			if not str(quest.get(field, "")).is_empty():
-				details.add_child(_readable_label(str(quest[field]), 16))
+				details.add_child(_readable_label(("规则说明：" if field == "rules" else "") + str(quest[field]), 16))
 		detail_toggle.pressed.connect(func() -> void:
 			details.visible = not details.visible
 			_task_details_open[id] = details.visible
@@ -2395,6 +2434,12 @@ var _stats_overview_layer: Control
 var _menu_growth_btn: Button
 var _tracked_plate: Panel
 var _dialogue_options: Array = []
+var _dialogue_questions: Array = []
+var _dialogue_rules := ""
+var _dialogue_reading_page := ""
+var _dialogue_question_index := -1
+var _dialogue_has_offer := false
+var _dialogue_confirm_text := ""
 var _dialogue_option_box: VBoxContainer
 var _dialogue_option_scroll: ScrollContainer
 var _dialogue_selected_option: Dictionary = {}
@@ -2883,7 +2928,8 @@ func _layout_dialogue() -> void:
 		return
 	var root: Control = get_node("Root")
 	var width := minf(720, root.size.x - 64)
-	var desired_height := (568 if _dialogue_options.size() > 2 else 510) if not _dialogue_options.is_empty() else 348
+	var has_reading_options := not _dialogue_options.is_empty() or not _dialogue_questions.is_empty() or not _dialogue_rules.is_empty()
+	var desired_height := (568 if _dialogue_options.size() > 2 else 510) if has_reading_options and _dialogue_reading_page.is_empty() else 348
 	var height := minf(desired_height, root.size.y - 48)
 	_dialogue_panel.set_anchors_preset(Control.PRESET_CENTER)
 	_dialogue_panel.offset_left = -width * 0.5
@@ -2895,8 +2941,9 @@ func _layout_dialogue() -> void:
 	_dialogue_faceset.visible = has_portrait
 	(_dialogue_panel.get_node("PortraitFrame") as Control).visible = has_portrait
 	var text_left := 130.0 if has_portrait else 32.0
-	_dialogue_text.position = Vector2(text_left, 52)
-	_dialogue_text.size = Vector2(width - text_left - 28, 122 if not _dialogue_options.is_empty() else 194)
+	var show_options := has_reading_options and _dialogue_reading_page.is_empty()
+	_dialogue_text_scroll.position = Vector2(text_left, 52)
+	_dialogue_text_scroll.size = Vector2(width - text_left - 28, minf(122, height - 260) if show_options else height - 146)
 	_dialogue_text.add_theme_font_size_override("font_size", 18)
 	_dialogue_text.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	_dialogue_tag.position.x = 126 if has_portrait else 28
@@ -2908,6 +2955,7 @@ func _layout_dialogue() -> void:
 	if _dialogue_option_scroll != null:
 		_dialogue_option_scroll.position = Vector2(28, 184)
 		_dialogue_option_scroll.size = Vector2(width - 56, height - 274)
+		_dialogue_option_scroll.visible = show_options
 
 func _show_dialogue_options() -> void:
 	if _dialogue_option_box == null:
@@ -2923,40 +2971,94 @@ func _show_dialogue_options() -> void:
 	for child in _dialogue_option_box.get_children():
 		_dialogue_option_box.remove_child(child)
 		child.queue_free()
-	_dialogue_option_scroll.visible = not _dialogue_options.is_empty()
-	if _dialogue_options.is_empty():
-		return
 	_dialogue_text.text = str(_dialogue_text.get_meta("opening_text", ""))
-	_dialogue_yes.visible = not _dialogue_selected_option.is_empty()
-	_dialogue_no_label.text = "返回方案" if not _dialogue_selected_option.is_empty() else "关闭"
+	_dialogue_yes.visible = _dialogue_has_offer if _dialogue_options.is_empty() else not _dialogue_selected_option.is_empty()
+	_dialogue_yes_label.text = _dialogue_confirm_text
+	_dialogue_yes_label.add_theme_font_size_override("font_size", 18)
+	_dialogue_no_label.text = "返回上一层" if not _dialogue_back_action_name.is_empty() else "返回 / 关闭"
 	if not _dialogue_selected_option.is_empty():
-		var option := _dialogue_selected_option
-		var summary := _readable_label("选择：%s\n结果：%s\n风险：%s\n\n确认后才执行；返回不会提交选择。" % [option.get("label", ""), option.get("consequence", ""), option.get("risk", "")], 17)
-		summary.add_theme_color_override("font_color", Color("291c10"))
-		_dialogue_option_box.add_child(summary)
-		# 完整对象/去向已在上方预览区展示，固定拇指按钮不重复长标题而溢出到返回键。
+		_dialogue_no_label.text = "返回方案"
 		_dialogue_yes_label.text = "确认此选择"
 		_dialogue_yes_label.add_theme_font_size_override("font_size", 15)
+	if not _dialogue_reading_page.is_empty():
+		_dialogue_no_label.text = "返回对话"
+		if _dialogue_reading_page == "question" and _dialogue_question_index >= 0 and _dialogue_question_index < _dialogue_questions.size():
+			var question: Dictionary = _dialogue_questions[_dialogue_question_index]
+			_dialogue_text.text = "%s\n\n%s" % [question["label"], question["answer"]]
+		else:
+			_dialogue_text.text = "规则说明\n\n" + _dialogue_rules
 	else:
-		for option: Dictionary in _dialogue_options:
+		if not _dialogue_selected_option.is_empty():
+			var option := _dialogue_selected_option
+			var summary := _readable_label("选择：%s\n结果：%s\n风险：%s\n\n确认后才执行；返回不会提交选择。" % [option.get("label", ""), option.get("consequence", ""), option.get("risk", "")], 17)
+			summary.add_theme_color_override("font_color", Color("291c10"))
+			_dialogue_option_box.add_child(summary)
+		else:
+			for option: Dictionary in _dialogue_options:
+				var button := Button.new()
+				var action := str(option.get("action", ""))
+				button.name = ("Branch_" + action).replace(":", "_")
+				button.set_meta("quest_action", action)
+				button.disabled = not bool(option.get("enabled", true))
+				var utility := bool(option.get("utility", false))
+				button.custom_minimum_size.y = 48 if utility else (112 if button.disabled else 96)
+				button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+				button.add_theme_font_size_override("font_size", 16)
+				button.text = "%s\n结果：%s\n风险：%s" % [option.get("label", ""), option.get("consequence", ""), option.get("risk", "")]
+				if utility:
+					button.text = str(option.get("label", "寻找其他线索"))
+				if button.disabled:
+					button.text += "\n不可选：" + str(option.get("disabled_reason", "当前条件不足"))
+				button.pressed.connect(_preview_dialogue_option.bind(option))
+				_dialogue_option_box.add_child(button)
+		for index in _dialogue_questions.size():
 			var button := Button.new()
-			var action := str(option.get("action", ""))
-			button.name = ("Branch_" + action).replace(":", "_")
-			button.set_meta("quest_action", action)
-			button.disabled = not bool(option.get("enabled", true))
-			var utility := bool(option.get("utility", false))
-			button.custom_minimum_size.y = 48 if utility else (112 if button.disabled else 96)
-			button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			button.name = "DialogueQuestion_%d" % index
+			button.text = str(_dialogue_questions[index]["label"])
+			button.custom_minimum_size.y = 52
+			button.add_theme_font_size_override("font_size", 17)
+			button.pressed.connect(_show_dialogue_question.bind(index))
+			_dialogue_option_box.add_child(button)
+		if not _dialogue_rules.is_empty():
+			var button := Button.new()
+			button.name = "DialogueRules"
+			button.text = "查看规则说明"
+			button.custom_minimum_size.y = 52
 			button.add_theme_font_size_override("font_size", 16)
-			button.text = "%s\n结果：%s\n风险：%s" % [option.get("label", ""), option.get("consequence", ""), option.get("risk", "")]
-			if utility:
-				button.text = str(option.get("label", "寻找其他线索"))
-			if button.disabled:
-				button.text += "\n不可选：" + str(option.get("disabled_reason", "当前条件不足"))
-			button.pressed.connect(_preview_dialogue_option.bind(option))
+			button.pressed.connect(_show_dialogue_rules)
 			_dialogue_option_box.add_child(button)
 	_layout_dialogue()
 	_bind_reading_buttons(_dialogue_panel)
+
+## 追问只是阅读当前载荷，保留原行动和分支预览；不发出任何任务操作信号。
+func _show_dialogue_question(index: int) -> void:
+	if not _dialogue_panel.visible or index < 0 or index >= _dialogue_questions.size() or not _can_use_reading_control():
+		return
+	_dialogue_question_index = index
+	_dialogue_reading_page = "question"
+	_refresh_dialogue_reading()
+
+
+func _show_dialogue_rules() -> void:
+	if not _dialogue_panel.visible or _dialogue_rules.is_empty() or not _can_use_reading_control():
+		return
+	_dialogue_reading_page = "rules"
+	_refresh_dialogue_reading()
+
+
+func _return_dialogue_reading() -> void:
+	_dialogue_reading_page = ""
+	_dialogue_question_index = -1
+	_refresh_dialogue_reading()
+
+
+func _refresh_dialogue_reading() -> void:
+	_dialogue_text_scroll.scroll_vertical = 0
+	_show_dialogue_options()
+	_sync_modal_focus()
+	if _gesture_gate != null:
+		_gesture_gate.require_release()
+
 
 func _preview_dialogue_option(option: Dictionary) -> void:
 	if not bool(option.get("enabled", true)):
@@ -2998,3 +3100,11 @@ func _on_bounty_updated(text: String) -> void:
 	if _task_layer != null and _task_layer.visible:
 		_refresh_task_list()
 		_sync_modal_focus()
+
+
+## 正文可滑动但不是可执行按钮，不绘制按钮触点光圈。
+class DialogueScrollSurface:
+	extends "res://scripts/ui/reading_action_button.gd"
+
+	func _draw() -> void:
+		pass

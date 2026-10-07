@@ -81,8 +81,8 @@ func payload(a: Dictionary) -> Dictionary:
 		var options: Array = []
 		for choice: Dictionary in a.get("choices",[]):
 			options.append({"label":choice["title"],"action":"campaign|act|"+str(a["id"])+"|"+str(choice["id"]),"enabled":true,
-				"consequence":_choice_consequence(str(choice["id"])),"risk":"确认后保留选择和世界中的实际结果；不会重复发奖"})
-		return {"kind":"camp_choice","giver":a["title"],"text":a["text"],"origin":host._world_position(str(a["object"])),"options":options}
+				"consequence":_choice_consequence(str(choice["id"])),"risk":_choice_risk(str(choice["id"]))})
+		return {"kind":"camp_choice","giver":a["title"],"text":a.get("prompt",a["text"]),"origin":host._world_position(str(a["object"])),"options":options}
 	if kind == "encounter":
 		var options: Array = []
 		var living := _live_boss(str(a["boss_species"]))
@@ -91,17 +91,17 @@ func payload(a: Dictionary) -> Dictionary:
 			if outcome == "bypass": enabled = true
 			elif outcome == "absent": enabled = living.is_empty()
 			elif outcome == "defeated": enabled = living.is_empty() and _q().get("main_kills",{}).has(a["boss_species"])
-			options.append({"label":{"defeated":"核实本人讨伐记录","bypass":"操作西翼绕行绞盘","absent":"记录当前空城"}[outcome],
+			options.append({"label":{"defeated":"记下我的讨伐","bypass":"操作西侧绕行绞盘","absent":"调查眼前的空城"}[outcome],
 				"action":"campaign|act|"+str(a["id"])+"|"+outcome,"enabled":enabled,
-				"consequence":"记录真实绕行，不计作击杀" if outcome=="bypass" else ("记录当前没有活体，不计作讨伐" if outcome=="absent" else "核对本存档中该城塞实名击杀凭证"),
-				"risk":"Boss以后仍按原生态规则复生，历史行动与奖励不重置"})
-		return {"kind":"camp_choice","giver":a["title"],"text":("当前城塞仍有存活的%s。" % a["boss_species"] if not living.is_empty() else "已核对当前城塞，没有这位Boss的存活实例。")+"\n"+str(a["text"]),"origin":host._world_position(str(a["object"])),"options":options}
+				"consequence":"从西侧打开接近档案的通路，无需击败牛头王" if outcome=="bypass" else ("按空城调查继续前行，保留眼前所见" if outcome=="absent" else "凭你在这座城塞的讨伐经过继续前行"),
+				"risk":"%s以后仍可能复生；已经完成的修复和救援会保留" % a["boss_species"]})
+		return {"kind":"camp_choice","giver":a["title"],"text":("%s仍在城塞中活动。" % a["boss_species"] if not living.is_empty() else "眼下城塞中没有%s。" % a["boss_species"])+"\n"+str(a.get("prompt",a["text"])),"origin":host._world_position(str(a["object"])),"options":options}
 	if kind == "puzzle" and a.get("puzzle_objects",[]).is_empty():
 		var options: Array = []
 		for symbol: String in a.get("puzzle_order",[]):
 			var label: String = {"split":"分队","withdrawal":"撤守","lost":"失联"}.get(symbol,symbol)
-			options.append({"label":"放入「%s」记录"%label,"action":"campaign|sequence|"+str(a["id"])+"|"+symbol,"enabled":true,"consequence":"按已取得的实物日志排列因果","risk":"顺序错误只重置未完成排列，不消耗记录"})
-		return {"kind":"camp_choice","giver":a["title"],"text":"把此前实物证据按发生次序放入：先分队，再撤守，最后失联。\n已放置%d/%d张；每次都需要明确确认。"%[_q().get("puzzle_progress",{}).get(a["id"],[]).size(),a["puzzle_order"].size()],"origin":host._world_position(str(a["object"])),"options":options}
+			options.append({"label":"放入「%s」记录"%label,"action":"campaign|sequence|"+str(a["id"])+"|"+symbol,"enabled":true,"consequence":"把这一页放入经过的先后次序","risk":"排错只需重新排列，日志不会丢失"})
+		return {"kind":"camp_choice","giver":a["title"],"text":str(a.get("prompt",a["text"]))+"\n已放置%d/%d张。"%[_q().get("puzzle_progress",{}).get(a["id"],[]).size(),a["puzzle_order"].size()],"origin":host._world_position(str(a["object"])),"options":options}
 	return {}
 func proof(a: Dictionary, choice: String) -> Dictionary:
 	var proof: Dictionary = host._position_proof(str(a["object"]))
@@ -182,7 +182,10 @@ func _live_boss(species: String) -> Array:
 func _terrain(a: Dictionary) -> String:
 	return str(Catalog.stage(str(a["stage"])).get("terrain",""))
 func _choice_consequence(choice: String) -> String:
-	return {"near":"选择较短通道，需亲手破除实际碎岩路障并走过缺口","outer":"沿西侧外缘绕过岩障，需实际走完两个转折","distributed":"四位新增远征队员分别驻守林地、沼泽、丘陵、雪原，提供分布补给","centralized":"四位新增幸存者迁到平原新增避难所，补给接待集中于此"}.get(choice,"保留此次明确选择")
+	return {"near":"路较短，需打碎浅滩石障并走过缺口","outer":"路较长，沿西侧外缘走过两个转折","distributed":"联络员、幸存者、地图保管员和队长各守原站，四地都能补给","centralized":"四人一同迁到平原避难所，补给接待集中在那里"}.get(choice,"按这份安排继续")
+func _choice_risk(choice: String) -> String:
+	if choice in ["near","outer"]: return "确认后沿所选路线接应；开通一处缺口不保证沿路一直安全"
+	return "确认后保留所选驻地；原有检查点、回城和前哨巡守继续保留"
 func state() -> Dictionary:
 	var state := {"open_gates":[],"rescued":{},"placements":{},"ending":""}
 	if host._proof_exists("watch_c4_hill:s2:winch"): state["open_gates"].append("c4:archive_gate")
