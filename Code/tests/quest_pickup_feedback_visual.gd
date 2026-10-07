@@ -12,6 +12,7 @@ var _out := "/tmp/outpost-chapter-visual"
 var _canvas := Vector2i(1280, 720)
 var _checks := 0
 var _fails := 0
+var _action_events: Array[String] = []
 const Data := preload("res://scripts/main/campaign_quest_data.gd")
 
 func _ready() -> void:
@@ -65,6 +66,7 @@ func _view(position: Vector2, label: String) -> void:
 func _run() -> void:
 	_world = preload("res://scenes/main/main.tscn").instantiate()
 	EventBus.hint_requested.connect(func(message: String) -> void: print("QUEST_PICKUP_RENDER_HINT ", message))
+	EventBus.camp_quest_action_requested.connect(_record_action)
 	_viewport.add_child(_world)
 	WorldSim.set_process(false)
 	_player = _world.get_node("Player")
@@ -72,6 +74,74 @@ func _run() -> void:
 	_qm = get_tree().get_first_node_in_group("quest_manager")
 	await _frames(45)
 	await _chapter_views()
+
+func _record_action(action: String) -> void:
+	_action_events.append(action)
+
+func _reading_state() -> String:
+	return JSON.stringify({"ordinary": GameState.quests, "outpost": GameState.outpost_quest,
+		"camp": GameState.camp_quest, "campaign": GameState.campaign_quest, "tracked": GameState.tracked_quest_id,
+		"gold": GameState.gold, "xp": GameState.stats.xp, "level": GameState.stats.level,
+		"inventory": GameState.inventory, "pending": GameState.pending_items,
+		"item_receipts": GameState.item_source_receipts, "pending_sequence": GameState.pending_item_sequence,
+		"equipment": GameState.equipment_state, "equipment_drops": GameState.equipment_drop_state})
+
+# 追问和规则走真实触屏，返回后保留原操作；不能以跳过缺失按钮掩盖阅读回归。
+func _reading_views(tag: String, include_rules := false) -> void:
+	var original: String = _hud._dialogue_text.text
+	var command: String = _hud._dialogue_action_name
+	var kind: String = _hud._dialogue_kind
+	var state := _reading_state()
+	var event_count := _action_events.size()
+	var question: Button = _hud._dialogue_option_box.get_node_or_null("DialogueQuestion_0")
+	_check(question != null and not _hud._dialogue_questions.is_empty(), "actual optional question exists: " + tag)
+	if question == null or _hud._dialogue_questions.is_empty(): return
+	var answer: String = str(_hud._dialogue_questions[0].get("answer", ""))
+	for attempt in 2:
+		question = _hud._dialogue_option_box.get_node_or_null("DialogueQuestion_0")
+		_hud._dialogue_option_scroll.ensure_control_visible(question)
+		await _frames(4)
+		await _touch(question)
+		_check(_hud._dialogue_reading_page == "question" and _hud._dialogue_text.text.ends_with(answer), "actual optional question opens its answer: " + tag)
+		_check(_on_screen(_hud._dialogue_text_scroll) and get_tree().paused, "answer remains readable in paused viewport: " + tag)
+		_check(_hud._dialogue_yes.is_visible_in_tree() or kind == "camp_choice", "optional answer retains primary action: " + tag)
+		_check(_reading_state() == state and _action_events.size() == event_count, "repeated question does not record evidence or grant rewards: " + tag)
+		if attempt == 0: await _capture(tag + "-question")
+		await _touch(_hud._dialogue_no)
+		_check(_hud._dialogue_panel.visible and get_tree().paused and _hud._dialogue_reading_page.is_empty() and _hud._dialogue_text.text == original and _hud._dialogue_action_name == command and _hud._dialogue_kind == kind, "actual Back returns same paused interaction: " + tag)
+		_check(_reading_state() == state and _action_events.size() == event_count, "question and Back leave evidence and rewards unchanged: " + tag)
+		if attempt == 0: await _capture(tag + "-back")
+	if not include_rules: return
+	var details: Button = _hud._dialogue_option_box.get_node_or_null("DialogueRules")
+	_check(details != null and not _hud._dialogue_rules.is_empty(), "actual optional rules exist: " + tag)
+	if details == null: return
+	var rules: String = _hud._dialogue_rules
+	_hud._dialogue_option_scroll.ensure_control_visible(details)
+	await _frames(4)
+	await _touch(details)
+	_check(_hud._dialogue_reading_page == "rules" and _hud._dialogue_text.text.ends_with(rules), "actual optional rules open separate details: " + tag)
+	_check(_on_screen(_hud._dialogue_text_scroll) and get_tree().paused, "rules remain readable in paused viewport: " + tag)
+	await _capture(tag + "-rules")
+	await _touch(_hud._dialogue_no)
+	_check(_hud._dialogue_reading_page.is_empty() and _hud._dialogue_text.text == original and _hud._dialogue_action_name == command and _hud._dialogue_kind == kind, "rules Back restores original interaction: " + tag)
+	_check(_reading_state() == state and _action_events.size() == event_count, "rules and Back leave evidence and rewards unchanged: " + tag)
+
+# 行动后结果必须确实出现并由新的继续手势关闭；不得直接关层或解除暂停。
+func _continue_story_result(tag: String) -> bool:
+	if not _hud._dialogue_panel.is_visible_in_tree() or _hud._dialogue_kind != "story_result":
+		return _fail("实际行动缺少可阅读结果：" + tag)
+	var state := _reading_state()
+	var event_count := _action_events.size()
+	_check(get_tree().paused and _on_screen(_hud._dialogue_panel) and _on_screen(_hud._dialogue_text_scroll), "earned result pauses world and fits viewport: " + tag)
+	_check(not _hud._dialogue_text.text.is_empty() and _hud._dialogue_yes_label.text == "继续" and _on_screen(_hud._dialogue_yes), "earned result readable with visible Continue: " + tag)
+	_check(_hud._dialogue_action_name.is_empty() and _hud._dialogue_quest.is_empty(), "earned result has no repeat action: " + tag)
+	await _frames(12)
+	_check(_hud._dialogue_panel.is_visible_in_tree() and _hud._dialogue_kind == "story_result" and _reading_state() == state, "earned result remains open without repeating evidence or rewards: " + tag)
+	await _capture("earned-" + tag)
+	await _touch(_hud._dialogue_yes)
+	_check(not _hud._dialogue_panel.visible and not get_tree().paused, "Continue closes result and resumes world: " + tag)
+	_check(_reading_state() == state and _action_events.size() == event_count, "Continue never repeats action, evidence or reward mutation: " + tag)
+	return not _hud._dialogue_panel.visible and not get_tree().paused
 
 func _touch(control: Control) -> void:
 	if control == null:
@@ -94,7 +164,8 @@ func _prop(id: String) -> Node2D:
 		if str(node.get("outpost_id")) == id: return node
 	return null
 
-func _action(id: String, capture_name := "") -> bool:
+func _action(id: String, capture_name := "", result_tag := "") -> bool:
+	if _hud._dialogue_kind == "story_result": return _fail("前一行动结果尚未用继续关闭：" + id)
 	_hud._close_dialogue()
 	var prop := _prop(id)
 	if prop == null: return _fail("缺少真实前哨物件：" + id)
@@ -108,7 +179,12 @@ func _action(id: String, capture_name := "") -> bool:
 	await _frames(3)
 	if not _hud._dialogue_panel.visible: return _fail("真实物件未打开阅读：" + id)
 	if capture_name != "": await _capture(capture_name)
+	if capture_name == "06-wounded-request": await _reading_views(capture_name)
 	await _touch(_hud._dialogue_yes)
+	if not result_tag.is_empty():
+		if not await _continue_story_result(result_tag): return false
+	elif _hud._dialogue_kind == "story_result":
+		return _fail("意外结果层不能被下一次取景静默关闭：" + id)
 	if id in ["aid_bag", "repair_tools"]:
 		await _frames(30)
 		var outpost_world := get_tree().get_first_node_in_group("outpost_world")
@@ -144,6 +220,7 @@ func _chapter_views() -> void:
 	await _frames(3)
 	keeper.interact()
 	await _capture("01-chapter-briefing")
+	await _reading_views("01-chapter-briefing", true)
 	await _touch(_hud._dialogue_yes)
 	if GameState.outpost_quest.is_empty():
 		_fail("新的确认手势未能接取前哨")
@@ -159,12 +236,12 @@ func _chapter_views() -> void:
 	if not await _action("wounded_patrol", "06-wounded-request"): return
 	if not await _action("supply_record", "07-supply-routes"): return
 	if not await _action("aid_bag", "08-quest-aid-pickup"): return
-	if not await _action("repair_tools", "09-quest-tool-pickup"): return
-	if not await _action("wounded_patrol", "10-explicit-rescue"): return
+	if not await _action("wounded_patrol", "10-explicit-rescue", "rescue"): return
 	if not _qm.outpost_evidence("rescued"):
 		_fail("截图流程没有真实完成现场救援")
 		return
 	await _capture("11-rescued-resident")
+	if not await _action("repair_tools", "09-quest-tool-pickup"): return
 	for attempt in 1200:
 		if not _qm.outpost_target().get("species", "").is_empty(): break
 		await _frames(1)
@@ -206,12 +283,12 @@ func _chapter_views() -> void:
 	await _wait_receipt("已自动领奖")
 	_check_toast("已自动领奖", "automatic quest completion")
 	await _capture("completion-toast")
-	if not await _action("signpost", "14-explicit-repair"): return
+	if not await _action("signpost", "14-explicit-repair", "repair"): return
 	if not _qm.outpost_evidence("signpost_repaired") or not OutpostLayout.CHECKPOINT_ID in GameState.discovered_checkpoints:
 		_fail("实际修复没有解锁前哨检查点")
 		return
 	await _capture("15-restored-checkpoint")
-	if not await _action("wounded_patrol", "16-regional-next-clue"): return
+	if not await _action("wounded_patrol", "16-regional-next-clue", "next-clue"): return
 	await _capture("17-permanent-resident")
 	await _supplemental_views()
 	print("=== QUEST PICKUP FEEDBACK VISUAL %s (%d checks) ===" % ["PASS" if _fails == 0 else "FAIL", _checks])
@@ -324,8 +401,20 @@ func _supplemental_views() -> void:
 	await get_tree().create_timer(2.1).timeout
 	_check(not _hud.toast_label.has_theme_stylebox_override("normal"), "normal campaign hint removes receipt-only backing")
 	await _shared_station_views()
+	var giver: Node2D = world.object_node("side_patrol:giver")
+	_player.teleport_to(giver.global_position + Vector2(0, 48))
+	await _frames(45)
+	giver.interact()
+	await _frames(4)
+	_check(_hud._dialogue_panel.visible, "actual side story giver opens offer")
+	await _capture("side-patrol-offer")
+	var before := _reading_state()
+	await _reading_views("side-patrol-offer")
+	await _touch(_hud._dialogue_no)
+	_check(not _hud._dialogue_panel.visible and not get_tree().paused and _reading_state() == before, "side story Close resumes world without accepting or rewarding")
 
 func _campaign_action(id: String, tag: String) -> bool:
+	if _hud._dialogue_kind == "story_result": return _fail("前一战役结果尚未用继续关闭：" + id)
 	_hud._close_choice_layer()
 	_hud._close_dialogue()
 	var world := get_tree().get_first_node_in_group("campaign_world")
@@ -337,7 +426,9 @@ func _campaign_action(id: String, tag: String) -> bool:
 	await _frames(3)
 	if not _hud._dialogue_panel.is_visible_in_tree(): return _fail("campaign interaction did not open " + id)
 	await _capture(tag)
+	if id == "c2:liaison": await _reading_views(tag)
 	await _touch(_hud._dialogue_yes)
+	if not await _continue_story_result(tag): return false
 	await _frames(3)
 	return true
 
