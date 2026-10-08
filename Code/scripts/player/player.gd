@@ -48,9 +48,8 @@ const AFTERIMAGE_INTERVAL := 0.06
 ## 低于出招节奏感知阈值不吃手感，但起停从此有了重量
 const MOVE_ACCEL := 2400.0
 const MOVE_DECEL := 3200.0
-## 步频同步基准：walk 动画 6 帧@12fps = 0.5s/循环、每循环两步 → 基准步幅 40px。
-## 播放速率随地面速度缩放，移速成长（等级/鞋子词条）后步幅恒定不脚滑
-const STRIDE_PX := 40.0
+## 六姿势普通步行约 15fps，慢走与加速同步；冲刺上限 24fps 避免急速倒腿。
+const WALK_REFERENCE_SPEED := 160.0
 ## 步频锁相 bob 幅度（px）：步落地沉、换步浮，与帧动画同源同拍
 const BOB_AMPLITUDE := 1.05
 
@@ -260,6 +259,9 @@ func _ready() -> void:
 	EventBus.item_use_requested.connect(use_item)
 	EventBus.touch_input_reset.connect(_clear_pending_actions)
 	EventBus.player_bolt_live_hit.connect(_on_equipment_bolt_hit)
+
+	# 仅渲染根节点插值，物理／碰撞／子节点锚点仍沿用权威状态。
+	add_child(preload("res://scripts/player/actor_render_sync.gd").new())
 
 
 func _guard_is_held() -> bool:
@@ -821,7 +823,7 @@ func _physics_process(delta: float) -> void:
 ## 冲刺/移动→walk；站定→idle。
 ## 置于 _physics_process 开头用上一帧速度判断，冲刺分支的提前 return 不会漏播。
 ## HeroMotion v2（2026-09-16）四件：
-##   ① 步频同步——walk 播放速率随地面速度缩放（移速成长后步幅恒定，防脚底打滑）
+##   ① 步频同步——walk 随地面速度变化，保持普通步幅，冲刺限制倒腿频率
 ##   ② 锁相 bob——起伏相位取自动画帧进度（步落地沉、换步浮），替代自由正弦
 ##     （两条独立节拍打架 = 提线木偶感）；非 walk 态平滑归零，不再瞬间 snap
 ##   ③ 起停反馈——起步蹬地挤压+立即一粒尘、停步落定下压（挤压手法与怪物侧一致）
@@ -882,18 +884,17 @@ func _update_anim(delta := 0.0) -> void:
 	# 仅循环动画需要"停了就重播"；非循环（attack 系/die）播完停在末帧，
 	# 重启会闪回首帧（出招姿势），linger 收招段正是要停在读招帧上
 	if visual.animation != want or (visual.sprite_frames.get_animation_loop(want) and not visual.is_playing()):
-		visual.play(want)
+		SpritePlayback.transition_loop(visual, want)
 	if _guard_is_held() and want == "hurt":
 		visual.pause()
 		visual.frame = 0
 		visual.frame_progress = 0.0
 	var walking := want.begins_with("walk")
 	if walking:
-		# 步频同步：speed_scale=1 时步频 = 12fps/3 帧·步 = 4 步/s（步幅 40px ⇒ 160px/s）；
-		# 冲刺按冲刺速度取值（620px/s→吃满 1.8 上限，步频疾促的冲刺语言）
+		# 只调整移动循环，攻击／受击仍完整消费原有表现窗口。
 		var ground_speed := DASH_SPEED if _dash_timer > 0.0 else velocity.length()
-		visual.speed_scale = clampf(
-			(ground_speed / STRIDE_PX) / (12.0 / 3.0), 0.75, 1.8)
+		visual.speed_scale = SpritePlayback.locomotion_speed(
+			visual.sprite_frames, want, ground_speed, WALK_REFERENCE_SPEED, 15.0, 0.0, 24.0)
 	elif _attack_anim_linger > 0.0:
 		visual.speed_scale = SpritePlayback.speed_for_window(
 			visual.sprite_frames, want, ATTACK_WINDOW + ATTACK_ANIM_LINGER)
@@ -1683,6 +1684,10 @@ func _respawn() -> void:
 	# 死亡窗口存档与真实复活使用同一个选择器。
 	global_position = WorldConfig.nearest_checkpoint_respawn(global_position, GameState.discovered_checkpoints)
 	_snap_visual_to_body()
+	# 近距离复活也立即复位渲染历史，不能从死亡位置拖影回营地。
+	var camera: Camera2D = get_node_or_null("Camera2D")
+	if camera != null:
+		camera.snap_to_player()
 	current_hp = stats.max_hp()
 	current_mp = stats.max_mp()
 	visual.modulate = Color.WHITE

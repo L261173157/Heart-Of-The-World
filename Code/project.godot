@@ -15,8 +15,8 @@ boot_splash/show_image=false
 run/main_scene="res://scenes/ui/main_menu.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://assets/icon/appicon_1024.png"
-# 锁 60 帧（2026-09-19 真机实证：iPhone 15 Pro 120Hz 下未锁帧会跑 80~120，
-# 物理未开插值时超 60 帧零视觉收益、功耗翻倍且帧率波动致运动节奏不均）
+# 默认仍锁 60 帧控制功耗；角色与相机已支持独立渲染插值。
+# 90/120/144Hz 为回归测试覆盖，不代表已经开放设备高刷或完成 iPhone 验收。
 run/max_fps=60
 
 [autoload]

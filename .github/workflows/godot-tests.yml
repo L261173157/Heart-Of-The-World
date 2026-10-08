@@ -22,6 +22,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - suite: motion_smoothing
+            tests: locomotion_cadence,render_motion
           - suite: frame_pacing
             tests: ecology_index,map_performance,navigation_budget,save_serialization
           - suite: quest_pickup_feedback

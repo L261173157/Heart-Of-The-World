@@ -208,6 +208,7 @@ func _run() -> void:
 	_check(_player.current_hp < player_hp, "高频受击仍经过正常前摇并还击，不形成永久硬直")
 	a.set_physics_process(false)
 	await _time_lifecycle()
+	await _sustained_hitstop()
 	await _death_and_settings(a, b, camera)
 	await _teleport_contract()
 	_stop.cancel()
@@ -224,14 +225,30 @@ func _time_lifecycle() -> void:
 		Engine.time_scale = base
 		_check(_stop.request(10.0), "尺度%s接受首个请求" % base)
 		var deadline: int = _stop._deadline_usec
+		_check(is_equal_approx(Engine.time_scale, base * 0.35),
+			"尺度%s保留35%%世界速度，不再近乎冻结" % base)
+		_check(deadline - Time.get_ticks_usec() <= 45000,
+			"终结技级请求的计划截止不超过45ms")
 		for i in 12:
 			_stop.request(10.0)
 		_check(_stop._deadline_usec == deadline, "尺度%s重叠命中不延长截止时间" % base)
 		await _wall(0.11)
 		_check(not _stop.active and is_equal_approx(Engine.time_scale, base),
-			"尺度%s恢复到先前慢动作/加速且最长75ms" % base)
+			"尺度%s在后续渲染回调恢复先前慢动作/加速" % base)
 		_check(not _stop.request(0.04), "恢复间隔拒绝立即再停，避免连锁冻结")
 		await _wall(0.18)
+	# 普通命中只占21ms，快速请求不能堆积或挤掉至少200ms正常运动。
+	Engine.time_scale = 1.0
+	_check(_stop.request(0.035), "普通命中接受短促反馈")
+	var deadline: int = _stop._deadline_usec
+	_check(deadline - Time.get_ticks_usec() <= 21000 and
+		_stop._next_allowed_usec - deadline == 200000, "普通命中21ms后至少200ms恢复运动")
+	await _wall(0.05)
+	_check(not _stop.active and is_equal_approx(Engine.time_scale, 1.0), "普通命中真实时钟恢复")
+	for i in 20:
+		_check(not _stop.request(0.05), "密集多目标请求%d不延长恢复间隔" % i)
+	_check(_stop._deadline_usec == deadline, "拒绝请求不累加全局冻结预算")
+	await _wall(0.2)
 	Engine.time_scale = 0.6
 	_stop.request(0.075)
 	get_tree().paused = true
@@ -253,6 +270,60 @@ func _time_lifecycle() -> void:
 	await get_tree().process_frame
 	_check(is_equal_approx(Engine.time_scale, 0.7), "持有顿帧的场景卸载恢复原尺度")
 	Engine.time_scale = 1.0
+
+
+func _sustained_hitstop() -> void:
+	await _wall(0.3)
+	Engine.time_scale = 1.0
+	var controller := HitStop.new()
+	add_child(controller)
+	var started := Time.get_ticks_usec()
+	var restored := 0
+	var accepted := 0
+	var recovery_valid := true
+	var request_deadlines_valid := true
+	var previous_sample := started
+	var largest_interval := 0
+	var hold_started := 0
+	var slowed_usec := 0
+	var holds_bounded := true
+	# 真实逐帧密集命中；保持世界在运行，不用推进私有时钟假装经过时间。
+	while Time.get_ticks_usec() - started < 1200000:
+		var was_active: bool = controller.active
+		var duration: float = [0.035, 0.05, 0.075][accepted % 3]
+		if controller.request(duration):
+			accepted += 1
+			hold_started = Time.get_ticks_usec()
+			if restored > 0:
+				recovery_valid = recovery_valid and Time.get_ticks_usec() - restored >= 200000 - largest_interval
+			request_deadlines_valid = request_deadlines_valid and controller._deadline_usec - Time.get_ticks_usec() <= 45000
+		was_active = was_active or controller.active
+		await _wall(0.001) # 帧末定时器观察已执行的恢复，不读取内部恢复时间。
+		var sampled := Time.get_ticks_usec()
+		largest_interval = maxi(largest_interval, sampled - previous_sample)
+		previous_sample = sampled
+		if was_active and not controller.active:
+			restored = sampled
+			var held := sampled - hold_started
+			slowed_usec += held
+			holds_bounded = holds_bounded and held <= 45000 + largest_interval * 2
+	_check(accepted >= 3 and accepted <= 6, "持续1.2秒密集命中保留反馈且不会连锁停顿")
+	_check(recovery_valid and request_deadlines_valid, "普通/重击/终结技共用真实恢复间隔与时长预算")
+	if controller.active:
+		slowed_usec += Time.get_ticks_usec() - hold_started
+	_check(holds_bounded and float(slowed_usec) / float(Time.get_ticks_usec() - started) < 0.35,
+		"实际观察到的减速持续有界且大部分壁钟时间保持正常运动")
+	controller.cancel()
+	await _wall(0.3)
+	_check(controller.request(0.035), "延迟恢复用例接受命中")
+	controller.set_process(false)
+	await _wall(0.3)
+	controller._process(0.0)
+	_check(not controller.active and is_equal_approx(Engine.time_scale, 1.0), "长帧后归还时间尺度")
+	_check(not controller.request(0.035) and controller._next_allowed_usec - Time.get_ticks_usec() >= 190000,
+		"长帧恢复仍预留200ms运动，不可立即再次顿帧")
+	controller.queue_free()
+	await get_tree().process_frame
 
 func _death_and_settings(a: MonsterBase, b: MonsterBase, camera: Camera2D) -> void:
 	await _wall(0.3)
@@ -279,7 +350,11 @@ func _death_and_settings(a: MonsterBase, b: MonsterBase, camera: Camera2D) -> vo
 		"玩家真实死亡路径释放顿帧且保存慢动作")
 	_check(not _stop.request(0.05), "死亡期间拒绝迟到顿帧")
 	_player._respawn()
-	await _wall(0.25)
+	_check(not _stop._player_dead, "真实重生同步解除死亡锁")
+	var respawn_wait := Time.get_ticks_usec()
+	while (Time.get_ticks_usec() < _stop._next_allowed_usec or _stop.active) \
+			and Time.get_ticks_usec() - respawn_wait < 1000000:
+		await get_tree().process_frame
 	_check(_stop.request(0.035), "真实重生后可再次命中反馈")
 	_stop.cancel()
 	Engine.time_scale = 1.0

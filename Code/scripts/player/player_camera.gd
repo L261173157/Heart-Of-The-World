@@ -20,6 +20,10 @@ var _follow := Vector2.INF
 func _ready() -> void:
 	# 跟随平滑由本脚本接管（见类注），关掉引擎侧平滑避免双重低通
 	position_smoothing_enabled = false
+	# 相机只跟随同一渲染快照，不再被父身体的物理步隐式移动。
+	top_level = true
+	process_priority = 200
+	process_callback = Camera2D.CAMERA2D_PROCESS_IDLE
 	EventBus.camera_shake_requested.connect(
 		func(strength: float) -> void:
 			if bool(GameState.settings.get("screen_shake", true)):
@@ -33,6 +37,9 @@ func snap_to_player() -> void:
 	var player := get_parent() as Node2D
 	if player != null:
 		_follow = player.global_position
+		var sync := player.get_node_or_null("RenderSync")
+		if sync != null:
+			sync.reset()
 		_strength = 0.0
 		offset = Vector2.ZERO
 		_process(0.0)
@@ -43,9 +50,13 @@ func _process(delta: float) -> void:
 	var player := get_parent() as Node2D
 	if player == null:
 		return
-	if _follow == Vector2.INF:
-		_follow = player.global_position
-	_follow = _follow.lerp(player.global_position, 1.0 - exp(-SMOOTH_SPEED * delta))
+	var target := player.global_position
+	var sync := player.get_node_or_null("RenderSync")
+	if sync != null:
+		target = sync.get_render_position()
+	if _follow == Vector2.INF or _follow.distance_to(target) > 256.0:
+		_follow = target
+	_follow = _follow.lerp(target, 1.0 - exp(-SMOOTH_SPEED * delta))
 	# 像素对齐：origin = 视口半幅 - center×zoom 需为整数屏幕像素，
 	# 反解满足条件的 center（等价于把相机吸附到 1/zoom 网格）
 	var vp_size := get_viewport().get_visible_rect().size
@@ -54,9 +65,12 @@ func _process(delta: float) -> void:
 	if not bool(GameState.settings.get("screen_shake", true)):
 		_strength = 0.0
 	if _strength > 0.0:
-		offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _strength
+		offset = (Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _strength * zoom).round() / zoom
 		_strength = maxf(0.0, _strength - SHAKE_DECAY * _strength * delta - 2.0 * delta)
 		if _strength <= 0.0:
 			offset = Vector2.ZERO
 	else:
 		offset = Vector2.ZERO
+
+	# Camera2D 的内建 idle 通知可能先于脚本；立即应用本帧中心，避免再延迟一帧。
+	force_update_scroll()
