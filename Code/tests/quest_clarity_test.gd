@@ -308,8 +308,7 @@ func _place_navigation_player(position: Vector2) -> void:
 	_player.global_position = position
 	# 本夹具同步移动实际相机，使当前视野判定使用新位置而非上一帧画面。
 	var camera: Camera2D = _player.get_node("Camera2D")
-	camera.reset_smoothing()
-	camera.force_update_scroll()
+	camera.snap_to_player()
 
 
 func _test_receipt_sanitization() -> void:

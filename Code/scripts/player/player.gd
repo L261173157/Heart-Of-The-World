@@ -262,6 +262,9 @@ func _ready() -> void:
 
 	# 仅渲染根节点插值，物理／碰撞／子节点锚点仍沿用权威状态。
 	add_child(preload("res://scripts/player/actor_render_sync.gd").new())
+	# top_level 相机不再继承出生/读档位置；首个物理查询前同步实际视口。
+	if cam != null:
+		cam.snap_to_player()
 
 
 func _guard_is_held() -> bool:

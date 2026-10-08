@@ -173,8 +173,7 @@ func _test_hunt_clue() -> void:
 	_check(radar._target.get("pos", Vector2.ZERO) == region.center and GameState.explored == fog_before, "隐藏目标移动不会跟随位置或揭雾")
 	_player.position = region.center
 	var camera: Camera2D = _player.get_node("Camera2D")
-	camera.reset_smoothing()
-	camera.force_update_scroll()
+	camera.snap_to_player()
 	var cell := GameState.fog_cell_of(region.center)
 	GameState.fog_reveal_cell(cell.x, cell.y)
 	radar._refresh_navigation()
