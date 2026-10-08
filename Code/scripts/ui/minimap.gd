@@ -46,8 +46,21 @@ func _ready() -> void:
 	EventBus.bounty_target_changed.connect(_on_bounty_target_changed)
 	EventBus.quest_list_changed.connect(_on_quest_list_changed)
 	EventBus.obstacle_destroyed.connect(_on_obstacle_destroyed)
+	EventBus.campaign_geometry_changed.connect(_on_campaign_geometry_changed)
+	visibility_changed.connect(_on_visibility_changed)
 	_layout_labels()
-	_refresh_navigation()
+	_on_visibility_changed()
+
+
+## 阅读地图默认藏在父级模态内：隐藏时不建队列、不扫描活体，也不后台补地形。
+## 重新打开保留同世界的局部缓存，由正常刷新核对位置、迷雾及世界身份。
+func _on_visibility_changed() -> void:
+	var active := is_visible_in_tree()
+	set_process(active)
+	if active:
+		_accum = 0.0
+		_terrain_redraw = 0.0
+		_refresh_navigation()
 
 
 func _make_label(node_name: String, font_size: int, color: Color) -> Label:
@@ -84,11 +97,14 @@ func _on_bounty_target_changed(species_name: String) -> void:
 
 
 func _process(delta: float) -> void:
-	if get_tree().paused:
+	if not is_visible_in_tree():
 		return
+	# HUD 的阅读层本来就随暂停继续处理。只读采样必须同样继续，
+	# 否则首次打开地图会把尚未完成的地形永久冻结在空底上。
 	if _has_player and _interior_index < 0:
 		_terrain_redraw += delta
-		if _terrain.step() > 0 and _terrain_redraw >= 0.10:
+		if _terrain.has_pending() and _terrain.step() > 0 \
+				and (_terrain_redraw >= 0.10 or not _terrain.has_pending()):
 			_terrain_redraw = 0.0
 			queue_redraw()
 	_accum += delta
@@ -100,6 +116,10 @@ func _process(delta: float) -> void:
 ## 每轮从权威活体重选，击杀/捣巢/任务完成后最多一帧雷达周期移除旧指引。
 ## 约 880 个体只做坐标/距离过滤；不构建全世界营地纹理，不保留节点引用。
 func _refresh_navigation() -> void:
+	# HUD 打开模态前会显式请求刷新；等父级真正显示后再准备，
+	# 也保证隐藏时的事件或外部刷新不会绕过按需处理。
+	if not is_visible_in_tree():
+		return
 	if _sim_seen != WorldSim.sim:
 		_sim_seen = WorldSim.sim
 		_bounty_species = ""
@@ -341,6 +361,14 @@ func _is_visible_position(pos: Vector2) -> bool:
 
 func _on_obstacle_destroyed(cell: Vector2i, _pos: Vector2, _kind: String) -> void:
 	_terrain.invalidate_obstacle(cell)
+	_accum = REDRAW_INTERVAL
+
+
+func _on_campaign_geometry_changed(cells: Array) -> void:
+	# 开关机关不是破坏事件；保留温缓存也必须失效这些真实变动格。
+	for cell: Variant in cells:
+		if cell is Vector2i:
+			_terrain.invalidate_obstacle(cell)
 	_accum = REDRAW_INTERVAL
 
 

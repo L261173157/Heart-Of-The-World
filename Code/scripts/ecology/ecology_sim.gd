@@ -90,17 +90,24 @@ var _satiety: Dictionary = {}
 ## 按「区域 → 物种名 → 存活实例数组」的查找索引（懒重建缓存）：
 ## 捕食猎物查找/区域计数/扩张收集体原先都是全实例扫描，捕食侧 O(捕食者×全体)。
 ## 桶只是加速结构不是状态真源——候选取用前仍现场过滤 is_alive，
-## 语义与全量扫描严格一致；任何影响 存活/归属 的变更置脏，下次访问重建
+## 语义与全量扫描严格一致；出生/死亡等变更置脏，下次访问重建；迁徙批次就地更新。
+## 桶内顺序必须与 instances 的插入顺序一致：读档 ID 可以乱序，不能按 ID 排序，
+## 否则同一随机序列会挑到不同的迁徙者、亲代与猎物。
 var _index: Dictionary = {}
+var _index_order: Dictionary = {}
+var _index_revision := 0
 var _index_dirty := true
 
 
 func _buckets() -> Dictionary:
 	if _index_dirty:
 		_index = {}
+		_index_order = {}
+		_index_revision += 1
 		for inst: MonsterInstance in instances.values():
 			if not inst.is_alive:
 				continue
+			_index_order[inst.id] = _index_order.size()
 			var by_species: Dictionary = _index.get(inst.region_id, {})
 			if by_species.is_empty():
 				_index[inst.region_id] = by_species
@@ -110,6 +117,33 @@ func _buckets() -> Dictionary:
 			bucket.append(inst)
 		_index_dirty = false
 	return _index
+
+
+## 扩张批次结束后维护两个桶，避免每个迁出区域都全量重建索引。
+## 批次信号全部发出后才更新，沿用旧版在迁徙信号期间的缓存可见时序；
+## 若信号回调另有出生/死亡而置脏，保留懒重建，不碰已经失效的桶。
+func _index_migration_batch(from_region: String, species_name: String,
+		movable: Array[MonsterInstance], moved: int, revision: int) -> void:
+	if _index_revision != revision:
+		# 信号回调可能先改变种群再查询，提前重建过的桶要按旧版再次失效。
+		_index_dirty = true
+	if _index_dirty:
+		return
+	var source: Array = _index[from_region][species_name]
+	for i in moved:
+		var inst := movable[i]
+		source.erase(inst)
+		var by_species: Dictionary = _index.get(inst.region_id, {})
+		if not _index.has(inst.region_id):
+			_index[inst.region_id] = by_species
+		var target: Array = by_species.get(species_name, [])
+		if not by_species.has(species_name):
+			by_species[species_name] = target
+		var order: int = _index_order[inst.id]
+		var at := target.size()
+		while at > 0 and int(_index_order[target[at - 1].id]) > order:
+			at -= 1
+		target.insert(at, inst)
 
 ## 巢穴：{ "region_id|species": {"active": bool, "rebuild": int} }。
 ## 物种在区域首次立足自动建巢；捣毁 → 该区域该物种繁衍停止 + 全族激怒（表现层），
@@ -614,6 +648,7 @@ func _process_expansion(stats: Dictionary) -> void:
 			for cand: MonsterInstance in _buckets().get(region.id, {}).get(species.species_name, []):
 				if cand.is_alive:
 					movable.append(cand)
+			var index_revision := _index_revision
 			movable.shuffle()
 			var target_key := "%s|%s" % [target.id, species.species_name]
 			var target_total: int = region_totals.get(target.id, 0)
@@ -638,8 +673,7 @@ func _process_expansion(stats: Dictionary) -> void:
 				cells[target_key]["alive"] += moved
 				region_totals[target.id] = target_total + moved
 				region_totals[region.id] = region_totals.get(region.id, 0) - moved
-				# 归属变更，索引置脏（本 pass 内后续读取沿用旧桶 + 现场过滤，语义不变）
-				_index_dirty = true
+				_index_migration_batch(region.id, species.species_name, movable, moved, index_revision)
 				# 迁入即立足：新区域同样建巢，捣巢才能遏制入侵物种繁衍
 				_ensure_nest(target.id, species.species_name)
 

@@ -22,6 +22,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - suite: frame_pacing
+            tests: ecology_index,map_performance,navigation_budget,save_serialization
           - suite: quest_pickup_feedback
             tests: campaign_lore_contract,campaign_narrative_contract,quest_narrative_ui,reward_feedback,chest_transaction,pickup_affordance,quest_guidance_feedback
           - suite: equipment_earned_budget
@@ -109,6 +111,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y xvfb
           xvfb-run -a python3 Code/tests/run_quest_pickup_visual_test.py "$GODOT" --log-dir test-results/quest_pickup_feedback/rendered
+      - name: Render paused and reopened map
+        if: matrix.suite == 'frame_pacing'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          xvfb-run -a python3 Code/tests/run_map_performance_visual.py "$GODOT" --log-dir test-results/frame_pacing/rendered
       - name: Preserve test logs
         if: always()
         uses: actions/upload-artifact@v4

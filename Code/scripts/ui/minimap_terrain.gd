@@ -118,8 +118,14 @@ static func _ensure_rings() -> void:
 		_rings.append(ring)
 
 
+func has_pending() -> bool:
+	return _base_cursor < _base_pending.size() or cursor < pending.size()
+
+
 func step(budget: int = SAMPLE_BUDGET) -> int:
 	last_step_samples = 0
+	if not has_pending():
+		return 0
 	var started := Time.get_ticks_usec()
 	while _base_cursor < _base_pending.size() and last_step_samples < mini(budget, SAMPLE_BUDGET):
 		var key := _base_pending[_base_cursor]

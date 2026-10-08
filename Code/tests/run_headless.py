@@ -14,6 +14,10 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "ecology_index": (["-s", "tests/ecology_index_test.gd"], "=== ECOLOGY INDEX PASS"),
+    "map_performance": (["res://tests/map_performance_test.tscn", "--quit-after", "10000"], "=== MAP PERFORMANCE PASS"),
+    "navigation_budget": (["res://tests/navigation_budget_test.tscn", "--quit-after", "30000"], "=== NAVIGATION BUDGET PASS"),
+    "save_serialization": (["res://tests/save_serialization_test.tscn", "--quit-after", "10000"], "=== SAVE SERIALIZATION PASS"),
     "campaign_lore_contract": (["-s", "tests/campaign_lore_contract_test.gd"], "=== CAMPAIGN LORE CONTRACT PASS"),
     "campaign_reunion_compatibility": ([str(PROJECT / "tests/run_campaign_reunion_compatibility_test.py")], "=== CAMPAIGN REUNION COMPATIBILITY LIFECYCLE PASS"),
     "campaign_narrative_contract": (["-s", "tests/campaign_narrative_contract_test.gd"], "=== CAMPAIGN NARRATIVE CONTRACT PASS"),
