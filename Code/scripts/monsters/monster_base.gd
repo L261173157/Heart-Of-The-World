@@ -300,6 +300,9 @@ func _ready() -> void:
 	add_child(_shadow)
 	EventBus.nest_ransacked.connect(_on_nest_ransacked)
 
+	# 仅渲染根节点插值，物理／碰撞／子节点锚点仍沿用权威状态。
+	add_child(preload("res://scripts/player/actor_render_sync.gd").new())
+
 
 func _on_nest_ransacked(species_name: String) -> void:
 	# 尸体仍可留在流式场景中；迟到的捣巢广播不能再闪红并恢复活体颜色。
@@ -759,11 +762,11 @@ func _update_anim() -> void:
 		if not visual.sprite_frames.has_animation(want):
 			want = "idle"
 		if visual.animation != want or not visual.is_playing():
-			visual.play(want)
+			SpritePlayback.transition_loop(visual, want)
 		walking = want == "walk"
 		# 慢巡逻与冲锋不能踩同一步频；只改变视觉，不改 AI/移动速度。
-		visual.speed_scale = clampf(velocity.length() / maxf(inst.move_speed(), 1.0),
-			0.65, 1.8) if walking and inst != null else 1.0
+		visual.speed_scale = SpritePlayback.locomotion_speed(visual.sprite_frames, want,
+			velocity.length(), inst.move_speed(), 16.0, 0.0, 24.0) if walking and inst != null else 1.0
 	# bob 与真实条带步相锁定，不再用独立时钟在脚落地时把身体提起。
 	var cycle := float(visual.frame + visual.frame_progress) / maxf(
 		float(visual.sprite_frames.get_frame_count(visual.animation)), 1.0)

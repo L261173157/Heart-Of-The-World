@@ -149,6 +149,21 @@ static var _center_by_id := {}
 ## 一次算好 18×18 边距格，铺格层/导航层/测试共享；种子切换时随 _ensure 重置）
 static var _cells_chunk_cache := {}
 static var _nav_chunk_cache := {}
+## 在途导航任务的代号；世界重置、破坏或机关变化后旧样本不得重新进入缓存。
+static var _nav_revision := 0
+
+## 导航准备只保存纯数据，允许表现层按真实时间预算推进。
+## halo 每格 bit0=障碍、bit1=需留余量的宽障碍；一次采样同时得到两种信息。
+class NavChunkJob extends RefCounted:
+	var chunk: Vector2i
+	var base: Vector2i
+	var revision := -1
+	var halo := PackedByteArray()
+	var blocked := PackedByteArray()
+	var sample_cursor := 0
+	var mask_cursor := 0
+	var complete := false
+
 ## 摧毁覆盖层（玩家破坏的障碍格，运行期真相；存档经 GameState 往返）与
 ## 本局耐久（重开存档恢复满耐久）
 static var _destroyed := {}
@@ -190,6 +205,7 @@ static func _ensure() -> void:
 		_dungeons[far["id"]] = {"center": far["center"], "terrain": terrain}
 	_cells_chunk_cache = {}
 	_nav_chunk_cache = {}
+	_nav_revision += 1
 	_destroyed = {}
 	_obstacle_hp = {}
 
@@ -399,39 +415,83 @@ static func _has_wide_neighbor(cell: Vector2i) -> bool:
 
 
 ## 地形块的导航阻挡表：PackedByteArray 256 字节（16×16，行主序，1=不可走）。
-## 死点填充需 1 格边距——内部多采一圈（18×18）障碍样本，仅缓存本块 16×16 结果
+## 同步入口保留给离线测试/选点；实时铺格使用下面的可中断任务。
 static func nav_blocked_chunk(chunk_origin_px: Vector2i) -> PackedByteArray:
+	_ensure()
 	var key := Vector2i(chunk_origin_px.x >> 9, chunk_origin_px.y >> 9)
 	if _nav_chunk_cache.has(key):
 		return _nav_chunk_cache[key]
-	var base := Vector2i(chunk_origin_px.x >> 5, chunk_origin_px.y >> 5)
-	var obstacle := PackedByteArray()
-	obstacle.resize((CHUNK_CELLS + 2) * (CHUNK_CELLS + 2))
-	for dy in CHUNK_CELLS + 2:
-		for dx in CHUNK_CELLS + 2:
-			obstacle[dy * (CHUNK_CELLS + 2) + dx] = \
-					int(is_obstacle_cell(base + Vector2i(dx - 1, dy - 1)))
-	var out := PackedByteArray()
-	out.resize(CHUNK_CELLS * CHUNK_CELLS)
-	for dy in CHUNK_CELLS:
-		for dx in CHUNK_CELLS:
-			var idx := (dy + 1) * (CHUNK_CELLS + 2) + dx + 1
-			var blocked := obstacle[idx] == 1
-			if not blocked:
-				var walls := 0
-				walls += obstacle[(dy + 1) * (CHUNK_CELLS + 2) + dx + 2]
-				walls += obstacle[(dy + 1) * (CHUNK_CELLS + 2) + dx]
-				walls += obstacle[(dy + 2) * (CHUNK_CELLS + 2) + dx + 1]
-				walls += obstacle[dy * (CHUNK_CELLS + 2) + dx + 1]
-				blocked = walls >= 3  # 单格死点填充
-			if not blocked:
-				# 宽障碍导航缓冲：四邻大岩/冰晶/水留一圈余量；跨块同源。
-				var near_water := _has_wide_neighbor(base + Vector2i(dx, dy))
-				if near_water:
-					blocked = true
-			out[dy * CHUNK_CELLS + dx] = int(blocked)
-	_nav_chunk_cache[key] = out
-	return out
+	var job := begin_nav_chunk(chunk_origin_px)
+	advance_nav_chunk(job, 0)
+	return job.blocked
+
+
+static func nav_revision() -> int:
+	_ensure()
+	return _nav_revision
+
+
+static func begin_nav_chunk(chunk_origin_px: Vector2i) -> NavChunkJob:
+	_ensure()
+	var job := NavChunkJob.new()
+	job.chunk = Vector2i(chunk_origin_px.x >> 9, chunk_origin_px.y >> 9)
+	job.base = Vector2i(chunk_origin_px.x >> 5, chunk_origin_px.y >> 5)
+	_reset_nav_job(job)
+	return job
+
+
+static func _reset_nav_job(job: NavChunkJob) -> void:
+	job.revision = _nav_revision
+	job.sample_cursor = 0
+	job.mask_cursor = 0
+	job.complete = _nav_chunk_cache.has(job.chunk)
+	if job.complete:
+		job.blocked = _nav_chunk_cache[job.chunk]
+		return
+	job.halo = PackedByteArray()
+	job.halo.resize((CHUNK_CELLS + 2) * (CHUNK_CELLS + 2))
+	job.blocked = PackedByteArray()
+	job.blocked.resize(CHUNK_CELLS * CHUNK_CELLS)
+
+
+## deadline_usec=0 仅供同步调用；逐次真采样前检查时钟，不在预算内偷算整块。
+## 截止时最多超出一次 sample_cell（最小不可分工作），已做的采样跨帧保留。
+static func advance_nav_chunk(job: NavChunkJob, deadline_usec: int) -> bool:
+	_ensure()
+	if job.revision != _nav_revision:
+		_reset_nav_job(job)
+	if job.complete:
+		return true
+	const STRIDE := CHUNK_CELLS + 2
+	while job.sample_cursor < STRIDE * STRIDE:
+		if deadline_usec > 0 and Time.get_ticks_usec() >= deadline_usec:
+			return false
+		var index := job.sample_cursor
+		var cell := job.base + Vector2i(index % STRIDE - 1, index / STRIDE - 1)
+		var sample := sample_cell(cell)
+		var flags := 0
+		if not sample.is_empty():
+			flags = 1
+			if sample["kind"] != "castle" and float(sample["r"]) > 11.0:
+				flags |= 2
+		job.halo[index] = flags
+		job.sample_cursor += 1
+	while job.mask_cursor < CHUNK_CELLS * CHUNK_CELLS:
+		if deadline_usec > 0 and Time.get_ticks_usec() >= deadline_usec:
+			return false
+		var index := job.mask_cursor
+		var middle := (index / CHUNK_CELLS + 1) * STRIDE + index % CHUNK_CELLS + 1
+		var right := int(job.halo[middle + 1])
+		var left := int(job.halo[middle - 1])
+		var down := int(job.halo[middle + STRIDE])
+		var up := int(job.halo[middle - STRIDE])
+		var walls := (right & 1) + (left & 1) + (down & 1) + (up & 1)
+		job.blocked[index] = int((job.halo[middle] & 1) != 0 or walls >= 3
+			or ((right | left | down | up) & 2) != 0)
+		job.mask_cursor += 1
+	_nav_chunk_cache[job.chunk] = job.blocked
+	job.complete = true
+	return true
 
 
 ## 点级导航可走判定（测试布阵/选点校验用）：取点所在格查所在块的导航阻挡表
@@ -509,6 +569,7 @@ static func damage_cell(cell: Vector2i) -> String:
 		_obstacle_hp[cell] = hp
 		return ""
 	_destroyed[cell] = true
+	_nav_revision += 1
 	_obstacle_hp.erase(cell)
 	_cells_chunk_cache.erase(Vector2i(cell.x >> 4, cell.y >> 4))
 	# 邻格导航缓冲可能跨块，失效包含边界两侧的缓存。
@@ -535,6 +596,7 @@ static func restore_destroyed(list: Array) -> void:
 	# 同种子读档也需失效：旧分块可能仍画着已毁墙，或新世界沿用旧局半血障碍。
 	_cells_chunk_cache.clear()
 	_nav_chunk_cache.clear()
+	_nav_revision += 1
 	_obstacle_hp.clear()
 	for entry in list:
 		if typeof(entry) != TYPE_STRING:
@@ -550,6 +612,8 @@ static func restore_destroyed(list: Array) -> void:
 
 ## 作者机关只失效地形缓存，不伪造障碍摧毁、金币或生态事件。
 static func invalidate_authored_cells(cells: Array) -> void:
+	if not cells.is_empty():
+		_nav_revision += 1
 	for value: Variant in cells:
 		if not value is Vector2i: continue
 		var cell: Vector2i = value

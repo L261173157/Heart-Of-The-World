@@ -135,6 +135,9 @@ var _save_timer := 0.0
 const ECOLOGY_SAVE_INTERVAL := 6.0
 var _ecology_saved_at := 0.0
 var _ecology_cache: Variant = null
+## 仅缓存上述私有快照的 JSON 字节；不改变快照可复用的时间/战役一致性门槛。
+## 菜单 ecology_snapshot 由外部持有并可能原地变更，不能复用这份编码。
+var _ecology_json := PackedByteArray()
 ## 击杀奖励及生态死亡在同一同步事务完成；信号订阅者要求立即保存时延至末尾。
 var _world_reward_depth := 0
 var _world_reward_save_requested := false
@@ -511,6 +514,7 @@ func reset_all() -> void:
 	ecology_snapshot = null
 	player_snapshot = null
 	_ecology_cache = null
+	_ecology_json = PackedByteArray()
 	_ecology_saved_at = 0.0
 	_lifespan_warned.clear()
 	# 世界 v5：新的冒险 = 全新世界——重掷种子并同步 BiomeMap（此后的菜单预览/
@@ -615,6 +619,7 @@ func clear_chest_claims() -> void:
 
 func _invalidate_world_save_cache() -> void:
 	_ecology_cache = null
+	_ecology_json = PackedByteArray()
 	_ecology_saved_at = 0.0
 	_queue_save()
 
@@ -742,11 +747,11 @@ func save_now(include_ecology := true) -> bool:
 			(ecology as Dictionary)["day_time"] = WorldSim.day_time
 			(ecology as Dictionary)["game_day"] = WorldSim.game_day
 			_ecology_cache = ecology
+			_ecology_json = PackedByteArray()
 			_ecology_saved_at = now
 	elif typeof(ecology_snapshot) == TYPE_DICTIONARY:
 		ecology = ecology_snapshot
 	if ecology != null:
-		data["ecology"] = ecology
 		if campaign_runtime != null and campaign_runtime.has_method("campaign_for_save") and ecology is Dictionary:
 			data["campaign_quest"] = campaign_runtime.call("campaign_for_save", data["campaign_quest"], int(ecology.get("tick", -1)), ecology_refreshed)
 	# 探索进度（世界 v5）：迷雾位图（base64 存 PackedByteArray）+ 已发现地标
@@ -779,7 +784,7 @@ func save_now(include_ecology := true) -> bool:
 	var file := FileAccess.open(tmp_path, FileAccess.WRITE)
 	if file == null:
 		return _save_failed("存档写入失败：%s" % tmp_path)
-	var payload := JSON.stringify(data).to_utf8_buffer()
+	var payload := _encode_save_payload(data, ecology, WorldSim.sim != null)
 	var stored := file.store_buffer(payload)
 	var write_error := file.get_error()
 	# 缓冲写入可能直到 flush 才暴露磁盘满/IO 错误，不能直接 close 后替换好档。
@@ -804,6 +809,26 @@ func save_now(include_ecology := true) -> bool:
 	last_save_unix = saved_at
 	_migration_backup_required = false
 	return true
+
+
+## 顶层进度每次重新编码；只有既有门槛准许复用的生态私有快照跳过重复 stringify。
+## 保留历史递归键排序：读档后的巢穴信号、事实序列号与快捷物品顺序依赖它。
+## data 是本次非空进度字典，不含 ecology。按 UTF-8 字节拼接完整合法 JSON，
+## 最后的写入、flush、逐字节回读及原子替换仍在 save_now 的同一同步事务内。
+func _encode_save_payload(data: Dictionary, ecology: Variant, cache_ecology: bool) -> PackedByteArray:
+	var payload := JSON.stringify(data, "", true).to_utf8_buffer()
+	if ecology == null:
+		return payload
+	var ecology_json := _ecology_json if cache_ecology else PackedByteArray()
+	if ecology_json.is_empty():
+		ecology_json = JSON.stringify(ecology, "", true).to_utf8_buffer()
+		if cache_ecology:
+			_ecology_json = ecology_json
+	payload.resize(payload.size() - 1) # 去掉顶层末尾 }，随后附加单个 ecology 成员。
+	payload.append_array(',"ecology":'.to_utf8_buffer())
+	payload.append_array(ecology_json)
+	payload.append(125) # }
+	return payload
 
 
 func _save_failed(message: String) -> bool:
@@ -1114,6 +1139,7 @@ func _load() -> void:
 		ecology_snapshot = null
 	# 换档后旧世界的降频缓存必须作废（新世界首个自动保存走全量）
 	_ecology_cache = null
+	_ecology_json = PackedByteArray()
 	_ecology_saved_at = 0.0
 	player_snapshot = _sanitize_player_snapshot(data.get("player", null))
 	# 探索进度（v4+）：坏值静默回退"全未探索/零发现"——迷雾只是表现，不值得坏档

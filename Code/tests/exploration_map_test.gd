@@ -29,6 +29,10 @@ func _frames(count: int) -> void:
 func _open() -> void:
 	_world = MAIN.instantiate()
 	add_child(_world)
+	var initial_player: Player = _world.get_node("Player")
+	_check(get_viewport().get_visible_rect().has_point(
+		get_viewport().get_canvas_transform() * initial_player.global_position),
+		"出生或读档在首个物理/渲染帧前同步实际视口")
 	await _frames(3)
 	_player = _world.get_node("Player")
 	_map = _world.get_node("HUD/Root/Minimap")
@@ -44,6 +48,7 @@ func _run() -> void:
 	_map._refresh_navigation()
 	var origin := _player.global_position
 	_check(GameState.fog_knows_position(origin), "真实出生位置写入细探索")
+	_test_camera_sight_boundary()
 	_check(not GameState.fog_knows_position(origin + Vector2(2200, 0)), "同一粗格不再自动揭开2200px外")
 	_check(GameState.exploration.chunks.size() <= 4, "开局只分配附近最多4个128字节块")
 	var version := GameState.fog_version
@@ -263,3 +268,24 @@ func _test_prepare_incremental() -> void:
 	_check(terrain.pending.size() == queued_count, "窗口往返保留队列且不追加重复细格")
 	_check(terrain._known_cache.size() <= 4096 and terrain.pending.size() <= MinimapTerrain.MAX_CELLS,
 		"准备阶段的已知格缓存和采样队列也有局部上限")
+
+
+## 视野仍按实际画面裁剪；探索只读物理位置，不能被绘制相机反写。
+func _test_camera_sight_boundary() -> void:
+	var camera: Camera2D = _player.get_node("Camera2D")
+	var body_before := _player.global_position
+	var fog_before := GameState.exploration.to_dict()
+	_check(_map._is_visible_position(body_before), "出生后首轮查询已同步真实相机视口")
+	camera.global_position = body_before + Vector2(10000, 0)
+	camera.force_update_scroll()
+	_check(not get_viewport().get_visible_rect().has_point(
+		get_viewport().get_canvas_transform() * body_before),
+		"回归夹具确实将真实渲染视口移到远方")
+	_map._refresh_navigation()
+	_check(not _map._is_visible_position(body_before), "画面外已探索位置不能泄露为当前视野")
+	_world._reveal_fog()
+	_check(_player.global_position == body_before and GameState.exploration.to_dict() == fog_before,
+		"相机偏移不改身体位置且不揭开远方探索格")
+	camera.snap_to_player()
+	_map._refresh_navigation()
+	_check(_map._is_visible_position(body_before), "同步吸附后真实视口即时恢复当前视野")

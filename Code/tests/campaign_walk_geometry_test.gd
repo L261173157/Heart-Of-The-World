@@ -41,8 +41,7 @@ func _fixture(offset: Vector2, shape: Shape2D) -> void:
 	_player.set_physics_process(false)
 	# 原Player的_ready会选择家园出生点；本隔离几何夹具在任何测试动作前设置初始站位。
 	_player.position=_scene.object_node("side_letter:giver").global_position+Vector2(12,60)
-	_player.get_node("Camera2D").reset_smoothing()
-	_player.get_node("Camera2D").force_update_scroll()
+	_player.get_node("Camera2D").snap_to_player()
 	_player.set_process(false)
 	_hud=HUD_SCENE.instantiate()
 	_world.add_child(_hud)
@@ -71,8 +70,7 @@ func _closed_gate_contact() -> void:
 		for x in range(floori(bounds.position.x/512),floori(bounds.end.x/512)+1): layer._on_chunk_ready(Vector2i(x,y)*512)
 	while not layer._lay_queue.is_empty(): layer._process(0)
 	_player.position=middle+Vector2(0,80)
-	_player.get_node("Camera2D").reset_smoothing()
-	_player.get_node("Camera2D").force_update_scroll()
+	_player.get_node("Camera2D").snap_to_player()
 	await _frames(3)
 	var ledger := GameState.campaign_quest.duplicate(true)
 	var hp := _player.current_hp
@@ -115,8 +113,7 @@ func _offset_start_corner() -> void:
 		await _fixture(Vector2.ZERO,rectangle)
 		_blocker.position=Vector2(773938.9-(4.0 if closer else 0.0),698243.6)
 		_player.position=Vector2(773918.6,698287.5)
-		_player.get_node("Camera2D").reset_smoothing()
-		_player.get_node("Camera2D").force_update_scroll()
+		_player.get_node("Camera2D").snap_to_player()
 		await _frames(3)
 		var start := _player.global_position
 		var center := Vector2(773904,698288)

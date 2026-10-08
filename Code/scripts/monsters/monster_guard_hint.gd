@@ -20,6 +20,7 @@ func _init() -> void:
 	# 脱离宿主的闪红/精英金色调制，黄色危险级别不会被蓄力橙染成另一档。
 	# 仍由宿主拥有并清理，只在短暂前摇期间跟随宿主平移，不逐帧重绘。
 	top_level = true
+	process_priority = 150
 	z_index = 30
 	visible = false
 	set_process(false)
@@ -50,7 +51,11 @@ func _process(_delta: float) -> void:
 func _follow_actor() -> void:
 	var actor := get_parent() as Node2D
 	if actor != null:
-		global_position = (actor.global_position + _actor_offset).round()
+		var point := actor.global_position
+		var sync := actor.get_node_or_null("RenderSync")
+		if sync != null:
+			point = sync.get_render_position()
+		global_position = (point + _actor_offset).round()
 
 
 func _draw() -> void:

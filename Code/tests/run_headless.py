@@ -14,6 +14,11 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "render_motion": (["res://tests/render_motion_test.tscn", "--quit-after", "10000"], "=== RENDER MOTION PASS"),
+    "ecology_index": (["-s", "tests/ecology_index_test.gd"], "=== ECOLOGY INDEX PASS"),
+    "map_performance": (["res://tests/map_performance_test.tscn", "--quit-after", "10000"], "=== MAP PERFORMANCE PASS"),
+    "navigation_budget": (["res://tests/navigation_budget_test.tscn", "--quit-after", "30000"], "=== NAVIGATION BUDGET PASS"),
+    "save_serialization": (["res://tests/save_serialization_test.tscn", "--quit-after", "10000"], "=== SAVE SERIALIZATION PASS"),
     "campaign_lore_contract": (["-s", "tests/campaign_lore_contract_test.gd"], "=== CAMPAIGN LORE CONTRACT PASS"),
     "campaign_reunion_compatibility": ([str(PROJECT / "tests/run_campaign_reunion_compatibility_test.py")], "=== CAMPAIGN REUNION COMPATIBILITY LIFECYCLE PASS"),
     "campaign_narrative_contract": (["-s", "tests/campaign_narrative_contract_test.gd"], "=== CAMPAIGN NARRATIVE CONTRACT PASS"),
@@ -96,6 +101,7 @@ CASES = {
     "ui_visual": (["res://tests/ui_visual_test.tscn", "--quit-after", "8000"], "=== UI VISUAL REGRESSION PASSED"),
     "menu_layout": (["res://tests/menu_layout_test.tscn", "--quit-after", "8000"], "=== MENU LAYOUT REGRESSION PASSED"),
     "actor_alignment": (["res://tests/actor_alignment_test.tscn", "--quit-after", "10000"], "=== ACTOR ALIGNMENT PASS"),
+    "locomotion_cadence": (["res://tests/locomotion_cadence_test.tscn", "--quit-after", "8000"], "=== LOCOMOTION CADENCE PASS"),
     "animation": (["res://tests/animation_polish_test.tscn", "--quit-after", "8000"], "=== ANIMATION POLISH PASS"),
     "gameplay_combat": (["res://tests/gameplay_combat_test.tscn", "--quit-after", "100000"], "=== GAMEPLAY COMBAT PASS"),
     "gameplay_ecology": (["res://tests/gameplay_ecology_test.tscn", "--quit-after", "10000"], "=== 玩法生态回归全部通过"),

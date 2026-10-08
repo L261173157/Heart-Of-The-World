@@ -46,8 +46,21 @@ func _ready() -> void:
 	EventBus.bounty_target_changed.connect(_on_bounty_target_changed)
 	EventBus.quest_list_changed.connect(_on_quest_list_changed)
 	EventBus.obstacle_destroyed.connect(_on_obstacle_destroyed)
+	EventBus.campaign_geometry_changed.connect(_on_campaign_geometry_changed)
+	visibility_changed.connect(_on_visibility_changed)
 	_layout_labels()
-	_refresh_navigation()
+	_on_visibility_changed()
+
+
+## 阅读地图默认藏在父级模态内：隐藏时不建队列、不扫描活体，也不后台补地形。
+## 重新打开保留同世界的局部缓存，由正常刷新核对位置、迷雾及世界身份。
+func _on_visibility_changed() -> void:
+	var active := is_visible_in_tree()
+	set_process(active)
+	if active:
+		_accum = 0.0
+		_terrain_redraw = 0.0
+		_refresh_navigation()
 
 
 func _make_label(node_name: String, font_size: int, color: Color) -> Label:
@@ -84,11 +97,14 @@ func _on_bounty_target_changed(species_name: String) -> void:
 
 
 func _process(delta: float) -> void:
-	if get_tree().paused:
+	if not is_visible_in_tree():
 		return
+	# HUD 的阅读层本来就随暂停继续处理。只读采样必须同样继续，
+	# 否则首次打开地图会把尚未完成的地形永久冻结在空底上。
 	if _has_player and _interior_index < 0:
 		_terrain_redraw += delta
-		if _terrain.step() > 0 and _terrain_redraw >= 0.10:
+		if _terrain.has_pending() and _terrain.step() > 0 \
+				and (_terrain_redraw >= 0.10 or not _terrain.has_pending()):
 			_terrain_redraw = 0.0
 			queue_redraw()
 	_accum += delta
@@ -100,6 +116,10 @@ func _process(delta: float) -> void:
 ## 每轮从权威活体重选，击杀/捣巢/任务完成后最多一帧雷达周期移除旧指引。
 ## 约 880 个体只做坐标/距离过滤；不构建全世界营地纹理，不保留节点引用。
 func _refresh_navigation() -> void:
+	# HUD 打开模态前会显式请求刷新；等父级真正显示后再准备，
+	# 也保证隐藏时的事件或外部刷新不会绕过按需处理。
+	if not is_visible_in_tree():
+		return
 	if _sim_seen != WorldSim.sim:
 		_sim_seen = WorldSim.sim
 		_bounty_species = ""
@@ -344,6 +364,14 @@ func _on_obstacle_destroyed(cell: Vector2i, _pos: Vector2, _kind: String) -> voi
 	_accum = REDRAW_INTERVAL
 
 
+func _on_campaign_geometry_changed(cells: Array) -> void:
+	# 开关机关不是破坏事件；保留温缓存也必须失效这些真实变动格。
+	for cell: Variant in cells:
+		if cell is Vector2i:
+			_terrain.invalidate_obstacle(cell)
+	_accum = REDRAW_INTERVAL
+
+
 func _update_labels() -> void:
 	if _category == null:
 		return
@@ -452,12 +480,19 @@ func _draw_terrain_and_fog(rect: Rect2) -> void:
 	var start := ExplorationFog.cell_of(_player_pos - rect.size * 0.5 / _radar_scale())
 	var end := ExplorationFog.cell_of(_player_pos + rect.size * 0.5 / _radar_scale())
 	var step := ExplorationFog.CELL * _radar_scale()
+	# 仅保存本次draw实际查询的128px格中心，加一格四邻边界。
+	# 0=尚未查询，1=未知，2=已知；不跨帧保留，不合并不同的世界坐标。
+	var known_width := end.x - start.x + 3
+	var known := PackedByteArray()
+	known.resize(known_width * (end.y - start.y + 3))
 	# 粗地被先填满探索轮廓；精细水岸和障碍随后覆盖。旧地形记忆同样受细雾裁切。
 	for y in range(start.y, end.y + 1):
 		for x in range(start.x, end.x + 1):
 			var pos := (Vector2(x, y) + Vector2.ONE * 0.5) * ExplorationFog.CELL
 			var base := Vector2i((pos / MinimapTerrain.BASE_CELL).floor())
-			if not _is_known_position(pos) or not _terrain.base_cells.has(base):
+			var index := (y - start.y + 1) * known_width + x - start.x + 1
+			known[index] = 2 if _is_known_position(pos) else 1
+			if known[index] != 2 or not _terrain.base_cells.has(base):
 				continue
 			var color: Color = _terrain.base_cells[base]
 			var brightness := _terrain_brightness(pos)
@@ -466,6 +501,8 @@ func _draw_terrain_and_fog(rect: Rect2) -> void:
 			draw_rect(tile.intersection(rect), color)
 	for key: Vector2i in _terrain.cells:
 		var pos := (Vector2(key) + Vector2.ONE * 0.5) * MinimapTerrain.CELL
+		# 64px地形中心各不相同，也不等于128px雾格中心。旧4000px记忆
+		# 边界会切过雾格，必须继续查询原坐标，不能套用上面的雾格结果。
 		if not _is_known_position(pos):
 			continue
 		var brightness := _terrain_brightness(pos)
@@ -477,7 +514,8 @@ func _draw_terrain_and_fog(rect: Rect2) -> void:
 	for y in range(start.y, end.y + 1):
 		for x in range(start.x, end.x + 1):
 			var pos := (Vector2(x, y) + Vector2.ONE * 0.5) * ExplorationFog.CELL
-			if not _is_known_position(pos):
+			var index := (y - start.y + 1) * known_width + x - start.x + 1
+			if known[index] != 2:
 				# 薄雾颗粒完全由格坐标决定，不读取该处的群系/液体/障碍。
 				if posmod(x * 7 + y * 11, 9) == 0:
 					var mist := Rect2(_radar_point(pos) - Vector2.ONE * 0.4, Vector2.ONE * 0.8)
@@ -486,7 +524,10 @@ func _draw_terrain_and_fog(rect: Rect2) -> void:
 				continue
 			var top_left := _radar_point(Vector2(x, y) * ExplorationFog.CELL)
 			for edge: Vector2i in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
-				if _is_known_position(pos + Vector2(edge) * ExplorationFog.CELL):
+				var neighbor := index + edge.y * known_width + edge.x
+				if known[neighbor] == 0:
+					known[neighbor] = 2 if _is_known_position(pos + Vector2(edge) * ExplorationFog.CELL) else 1
+				if known[neighbor] == 2:
 					continue
 				var from := top_left
 				var to := top_left

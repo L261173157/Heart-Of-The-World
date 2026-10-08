@@ -1,61 +1,53 @@
-## 导航专用瓦片层（世界 v5）：不渲染（瓦片全透明）、无碰撞，只向
-## NavigationServer2D 提供可走格导航多边形——整层合并为单导航区域，天然没有
-## 分块 Region 的边界缝合问题；相邻可走格共享边缘顶点，层内导航图连通。
-## 窗口半径 WINDOW_CHUNKS = 6 块（3072px，扣除半块余量仍 ≥ 怪物流式回收半径
-## 2800px）——所有活跃怪物脚下恒有导航网格。格子同源 ObstacleField 派生
-## （含单格死点填充，见 nav_blocked_chunk），与可见障碍层无双源漂移。
-## 铺格按帧预算节流（跨界一次最多补 13 块，全铺会顶帧；导航晚到无害——
-## 覆盖前的怪走直线，进窗后自动走导航）。
-## 7→6（真机性能优化二轮 2026-09-19）：单 NavigationRegion 图规模 -25%
-## （225→169 块）——流式增删打废全部代理缓存路径时的同步重算更便宜
+## 导航专用瓦片层：不渲染、无碰撞，只向 NavigationServer2D 提供可走格。
+## 窗口仍为半径6块（3072px），覆盖怪物流式回收半径2800px。
+## 准备、铺格和出窗清理共用真实微秒预算；每帧最多各提交256格，避免
+## NavigationServer 同步成本随单帧变更格数暴涨。物理/AI安全判定不变。
 class_name NavTileLayer
 extends TileMapLayer
 
 const NAV_TILESET := preload("res://data/nav_tileset.tres")
 const WINDOW_CHUNKS := 6
-## 每帧最多补铺的地形块数（跨界瞬间欠 15 块）。
-## 3→1（真机卡顿修复 2026-10-01，perf_probe 桌面实测三方全面更优）：
-## NavigationServer 同步成本随单帧变更格数超线性增长——摊到 1 块/帧后
-## proc 占空比 60.6→33.0ms/0.5s（-46%）、proc_max 104→57（-45%）、
-## fps_min 13→36。窗口补齐 15 帧仅 0.25s，导航晚到无害（怪走直线兜底）
-const FILL_BUDGET := 1
 const CHUNK_PX := 512
+const WORK_BUDGET_USEC := 2000
+const CELL_SUBMIT_LIMIT := ObstacleField.CHUNK_CELLS * ObstacleField.CHUNK_CELLS
 
-## 已铺块集合（chunk 坐标 → true）
+## 完整铺好的块、所有有格子的块（含部分铺入/部分清理）。
 var _filled := {}
-## 待铺队列（近者先）
+var _resident := {}
 var _pending: Array[Vector2i] = []
-## 待清队列（出窗块分帧清除——跨界帧同帧清 15 块×256 格 = 3840 次
-## erase_cell 是移动尖峰，与铺入同预算节流；真机性能优化 2026-09-19）
 var _clearing: Array[Vector2i] = []
+var _clear_offsets := {}
+var _fill_job: ObstacleField.NavChunkJob
+var _fill_cursor := 0
 var _center_chunk := Vector2i(1073741823, 1073741823)
 
 
 func _init() -> void:
-	# tile_set 进树前赋值（与 obstacle_tile_layer 同因——_ready 内赋值在
-	# Godot 4.7 有内部构建时序坑；导航当前可用，统一时序防同类问题）
+	# 进树前赋值，保留 Godot 4.7 的导航构建时序。
 	tile_set = NAV_TILESET
 	collision_enabled = false
 	navigation_enabled = true
 
 
 func _ready() -> void:
-	# 障碍被摧毁：立即补可走格（导航网格更新后怪物的旧路径会在下次重铺时修正）
 	EventBus.obstacle_destroyed.connect(_on_obstacle_destroyed)
 	EventBus.campaign_geometry_changed.connect(_on_campaign_geometry_changed)
 
 
 func _on_obstacle_destroyed(cell: Vector2i, _pos: Vector2, _kind: String) -> void:
-	# 大岩石移除同时释放邻格余量；剩余相邻障碍仍按真源保留导航洞。
+	# 正在铺入的块也必须同步修改，不能在门关闭后留下旧的可走格。
+	# 在途准备会根据 ObstacleField 的代号重新取样，不会把旧数据覆盖回来。
 	for dy in range(-1, 2):
 		for dx in range(-1, 2):
 			var nearby := cell + Vector2i(dx, dy)
-			if not _filled.has(Vector2i(nearby.x >> 4, nearby.y >> 4)):
+			var chunk := Vector2i(nearby.x >> 4, nearby.y >> 4)
+			if not _resident.has(chunk):
 				continue
-			if ObstacleField.nav_blocked_cell(nearby):
-				erase_cell(nearby)
-			else:
-				set_cell(nearby, 0, Vector2i.ZERO, 0)
+			if _clearing.has(chunk):
+				# 不往已清过的前缀补格；回窗后按新真源完整重铺。
+				_filled.erase(chunk)
+				continue
+			_write_nav_cell(nearby, ObstacleField.nav_blocked_cell(nearby))
 
 
 func _process(_delta: float) -> void:
@@ -65,57 +57,133 @@ func _process(_delta: float) -> void:
 	var cc := Vector2i(floori(player.global_position.x / float(CHUNK_PX)),
 			floori(player.global_position.y / float(CHUNK_PX)))
 	if cc != _center_chunk:
-		_center_chunk = cc
 		_replan_window(cc)
-	var budget := FILL_BUDGET
-	while budget > 0 and not _pending.is_empty():
-		var chunk: Vector2i = _pending.pop_front()
-		_fill_chunk(chunk)
-		budget -= 1
-	# 出窗清除同走分帧预算（跨界帧全清 3840 格曾是尖峰）
-	var clear_budget := FILL_BUDGET
-	while clear_budget > 0 and not _clearing.is_empty():
-		_clear_chunk(_clearing.pop_front())
-		clear_budget -= 1
+	_advance_work()
 
 
-## 重建窗口：进窗缺口入队（按距玩家排序），出窗块转待清队列分帧清除
+## 清理预留四分之一预算，避免持续移动时旧块一直堆积；总预算不翻倍。
+## 即使缓存命中，提交与清理仍逐格检查时钟和提交数上限。
+func _advance_work(budget_usec: int = WORK_BUDGET_USEC) -> void:
+	var started := Time.get_ticks_usec()
+	var deadline := started + maxi(0, budget_usec)
+	_advance_clearing(started + maxi(0, budget_usec / 4))
+	var submitted := 0
+	while Time.get_ticks_usec() < deadline and submitted < CELL_SUBMIT_LIMIT:
+		if _fill_job == null:
+			if _pending.is_empty():
+				break
+			var chunk: Vector2i = _pending.pop_front()
+			if _filled.has(chunk) or not _in_window(chunk):
+				continue
+			_fill_job = ObstacleField.begin_nav_chunk(chunk * CHUNK_PX)
+			_fill_cursor = 0
+		elif _fill_job.revision != ObstacleField.nav_revision():
+			# 破坏、机关或读档可能发生在准备或提交中途；从头校正已有格。
+			_fill_job = ObstacleField.begin_nav_chunk(_fill_job.chunk * CHUNK_PX)
+			_fill_cursor = 0
+		if not ObstacleField.advance_nav_chunk(_fill_job, deadline):
+			break
+		while _fill_cursor < CELL_SUBMIT_LIMIT and submitted < CELL_SUBMIT_LIMIT:
+			if Time.get_ticks_usec() >= deadline:
+				return
+			var cell := _fill_job.base + Vector2i(_fill_cursor % ObstacleField.CHUNK_CELLS,
+				_fill_cursor / ObstacleField.CHUNK_CELLS)
+			_resident[_fill_job.chunk] = true
+			_write_nav_cell(cell, _fill_job.blocked[_fill_cursor] != 0)
+			_fill_cursor += 1
+			submitted += 1
+		if _fill_cursor == CELL_SUBMIT_LIMIT:
+			_filled[_fill_job.chunk] = true
+			_fill_job = null
+
+
+func _advance_clearing(deadline: int) -> void:
+	var submitted := 0
+	while not _clearing.is_empty() and submitted < CELL_SUBMIT_LIMIT:
+		if Time.get_ticks_usec() >= deadline:
+			return
+		var chunk := _clearing[0]
+		var cursor: int = _clear_offsets.get(chunk, 0)
+		_filled.erase(chunk)
+		var base := chunk * ObstacleField.CHUNK_CELLS
+		erase_cell(base + Vector2i(cursor % ObstacleField.CHUNK_CELLS,
+			cursor / ObstacleField.CHUNK_CELLS))
+		cursor += 1
+		submitted += 1
+		if cursor == CELL_SUBMIT_LIMIT:
+			_resident.erase(chunk)
+			_clear_offsets.erase(chunk)
+			_clearing.pop_front()
+		else:
+			_clear_offsets[chunk] = cursor
+
+
+func _in_window(chunk: Vector2i) -> bool:
+	return absi(chunk.x - _center_chunk.x) <= WINDOW_CHUNKS \
+		and absi(chunk.y - _center_chunk.y) <= WINDOW_CHUNKS
+
+
+## 回头时先撤销所有进窗块的旧清理任务，再重建近者优先队列。
+## 已清过一部分的块不再标为完整，会重新铺齐；未清过的整块直接复用。
 func _replan_window(center: Vector2i) -> void:
+	_center_chunk = center
+	for chunk: Vector2i in _clearing.duplicate():
+		if _in_window(chunk):
+			_clearing.erase(chunk)
+			_clear_offsets.erase(chunk)
+	if _fill_job != null and not _in_window(_fill_job.chunk):
+		_fill_job = null
+		_fill_cursor = 0
+	for chunk: Vector2i in _resident:
+		if not _in_window(chunk) and not _clearing.has(chunk):
+			_clearing.append(chunk)
 	_pending.clear()
-	var r := WINDOW_CHUNKS
-	for dy in range(-r, r + 1):
-		for dx in range(-r, r + 1):
+	for dy in range(-WINDOW_CHUNKS, WINDOW_CHUNKS + 1):
+		for dx in range(-WINDOW_CHUNKS, WINDOW_CHUNKS + 1):
 			var chunk := center + Vector2i(dx, dy)
-			if not _filled.has(chunk):
+			if not _filled.has(chunk) and (_fill_job == null or _fill_job.chunk != chunk):
 				_pending.append(chunk)
 	_pending.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 		return _chunk_dist2(a, center) < _chunk_dist2(b, center))
-	for chunk: Vector2i in _filled.keys():
-		if absi(chunk.x - center.x) > r or absi(chunk.y - center.y) > r:
-			_filled.erase(chunk)
-			_clearing.append(chunk)
 
 
+## 同步入口仅供固定场景布阵；正式 _process 不调用整块准备/提交。
 func _fill_chunk(chunk: Vector2i) -> void:
 	if _filled.has(chunk):
+		_clearing.erase(chunk)
+		_clear_offsets.erase(chunk)
 		return
-	# 边界抖动路径：块在待清队列里又回到进窗——撤销清除保住已铺格
 	_clearing.erase(chunk)
-	var origin := chunk * CHUNK_PX
-	var blocked := ObstacleField.nav_blocked_chunk(origin)
-	var base := Vector2i(origin.x >> 5, origin.y >> 5)
-	for dy in ObstacleField.CHUNK_CELLS:
-		for dx in ObstacleField.CHUNK_CELLS:
-			if blocked[dy * ObstacleField.CHUNK_CELLS + dx] == 0:
-				set_cell(base + Vector2i(dx, dy), 0, Vector2i.ZERO, 0)
+	_clear_offsets.erase(chunk)
+	_pending.erase(chunk)
+	if _fill_job != null and _fill_job.chunk == chunk:
+		_fill_job = null
+		_fill_cursor = 0
+	var blocked := ObstacleField.nav_blocked_chunk(chunk * CHUNK_PX)
+	var base := chunk * ObstacleField.CHUNK_CELLS
+	for index in CELL_SUBMIT_LIMIT:
+		_write_nav_cell(base + Vector2i(index % ObstacleField.CHUNK_CELLS,
+			index / ObstacleField.CHUNK_CELLS), blocked[index] != 0)
+	_resident[chunk] = true
 	_filled[chunk] = true
 
 
+func _write_nav_cell(cell: Vector2i, blocked: bool) -> void:
+	if blocked:
+		erase_cell(cell)
+	else:
+		set_cell(cell, 0, Vector2i.ZERO, 0)
+
+
 func _clear_chunk(chunk: Vector2i) -> void:
-	var base := Vector2i(chunk.x * CHUNK_PX >> 5, chunk.y * CHUNK_PX >> 5)
-	for dy in ObstacleField.CHUNK_CELLS:
-		for dx in ObstacleField.CHUNK_CELLS:
-			erase_cell(base + Vector2i(dx, dy))
+	var base := chunk * ObstacleField.CHUNK_CELLS
+	for index in CELL_SUBMIT_LIMIT:
+		erase_cell(base + Vector2i(index % ObstacleField.CHUNK_CELLS,
+			index / ObstacleField.CHUNK_CELLS))
+	_filled.erase(chunk)
+	_resident.erase(chunk)
+	_clearing.erase(chunk)
+	_clear_offsets.erase(chunk)
 
 
 func _chunk_dist2(a: Vector2i, b: Vector2i) -> int:

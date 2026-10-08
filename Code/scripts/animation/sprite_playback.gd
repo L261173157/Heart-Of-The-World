@@ -24,3 +24,42 @@ static func restart(sprite: AnimatedSprite2D, anim: StringName, speed := 1.0) ->
 	sprite.speed_scale = speed
 	sprite.play(anim)
 	sprite.set_frame_and_progress(0, 0.0)
+
+## 移动循环切向时保留归一化步相；同名续播不触碰帧进度。
+## 仅 walk 同族循环间适用，攻击／受击等事件动作仍由 restart 从首帧启动。
+static func transition_loop(sprite: AnimatedSprite2D, anim: StringName) -> void:
+	if sprite.animation == anim:
+		if not sprite.is_playing():
+			sprite.play(anim)
+		return
+	var frames := sprite.sprite_frames
+	var phase := 0.0
+	var preserve := frames.has_animation(sprite.animation) and frames.get_animation_loop(sprite.animation) \
+		and frames.get_animation_loop(anim) and String(sprite.animation).begins_with("walk") \
+		and String(anim).begins_with("walk")
+	if preserve:
+		var elapsed := 0.0
+		for index in sprite.frame:
+			elapsed += frames.get_frame_duration(sprite.animation, index)
+		elapsed += sprite.frame_progress * frames.get_frame_duration(sprite.animation, sprite.frame)
+		phase = elapsed / maxf(duration(frames, sprite.animation) * frames.get_animation_speed(sprite.animation), 0.001)
+	sprite.play(anim)
+	if preserve:
+		var remaining := phase * duration(frames, anim) * frames.get_animation_speed(anim)
+		for index in frames.get_frame_count(anim):
+			var weight := frames.get_frame_duration(anim, index)
+			if remaining < weight or index == frames.get_frame_count(anim) - 1:
+				sprite.set_frame_and_progress(index, clampf(remaining / weight, 0.0, 1.0))
+				break
+			remaining -= weight
+
+## 六姿势维持可读步态，而非把显示器刷新率当成素材帧率。
+## 怪物以本物种正常速度归一化；按实际位移等比例推进步频，慢走不设高帧率下限来制造滑步。
+static func locomotion_speed(frames: SpriteFrames, anim: StringName, ground_speed: float,
+		reference_speed: float, reference_fps: float, minimum_fps: float, maximum_fps: float) -> float:
+	var authored_fps := frames.get_animation_speed(anim)
+	if authored_fps <= 0.0:
+		return 1.0
+	var ratio := maxf(ground_speed, 0.0) / maxf(reference_speed, 1.0)
+	var fps := clampf(reference_fps * ratio, minimum_fps, maximum_fps)
+	return fps / authored_fps
