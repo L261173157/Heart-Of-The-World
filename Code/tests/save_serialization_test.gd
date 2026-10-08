@@ -43,6 +43,7 @@ func _run() -> void:
 		_benchmark()
 	if not "--benchmark-only" in OS.get_cmdline_user_args():
 		_test_cache_contract()
+		await _test_reload_order_contract()
 	GameState.save_enabled = false
 	WorldSim.stop()
 	DirAccess.remove_absolute(GameState.SAVE_PATH)
@@ -220,6 +221,90 @@ func _test_cache_contract() -> void:
 	GameState.save_enabled = true
 	_check(GameState.save_now() and not _read_save().has("ecology"), "无世界的新档不带旧 ecology 字节")
 	GameState.save_enabled = false
+
+
+## JSON 对象的值相同不足以证明兼容：读档会保留嵌套键顺序，后续信号与 UI 消费它。
+## 显式合成两个无繁衍/迁徙的区域，仅反向插入巢穴与物品；事实账本不注入假事件。
+func _test_reload_order_contract() -> void:
+	GameState.save_enabled = false
+	WorldSim.stop()
+	GameState.reset_all()
+	var regions: Array = []
+	for id: String in ["a", "b"]:
+		var region := SimRegion.new()
+		region.id = id
+		region.center = Vector2(1000 if id == "a" else 3000, 1000)
+		region.size = Vector2(2000, 2000)
+		region.capacity = 1024
+		regions.append(region)
+	var species := SpeciesData.new()
+	species.species_name = "grazer"
+	species.breeding_rate = 0.0
+	species.migrate_count = 0
+	species.expansion_threshold = 1000
+	var types: Array[SpeciesData] = [species]
+	var sim := EcologySim.new()
+	sim.setup(regions, types, {"a": {"grazer": 1}, "b": {"grazer": 1}})
+	for inst: MonsterInstance in sim.instances.values():
+		inst.age = 1
+		inst.lifespan = 100000
+	sim.nests = {"b|grazer": {"active": false, "rebuild": 1},
+		"a|grazer": {"active": false, "rebuild": 1}}
+	GameState.inventory = {"sushi": 1, "medipack": 1}
+	WorldSim.start(sim)
+	GameState.save_enabled = true
+	_check(GameState.save_now(), "反向插入巢穴与物品的完整档成功")
+	var saved := _read_save()
+	_check(saved["ecology"]["nests"].keys() == ["a|grazer", "b|grazer"], "完整档维持历史递归巢穴键排序")
+	_check(saved["inventory"].keys() == ["medipack", "sushi"], "完整档维持历史递归物品键排序")
+	_check(GameState.save_now(false), "排序后的生态字节仍可用于自动档缓存")
+	saved = _read_save()
+	_check(saved["ecology"]["nests"].keys() == ["a|grazer", "b|grazer"]
+		and saved["inventory"].keys() == ["medipack", "sushi"], "缓存自动档同样保留两处嵌套键顺序")
+	GameState.save_enabled = false
+	WorldSim.stop()
+	GameState._load()
+	_check(GameState.inventory.keys() == ["medipack", "sushi"], "真实读档重建物品字典顺序与旧版本一致")
+	var restored := EcologySim.new()
+	restored.predation_enabled = false
+	restored.reintroduction_enabled = false
+	_check(restored.restore_from_dict(regions, types, GameState.ecology_snapshot), "反向插入巢穴的存档通过真实生态恢复")
+	_check(restored.nests.keys() == ["a|grazer", "b|grazer"], "真实生态恢复保持历史巢穴迭代顺序")
+	var signals: Array[String] = []
+	restored.nest_changed.connect(func(region: String, _species: String, _active: bool, _ransacked: bool) -> void:
+		signals.append(region))
+	var facts := CampaignWorldFacts.new()
+	add_child(facts)
+	facts.configure(restored, GameState.world_seed)
+	restored.tick()
+	_check(signals == ["a", "b"], "读档后真实下一 tick 的 nest_changed 顺序保持 A 再 B")
+	var events: Array = facts.snapshot()["events"]
+	_check(events.size() == 2 and events[0]["nest_key"] == "a|grazer" and int(events[0]["sequence"]) == 1
+		and events[1]["nest_key"] == "b|grazer" and int(events[1]["sequence"]) == 2,
+		"真实 CampaignWorldFacts 的持久序列号仍与同一巢穴配对")
+	# 重复激活显式巢穴夹具，经过真实 tick/信号保留最近 512 项，不直接改写事实账本。
+	for _round in 256:
+		for key: String in restored.nests:
+			restored.nests[key] = {"active": false, "rebuild": 1}
+		restored.tick()
+	events = facts.snapshot()["events"]
+	var retained_order := events.size() == CampaignWorldFacts.MAX_EVENTS
+	for index in events.size():
+		retained_order = retained_order and int(events[index]["sequence"]) == index + 3
+		retained_order = retained_order and events[index]["nest_key"] == ("a|grazer" if index % 2 == 0 else "b|grazer")
+	_check(retained_order, "超过 512 个真实事实后，保留条目及序列号顺序仍与旧版本一致")
+	facts.free()
+	var hud := preload("res://scenes/ui/hud.tscn").instantiate()
+	add_child(hud)
+	await get_tree().process_frame
+	hud._set_more_page("actions")
+	var buttons: Array[String] = []
+	for child: Node in hud._more_items.get_children():
+		if str(child.name).begins_with("QuickItem_"):
+			buttons.append(str(child.name))
+	_check(buttons == ["QuickItem_medipack", "QuickItem_sushi"], "真实 HUD 快捷物品按钮的读档后顺序不变")
+	hud.queue_free()
+	await get_tree().process_frame
 
 
 func _read_save() -> Dictionary:

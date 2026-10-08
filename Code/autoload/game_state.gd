@@ -812,16 +812,16 @@ func save_now(include_ecology := true) -> bool:
 
 
 ## 顶层进度每次重新编码；只有既有门槛准许复用的生态私有快照跳过重复 stringify。
-## JSON 对象键顺序不参与存档语义，关闭递归键排序；保留默认浮点精度与原格式。
+## 保留历史递归键排序：读档后的巢穴信号、事实序列号与快捷物品顺序依赖它。
 ## data 是本次非空进度字典，不含 ecology。按 UTF-8 字节拼接完整合法 JSON，
 ## 最后的写入、flush、逐字节回读及原子替换仍在 save_now 的同一同步事务内。
 func _encode_save_payload(data: Dictionary, ecology: Variant, cache_ecology: bool) -> PackedByteArray:
-	var payload := JSON.stringify(data, "", false).to_utf8_buffer()
+	var payload := JSON.stringify(data, "", true).to_utf8_buffer()
 	if ecology == null:
 		return payload
 	var ecology_json := _ecology_json if cache_ecology else PackedByteArray()
 	if ecology_json.is_empty():
-		ecology_json = JSON.stringify(ecology, "", false).to_utf8_buffer()
+		ecology_json = JSON.stringify(ecology, "", true).to_utf8_buffer()
 		if cache_ecology:
 			_ecology_json = ecology_json
 	payload.resize(payload.size() - 1) # 去掉顶层末尾 }，随后附加单个 ecology 成员。
