@@ -480,12 +480,19 @@ func _draw_terrain_and_fog(rect: Rect2) -> void:
 	var start := ExplorationFog.cell_of(_player_pos - rect.size * 0.5 / _radar_scale())
 	var end := ExplorationFog.cell_of(_player_pos + rect.size * 0.5 / _radar_scale())
 	var step := ExplorationFog.CELL * _radar_scale()
+	# 仅保存本次draw实际查询的128px格中心，加一格四邻边界。
+	# 0=尚未查询，1=未知，2=已知；不跨帧保留，不合并不同的世界坐标。
+	var known_width := end.x - start.x + 3
+	var known := PackedByteArray()
+	known.resize(known_width * (end.y - start.y + 3))
 	# 粗地被先填满探索轮廓；精细水岸和障碍随后覆盖。旧地形记忆同样受细雾裁切。
 	for y in range(start.y, end.y + 1):
 		for x in range(start.x, end.x + 1):
 			var pos := (Vector2(x, y) + Vector2.ONE * 0.5) * ExplorationFog.CELL
 			var base := Vector2i((pos / MinimapTerrain.BASE_CELL).floor())
-			if not _is_known_position(pos) or not _terrain.base_cells.has(base):
+			var index := (y - start.y + 1) * known_width + x - start.x + 1
+			known[index] = 2 if _is_known_position(pos) else 1
+			if known[index] != 2 or not _terrain.base_cells.has(base):
 				continue
 			var color: Color = _terrain.base_cells[base]
 			var brightness := _terrain_brightness(pos)
@@ -494,6 +501,8 @@ func _draw_terrain_and_fog(rect: Rect2) -> void:
 			draw_rect(tile.intersection(rect), color)
 	for key: Vector2i in _terrain.cells:
 		var pos := (Vector2(key) + Vector2.ONE * 0.5) * MinimapTerrain.CELL
+		# 64px地形中心各不相同，也不等于128px雾格中心。旧4000px记忆
+		# 边界会切过雾格，必须继续查询原坐标，不能套用上面的雾格结果。
 		if not _is_known_position(pos):
 			continue
 		var brightness := _terrain_brightness(pos)
@@ -505,7 +514,8 @@ func _draw_terrain_and_fog(rect: Rect2) -> void:
 	for y in range(start.y, end.y + 1):
 		for x in range(start.x, end.x + 1):
 			var pos := (Vector2(x, y) + Vector2.ONE * 0.5) * ExplorationFog.CELL
-			if not _is_known_position(pos):
+			var index := (y - start.y + 1) * known_width + x - start.x + 1
+			if known[index] != 2:
 				# 薄雾颗粒完全由格坐标决定，不读取该处的群系/液体/障碍。
 				if posmod(x * 7 + y * 11, 9) == 0:
 					var mist := Rect2(_radar_point(pos) - Vector2.ONE * 0.4, Vector2.ONE * 0.8)
@@ -514,7 +524,10 @@ func _draw_terrain_and_fog(rect: Rect2) -> void:
 				continue
 			var top_left := _radar_point(Vector2(x, y) * ExplorationFog.CELL)
 			for edge: Vector2i in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
-				if _is_known_position(pos + Vector2(edge) * ExplorationFog.CELL):
+				var neighbor := index + edge.y * known_width + edge.x
+				if known[neighbor] == 0:
+					known[neighbor] = 2 if _is_known_position(pos + Vector2(edge) * ExplorationFog.CELL) else 1
+				if known[neighbor] == 2:
 					continue
 				var from := top_left
 				var to := top_left
