@@ -531,10 +531,22 @@ func _find_melee() -> MonsterBase:
 ## 修复前：_respawn 不清 TouchInput 队列，复活第一帧 consume 全部兑现
 ## （冲刺+重击+法弹+强化 ≈ -72 MP + CD 全开）
 func _verify_death_input() -> void:
+	# 上一段法弹夹具保护0.4s，而施法在0.36s结束：快调度可能仍剩0.04s。
+	# 固定重现这条边界，先验证保护确实拦截，再清空三种无敌来源后走真实致死路径。
 	_player._hurt_iframes = 0.0
+	_player._dash_timer = 0.0
+	_player._protect_timer = maxf(_player._protect_timer, 0.04)
 	_player.current_hp = 1.0
-	_player.take_damage(50.0)
-	if not _player._is_dead:
+	var protected_hit := _player.take_damage(50.0)
+	if protected_hit or _player._is_dead or _player.current_hp != 1.0:
+		_death_input_fails += 1
+		print("  FAIL  死亡夹具未能重现残留保护拦截致死伤害")
+		_death_input_verified = true
+		return
+	print("  PASS  残留保护明确拦截致死伤害，死亡夹具不依赖调度碰巧到期")
+	_player._protect_timer = 0.0
+	var lethal_hit := _player.take_damage(50.0)
+	if not lethal_hit or not _player._is_dead:
 		_death_input_fails += 1
 		print("  FAIL  玩家未能进入死亡状态（致死伤害未生效）")
 		_death_input_verified = true
@@ -552,23 +564,30 @@ func _verify_death_input() -> void:
 
 func _death_input_check(delta: float) -> void:
 	_death_input_timer += delta
-	# 死亡淡出 tween 的回调在 +0.5s 才把 visible 置 false——测试的即时复活
-	# 抢在它前面，回调随后会把玩家藏掉（真实游戏复活延迟 2s > 淡出 0.5s 无此竞态）。
-	# 观察窗内每帧把可见性钉回 true，否则其后的机制观察等分支全部失明
-	if not _player.visible:
-		_player.visible = true
 	if _death_input_timer < 0.7:
 		return
 	_death_input_timer = -1.0
-	# 复活后已泵过若干物理帧：若队列未被清空，冲刺/重击/法弹/强化会瞬间倾泻
+	# 观察到原死亡淡出应结束的0.5s之后；_respawn必须自行取消旧tween，测试不能强制显形。
+	# 同时守住全部技能、普通攻击/连击及预输入，而不只依赖蓝量和两项冷却判断。
 	var mp_ok: bool = _player.current_mp >= _player.stats.max_mp() - 0.5
-	var cd_ok: bool = _player._dash_cd <= 0.0 and _player._empower_cd <= 0.0
-	if mp_ok and cd_ok:
-		print("  PASS  死亡期间触屏排队未在复活瞬间兑现（MP/CD 完好）")
+	var cds := {}
+	var cd_ok := true
+	for property: String in ["_attack_cooldown", "_dash_cd", "_heavy_cd", "_bolt_cd", "_heal_cd", "_empower_cd"]:
+		var remaining := float(_player.get(property))
+		cds[property] = remaining
+		cd_ok = cd_ok and remaining <= 0.0
+	var action_ok: bool = (
+		_player._combo == 0 and _player._attack_timer <= 0.0
+		and _player._attack_anim_linger <= 0.0 and _player._dash_timer <= 0.0
+		and _player._skill_action.is_empty() and not _player._attack_buffered
+		and _player._attack_buffer_timer <= 0.0)
+	var life_ok: bool = not _player._is_dead and _player.visible
+	if mp_ok and cd_ok and action_ok and life_ok:
+		print("  PASS  死亡期间触屏排队未在复活瞬间兑现（六键/MP/全部冷却/显形完好）")
 	else:
 		_death_input_fails += 1
-		print("  FAIL  复活瞬间输入爆发（MP %.0f/%.0f，dash_cd %.1f）" % [
-			_player.current_mp, _player.stats.max_mp(), _player._dash_cd])
+		print("  FAIL  复活瞬间输入爆发（MP %.0f/%.0f，冷却 %s，动作 %s，存活显形 %s）" % [
+			_player.current_mp, _player.stats.max_mp(), str(cds), str(action_ok), str(life_ok)])
 
 
 ## 法弹多重命中回归锁：两只重叠怪 + 一发弹 = 恰好一只掉血
@@ -847,6 +866,9 @@ func _process(delta: float) -> void:
 
 
 func _step() -> void:
+	# 单次碰撞与死亡六键检查结束前，不得进入下一段或由猎杀机器人制造新动作。
+	if _bolt_multi_timer >= 0.0 or _death_input_timer >= 0.0:
+		return
 	# 前摇距离观察未完成前，不能开始猎杀同一靶或移动被观察玩家。
 	if _windup_timer >= 0.0:
 		return
@@ -891,7 +913,7 @@ func _step() -> void:
 	# 与后续段重叠会污染蓝量观察窗
 	if _empower_check_timer >= 0.0:
 		return
-	# 段序约束：死亡输入段的 0.3s 观察窗内不能有其他花蓝动作——
+	# 段序约束：死亡输入段的 0.7s 观察窗内不能有其他战斗动作——
 	# 法弹多重命中段要先做完（它自己会射一发 -8 MP）
 	if not _bolt_multi_verified:
 		_verify_bolt_multihit()

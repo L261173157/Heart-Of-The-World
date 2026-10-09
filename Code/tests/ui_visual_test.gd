@@ -26,11 +26,18 @@ func _run() -> void:
 		_check(image.get_size() == Vector2i(192, 64), "三片丝带已拼合")
 		for x in range(44, 149):
 			_check(image.get_pixel(x, 32).a > 0.95, "丝带阅读面连续无透明断带")
+	var boss_track := HotwTheme.big_bar_base_texture().get_image()
+	_check(boss_track.get_size() == Vector2i(112, 51), "Boss血槽三片拼接并裁掉源图透明间隔")
+	for x in range(16, boss_track.get_width() - 16):
+		_check(boss_track.get_pixel(x, 24).a > 0.95, "Boss空血槽横向连续无透明断口")
 	var hud := preload("res://scenes/ui/hud.tscn").instantiate()
 	add_child(hud)
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var root: Control = hud.get_node("Root")
+	var boss_background: StyleBoxTexture = hud.get("_boss_bar").get_theme_stylebox("background")
+	_check(boss_background.texture == HotwTheme.big_bar_base_texture(), "实际Boss血条使用连续拼接槽")
+	await _test_boss_toast_layout(hud)
 	var controls: Array[String] = ["AttackBtn", "ShieldBtn", "DashBtn", "ShortcutBtn", "QuickSlotBtn", "MoreBtn"]
 	for canvas: Vector2 in [Vector2(1280, 720), Vector2(1560, 720), Vector2(1280, 960), Vector2(1160, 680)]:
 		root.set_anchors_preset(Control.PRESET_TOP_LEFT)
@@ -171,6 +178,82 @@ func _run() -> void:
 	if _fails == 0:
 		print("=== UI VISUAL REGRESSION PASSED (%d checks) ===" % _checks)
 	get_tree().quit(0 if _fails == 0 else 1)
+
+
+## 真实视口与安全区根节点共同排版；覆盖遭遇、阶段提示、隐藏和再次遭遇。
+func _test_boss_toast_layout(hud: CanvasLayer) -> void:
+	var root: Control = hud.get_node("Root")
+	var boss: Control = hud.get("_boss_layer")
+	var boss_bar: ProgressBar = hud.get("_boss_bar")
+	var minimap: Control = root.get_node("Minimap")
+	var toast: Label = hud.get("toast_label")
+	for canvas: Vector2i in [Vector2i(1280, 720), Vector2i(1560, 720), Vector2i(1024, 640)]:
+		get_tree().root.size = canvas
+		get_tree().root.content_scale_size = canvas
+		get_tree().root.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
+		get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
+		await get_tree().process_frame
+		await get_tree().process_frame
+		_check(get_viewport().get_visible_rect().size == Vector2(canvas), "Boss播报使用真实视口 %s" % canvas)
+		for inset: float in [0.0, 36.0]:
+			root.set_anchors_preset(Control.PRESET_TOP_LEFT)
+			root.position = Vector2(inset, inset * 0.5)
+			root.size = Vector2(canvas) - Vector2(inset * 2.0, inset)
+			await get_tree().process_frame
+			EventBus.boss_tracked.emit(false, "")
+			var normal_top := toast.position.y
+			_check(is_equal_approx(normal_top, 154.0), "无Boss时保留原播报位置")
+			for message: String in ["熔岩龟王出现了", "熔岩龟王：第二阶段"]:
+				EventBus.boss_tracked.emit(true, "熔岩龟王")
+				hud.set("_toast_timer", 0.0)
+				if message.ends_with("第二阶段"):
+					EventBus.hint_requested.emit(message)
+				else:
+					EventBus.world_event.emit(message)
+				_check(toast.position.y >= boss.position.y + boss.get_combined_minimum_size().y + 12.0,
+					"Boss首帧即为播报预留名牌与血条高度")
+				await get_tree().process_frame
+				await get_tree().process_frame
+				_check(boss.is_visible_in_tree() and toast.modulate.a > 0.0 and toast.text == message,
+					"真实事件显示Boss与对应播报 " + message)
+				_check(not toast.get_global_rect().grow(10).intersects(boss.get_global_rect()),
+					"播报含收据外扩不覆盖Boss名牌或血条 %s / %s" % [canvas, inset])
+				_check(root.get_global_rect().encloses(toast.get_global_rect().grow(10)),
+					"Boss播报与外扩在安全内容区内 %s / %s" % [canvas, inset])
+				for hp: float in [100.0, 50.0, 10.0]:
+					EventBus.boss_hp_changed.emit(hp, 100.0)
+					await get_tree().process_frame
+					_check(is_equal_approx(boss_bar.value, hp) and boss.get_global_rect().end.x <= minimap.get_global_rect().position.x - 12.0,
+						"满血/半血/低血Boss名牌血槽与雷达保留12px间距 %s / %s / %s" % [canvas, inset, hp])
+					_check(root.get_global_rect().encloses(boss.get_global_rect()) and not toast.get_global_rect().grow(10).intersects(boss.get_global_rect()),
+						"Boss各血量保持安全区与播报间距")
+					_check(not boss.get_global_rect().intersects((hud.get("_hud_plate") as Control).get_global_rect()),
+						"Boss窄屏适配不压到左侧角色状态")
+				EventBus.boss_tracked.emit(false, "")
+				_check(not boss.visible and is_equal_approx(toast.position.y, normal_top),
+					"离开Boss即时恢复播报位置且不会重复累积偏移")
+			# 活跃遭遇中安全区重排不能把提示重置回血条内；同帧三行仍完整容纳。
+			EventBus.boss_tracked.emit(true, "熔岩龟王")
+			hud.set("_toast_timer", 0.0)
+			EventBus.world_event.emit("熔岩龟王出现了")
+			EventBus.hint_requested.emit("注意躲开蓄力重击")
+			EventBus.hint_requested.emit("熔岩龟王：第二阶段")
+			root.size.y -= 24.0
+			await get_tree().process_frame
+			await get_tree().process_frame
+			_check(toast.text.split("\n").size() == 3 and not toast.get_global_rect().grow(10).intersects(boss.get_global_rect()),
+				"活跃Boss随安全区重排后仍避让三行合并播报")
+			_check(root.get_global_rect().encloses(toast.get_global_rect().grow(10)), "合并播报保留安全区边界")
+			root.size.y += 24.0
+			EventBus.boss_tracked.emit(false, "")
+			_check(is_equal_approx(toast.position.y, normal_top), "安全区重排后隐藏Boss仍恢复原播报位置")
+	# 恢复后续既有模态和六键测试的基准视口。
+	get_tree().root.size = Vector2i(1280, 720)
+	get_tree().root.content_scale_size = Vector2i(1280, 720)
+	root.position = Vector2.ZERO
+	root.size = Vector2(1280, 720)
+	await get_tree().process_frame
+	await get_tree().process_frame
 
 
 ## 由视口走 GUI 焦点分发，不能以直接调用回调替代模态输入验证。

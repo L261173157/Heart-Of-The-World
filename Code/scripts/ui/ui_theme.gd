@@ -225,6 +225,23 @@ static func ribbon_texture(color_idx: int) -> Texture2D:
 	return tex
 
 
+## BigBar_Base 与丝带同为三片素材；先拼接再裁透明边，避免空血槽出现断口。
+static func big_bar_base_texture() -> Texture2D:
+	var key := "big_bar_base"
+	if _texture_cache.has(key):
+		return _texture_cache[key]
+	var source: Texture2D = load(TS_UI + "/Bars/BigBar_Base.png")
+	var src := source.get_image()
+	if src.is_compressed():
+		src.decompress()
+	var strip := Image.create(192, 64, false, Image.FORMAT_RGBA8)
+	for i in 3:
+		strip.blit_rect(src, Rect2i(i * 128, 0, 64, 64), Vector2i(i * 64, 0))
+	var tex := ImageTexture.create_from_image(strip.get_region(strip.get_used_rect()))
+	_texture_cache[key] = tex
+	return tex
+
+
 static func ribbon_tag(text: String, color_idx := 0, min_width := 200.0) -> Control:
 	var atlas: Texture2D = load(RIBBONS)
 	var holder := Control.new()

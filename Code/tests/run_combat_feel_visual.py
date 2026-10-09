@@ -17,7 +17,7 @@ EXPECTED = {
     *[f'enemy_{action}_{phase}' for action in ['melee', 'ranged'] for phase in ['windup', 'impact', 'recovery']],
     'enemy_charge_windup', 'enemy_charge_active', 'enemy_charge_recovery',
     *[f'boss_{action}_{phase}' for action in ['stomp', 'sweep', 'eruption'] for phase in ['windup', 'impact', 'recovery']],
-    'boss_phase_transition', 'boss_phase_two_ready',
+    'boss_phase_transition', 'boss_phase_two_ready', 'boss_hp_low',
 }
 
 def main() -> int:

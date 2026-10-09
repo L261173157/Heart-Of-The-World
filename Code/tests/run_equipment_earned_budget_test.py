@@ -58,7 +58,7 @@ def run_suite(args, parser, godot: str, root: Path, env: dict[str, str]) -> int:
         "source": "13 genuine main-story producer processes unless --from-save is explicitly supplied",
         "budget": "291 actual gold: weapon1/vigor2 upgrades190, white sword50+shield50, balance1; then actual C6:s1 pays12",
         "equipment": "real lava travel/exploration unlocks ilvl10; actual offer/purchase/equip services; fixed white only",
-        "combat": "unchanged existing expert touch/AI-state bot; original live Boss, real collision and damage",
+        "combat": "expert touch bot observes committed circle/sector/ground-target telegraphs, current obstacles and own cooldowns with 180ms reaction delay and 18px clearance; casts only in visible recovery; actual movement/dash/cast/recovery; original live Boss, real collision and damage",
         "limits": "frozen ecology/unrelated actors during combat, normal natural regeneration, five paid food; no human or iPhone performance claim",
     }
     evidence.write()

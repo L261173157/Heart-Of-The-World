@@ -284,7 +284,7 @@ func _boss_actions() -> void:
 	_player.teleport_to(_origin)
 	_player.current_hp = _player.stats.max_hp()
 	# 正式承伤触发半血阶段；不是直接改阶段或摆出环形图案。
-	var amount := (boss.current_hp - boss.inst.max_hp() * 0.45) / (1.0 - boss.inst.species.defense_reduction)
+	var amount := (boss.current_hp - boss.inst.max_hp() * 0.5) / (1.0 - boss.inst.species.defense_reduction)
 	boss.take_damage(amount, _player.global_position, true)
 	_check(boss.state == Guardian.S_PHASE_CHANGE and boss._boss_phase == 2, "真实半血承伤触发第二阶段")
 	await _frames(40)
@@ -294,6 +294,13 @@ func _boss_actions() -> void:
 	boss._attack_cd = 0.0
 	await _boss_move_capture(boss, Guardian.MOVE_ERUPTION, "eruption")
 	boss.set_physics_process(false)
+	# 低血条取正式承伤后的真实HUD；不绘制或替换血条像素。
+	var low_damage := (boss.current_hp - boss.inst.max_hp() * 0.1) / (1.0 - boss.inst.species.defense_reduction)
+	boss.take_damage(low_damage, _player.global_position)
+	await _until(func(): return not is_instance_valid(boss._impact_feedback) or not boss._impact_feedback.active, "低血截图受击闪光结束")
+	await _frames(45)
+	_check(absf(boss.current_hp / boss.inst.max_hp() - 0.1) < 0.001, "Boss真实承伤至10%生命")
+	await _capture("boss_hp_low")
 
 func _boss_move_capture(boss: Guardian, move: int, tag: String) -> void:
 	await _until(func(): return boss.state == Guardian.S_WINDUP and boss._current_move == move, "Boss " + tag + "前摇")
@@ -311,12 +318,14 @@ func _capture(name: String) -> void:
 	if not _headless:
 		await RenderingServer.frame_post_draw
 	_capture_phase_contract(name)
+	_boss_toast_contract(name)
 	var record := {"name": name, "physics_frame": Engine.get_physics_frames(),
 		"player_position": [_player.global_position.x, _player.global_position.y],
 		"player_animation": str(_player.visual.animation), "player_frame": _player.visual.frame,
 		"attack_elapsed": _player._attack_elapsed, "skill": _player._skill_action,
 		"skill_elapsed": _player._skill_elapsed, "skill_released": _player._skill_released,
-		"player_hp": _player.current_hp, "player_mp": _player.current_mp}
+		"player_hp": _player.current_hp, "player_mp": _player.current_mp,
+		"hud_bounds": _hud_bounds_record()}
 	if is_instance_valid(_target):
 		record.merge({"enemy_species": _target.inst.species.species_name,
 			"enemy_state": _target.state, "enemy_animation": str(_target.visual.animation),
@@ -393,3 +402,29 @@ func _capture_phase_contract(name: String) -> void:
 			_check(_target.state == Guardian.S_RECOVER and not _target._ring.visible, name + "真实可反击恢复窗")
 		elif name == "boss_phase_transition":
 			_check(_target.state == Guardian.S_PHASE_CHANGE and _target._ring.shape == 3, name + "真实无伤过渡")
+
+## 原图发现的Boss条/阶段提示遮挡必须成为门禁，不能只验节点visible。
+func _boss_toast_contract(name: String) -> void:
+	if not _hud._boss_layer.is_visible_in_tree():
+		return
+	var root: Control = _hud.get_node("Root")
+	var boss_rect: Rect2 = _hud._boss_layer.get_global_rect()
+	_check(root.get_global_rect().encloses(boss_rect), name + "Boss标题与血条位于安全区")
+	var radar_rect: Rect2 = root.get_node("Minimap").get_global_rect()
+	_check(not boss_rect.intersects(radar_rect), name + "Boss丝带与雷达不重叠")
+	_check(radar_rect.position.x - boss_rect.end.x >= 11.5, name + "Boss丝带与雷达至少12px间隔")
+	if _hud.toast_label.is_visible_in_tree() and _hud.toast_label.modulate.a > 0.05 			and not _hud.toast_label.text.is_empty():
+		var toast_rect: Rect2 = _hud.toast_label.get_global_rect()
+		_check(not toast_rect.intersects(boss_rect.grow(1.0)), name + "真实提示与Boss条不重叠")
+		_check(root.get_global_rect().encloses(toast_rect), name + "真实提示完整位于安全区")
+
+func _rect_values(rect: Rect2) -> Array:
+	return [rect.position.x, rect.position.y, rect.size.x, rect.size.y]
+
+func _hud_bounds_record() -> Dictionary:
+	return {"boss_visible": _hud._boss_layer.is_visible_in_tree(),
+		"boss_rect": _rect_values(_hud._boss_layer.get_global_rect()),
+		"boss_bar_rect": _rect_values(_hud._boss_bar.get_global_rect()),
+		"radar_rect": _rect_values(_hud.get_node("Root/Minimap").get_global_rect()),
+		"toast_rect": _rect_values(_hud.toast_label.get_global_rect()),
+		"toast_alpha": _hud.toast_label.modulate.a, "toast_text": _hud.toast_label.text}

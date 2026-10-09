@@ -14,6 +14,9 @@ var _ui_costs: Array = []
 var _retreat_direction := Vector2.ZERO
 var _retreat_active := false
 var _close_probe := false
+const WARNING_ESCAPE_MARGIN := 18.0
+const WARNING_REACTION_TIME := 0.18
+var _warning_reaction_remaining := 0.0
 
 func _physics_process(delta: float) -> void:
 	if _combat_active: _combat_seconds += delta
@@ -127,6 +130,8 @@ func _prepare_earned() -> void:
 		"equipment_build":_earned_equipment_report(),"player_position":[_player.global_position.x,_player.global_position.y],"setup":"genuine C5 ledger; discard capacity fixture stock; retain only paid chapter bonuses; shop methods; natural rest; real campaign travel and walking; freeze ecology/unrelated actors"}))
 
 func _fight_earned(reckless: bool) -> void:
+	# 每个冷进程在开战前记录实际加载的驾驶逻辑版本；与较早的主线来源生成快照区分。
+	var combat_driver_sha256 := FileAccess.get_sha256("res://tests/campaign_earned_boss_test.gd")
 	var boss := _original_boss()
 	_check(boss != null and boss.is_alive,"cold original turtle remains alive")
 	if boss == null: return
@@ -168,6 +173,7 @@ func _fight_earned(reckless: bool) -> void:
 	var frame := 0
 	var guard_demo_done := false
 	var open_hit_done := false
+	var observed_warnings := {"stomp": 0, "sweep": 0, "eruption": 0}
 	_world.set_process(false)
 	body.set_physics_process(true)
 	_player.set_physics_process(true)
@@ -197,7 +203,8 @@ func _fight_earned(reckless: bool) -> void:
 				else: TouchInput.release_guard()
 				guard_demo_done = true
 		else:
-			if _player.current_hp < _player.stats.max_hp()*0.64 and GameState.count_item("onigiri") > 0:
+			if _player.current_hp < _player.stats.max_hp()*0.64 and GameState.count_item("onigiri") > 0 \
+					and body.state != Guardian.S_WINDUP:
 				if _mobile:
 					var food_before := GameState.count_item("onigiri")
 					await _mobile_tap(_hud.get_node("Root/QuickSlotBtn"))
@@ -207,8 +214,17 @@ func _fight_earned(reckless: bool) -> void:
 				if not _retreat_active:
 					_retreat_direction = _choose_retreat(body)
 					_retreat_active = true
-				TouchInput.move_vector = _retreat_direction if distance < 148.0 else Vector2.ZERO
-				if (body._state_timer < 0.12 or dash_inputs == 0) and distance < 126.0 and _player._dash_cd <= 0 and _player.current_mp >= CharacterStats.DASH_COST:
+					_warning_reaction_remaining = WARNING_REACTION_TIME
+				_warning_reaction_remaining = maxf(0.0, _warning_reaction_remaining - get_physics_process_delta_time())
+				# 消费屏幕上已经锁定的圆圈/扇形/落点，不按 Boss 距离猜所有招式。
+				var clearance := _warning_clearance(body, _player.global_position)
+				TouchInput.move_vector = _retreat_direction if clearance < WARNING_ESCAPE_MARGIN \
+					and _warning_reaction_remaining <= 0.0 else Vector2.ZERO
+				# 只看正在变亮的地面进度：过半仍未走出才冲刺，不读取伤害结算倒计时。
+				# 每次先留180ms反应时间；第一次仍真实展示一次付费冲刺。
+				if clearance < WARNING_ESCAPE_MARGIN and _warning_reaction_remaining <= 0.0 \
+						and (dash_inputs == 0 or body._ring.progress >= 0.55) \
+						and _player._dash_cd <= 0 and _player.current_mp >= CharacterStats.DASH_COST:
 					if _mobile: _press_control("DashBtn")
 					else: TouchInput.queue_dash()
 					dash_inputs += 1
@@ -219,11 +235,12 @@ func _fight_earned(reckless: bool) -> void:
 					if _mobile: _press_control("AttackBtn")
 					else: TouchInput.queue_attack()
 					attack_inputs += 1
-					if _player._empower_cd <= 0 and _player.current_mp >= 55 and body._attack_cd > 2.0:
+					if _player._empower_cd <= 0 and _player.current_mp >= 55 and body.state == Guardian.S_RECOVER:
 						if _mobile: await _more_skill("EmpowerBtn","empower",CharacterStats.EMPOWER_COST)
 						else: TouchInput.queue_empower()
 						empower_inputs += 1
-					if _player._heavy_cd <= 0 and _player.current_mp >= 40 and body.state != Guardian.S_WINDUP and body._attack_cd > 1.0:
+					if _player._heavy_cd <= 0 and _player.current_mp >= 40 and _player._skill_action.is_empty() \
+							and body.state == Guardian.S_RECOVER:
 						if _mobile:
 							var mp_before := _player.current_mp
 							await _mobile_tap(_hud.get_node("Root/ShortcutBtn"))
@@ -231,7 +248,7 @@ func _fight_earned(reckless: bool) -> void:
 							_check(_player._heavy_cd > 0 and _player.current_mp < mp_before-18.0,"touch preset heavy uses22MP and real4s cooldown")
 						else: TouchInput.queue_heavy()
 						heavy_inputs += 1
-				if _player.current_hp < 55 and _player.current_mp >= 40 and _player._heal_cd <= 0:
+				if _player.current_hp < 55 and _player.current_mp >= 40 and _player._heal_cd <= 0 and body.state == Guardian.S_RECOVER:
 					if _mobile: await _more_skill("HealBtn","heal",CharacterStats.HEAL_COST)
 					else: TouchInput.queue_heal()
 					heals += 1
@@ -240,8 +257,14 @@ func _fight_earned(reckless: bool) -> void:
 		if _player.guard_state in ["raising","guarding"]: guard_frames += 1
 		if _player._dash_cd > old_dash_cd+0.1: actual_dashes += 1
 		old_dash_cd = _player._dash_cd
-		if body.state == Guardian.S_WINDUP and old_state != Guardian.S_WINDUP: windups += 1
-		if body.state != Guardian.S_WINDUP and old_state == Guardian.S_WINDUP: smashes += 1
+		if body.state == Guardian.S_WINDUP and old_state != Guardian.S_WINDUP:
+			windups += 1
+			var warning_name: String = ["stomp", "sweep", "eruption"][body._ring.shape]
+			observed_warnings[warning_name] += 1
+			print("EARNED_TELEGRAPH ", JSON.stringify({"seconds": _combat_seconds, "shape": warning_name,
+				"radius": body._ring.radius, "position": [body._ring.global_position.x, body._ring.global_position.y],
+				"player_position": [_player.global_position.x, _player.global_position.y]}))
+		if body.state == Guardian.S_RECOVER and old_state == Guardian.S_WINDUP: smashes += 1
 		old_state = body.state
 		if _player.current_hp < previous_hp-1.0: hits += 1
 		previous_hp = _player.current_hp
@@ -258,7 +281,8 @@ func _fight_earned(reckless: bool) -> void:
 	var report := {"scenario":"reckless" if reckless else ("mobile_expert_main_only" if _mobile else "expert_main_only"),"seconds":_combat_seconds,"loop_seconds":frame/60.0,"ui_costs":_ui_costs,"won":not boss.is_alive,"died":_player._is_dead,"hp_start":initial_hp,"hp_end":_player.current_hp,"hp_min":min_hp,"mp_min":min_mp,
 		"boss_hp_start":initial_boss_hp,"boss_hp_end":body.current_hp,"boss_id":boss.id,"boss_age":boss.age,"boss_anchor_unchanged":boss.spawn_pos==initial_anchor,"windups":windups,"smashes":smashes,"damage_events":hits,"boss_walked_px":distance_travelled,
 		"guard_active_frames":guard_frames,"actual_dashes":actual_dashes,"food_used":food_start-GameState.count_item("onigiri"),"attack_inputs":attack_inputs,"dash_inputs":dash_inputs,"shield_inputs":guard_inputs,"heavy_inputs":heavy_inputs,"empower_inputs":empower_inputs,"heals":heals,"gold_before_kill":start_gold,
-		"equipment_build":_earned_equipment_report(),"limitations":"expert frame-aware AI-state bot; frozen ecology/unrelated actors; no damage/stat/HP/anchor/invulnerability edits; genuine C1-C5 ledger, bounded cleaned stock; normal natural regen; 1/60 game-second physics"}
+		"combat_driver_sha256": combat_driver_sha256, "observed_warnings": observed_warnings, "reaction_seconds": WARNING_REACTION_TIME, "escape_margin_px": WARNING_ESCAPE_MARGIN,
+		"equipment_build":_earned_equipment_report(),"limitations":"expert frame-aware bot classifies visible windup/recovery via production states, reads committed ground telegraph geometry, own cooldowns and current obstacles; 180ms warning reaction delay; real touch movement/dash/attacks and cast/recovery timing; frozen ecology/unrelated actors; no damage/stat/HP/anchor/invulnerability edits; genuine C1-C5 ledger, bounded cleaned stock; normal natural regen; 1/60 game-second physics; not human or iPhone acceptance"}
 	print("EARNED_COMBAT_RESULT ",JSON.stringify(report))
 	_check(boss.age == age and boss.spawn_pos == initial_anchor,"original Boss age and anchor not modified")
 	_check(windups > 0 and smashes > 0 and hits > 0,"original AI attacked and truly damaged normal player")
@@ -275,23 +299,45 @@ func _fight_earned(reckless: bool) -> void:
 			if not await _do_action(actions[1],"defeated"): return
 			await _do_action(actions[2])
 
-func _choose_retreat(body: MonsterBase) -> Vector2:
-	var outward := body.global_position.direction_to(_player.global_position)
+## 正值表示离真实预警边界有余量；扇形可径向撤出，也可以侧移穿过边缘。
+## 只读已显示的锁定圈，不读取下一招、随机种子或改写世界/战斗数据。
+func _warning_clearance(body: Guardian, point: Vector2) -> float:
+	var ring := body._ring
+	if ring == null or not ring.visible or ring.shape == 3:
+		return INF
+	var offset := point - ring.global_position
+	var distance := offset.length()
+	var clearance := distance - ring.radius
+	if ring.shape == 1 and distance > 0.0:
+		var angle := acos(clampf(ring.direction.dot(offset / distance), -1.0, 1.0))
+		var edge_clearance := distance * sin(clampf(angle - ring.half_angle, -PI * 0.5, PI * 0.5))
+		clearance = maxf(clearance, edge_clearance)
+	return clearance
+
+func _choose_retreat(body: Guardian) -> Vector2:
+	var outward := body._ring.global_position.direction_to(_player.global_position)
+	if outward.is_zero_approx():
+		outward = body.global_position.direction_to(_player.global_position)
 	var query := _walk_query()
 	var best := outward
 	var best_score := -INF
-	for step in 16:
-		var direction := outward.rotated(step*TAU/16.0)
-		var reachable := 0.0
-		for distance: float in [16.0,32.0,48.0,64.0,80.0,96.0,112.0,128.0,144.0]:
-			var at := _player.global_position+direction*distance
-			if _walk_blocked(at,query) or ObstacleField.liquid_kind_at(at) == "lava": break
-			reachable = distance
-		var endpoint := _player.global_position+direction*reachable
-		var score := body.global_position.distance_to(endpoint)+reachable*0.2
-		if score > best_score:
-			best_score = score
-			best = direction
+	# 在当前实物障碍/熔岩约束内找最短安全直走路线；未找到完整出口则选离危险最远的可达点。
+	for step in 24:
+		var direction := outward.rotated(step * TAU / 24.0)
+		for travel in range(8, 193, 8):
+			var at := _player.global_position + direction * float(travel)
+			if _walk_blocked(at, query) or ObstacleField.liquid_kind_at(at) == "lava":
+				break
+			var clearance := _warning_clearance(body, at)
+			var safe := clearance >= WARNING_ESCAPE_MARGIN
+			var score := 1000.0 - float(travel) if safe else clearance
+			# 相同路程优先留下可回身反击的距离，而非一路跑到堡垒墙角。
+			score -= body.global_position.distance_to(at) * 0.01
+			if score > best_score:
+				best_score = score
+				best = direction
+			if safe:
+				break
 	return best
 
 func _control_touch(id: String, pressed: bool, index := 7) -> void:
