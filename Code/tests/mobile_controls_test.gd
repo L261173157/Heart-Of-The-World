@@ -144,6 +144,9 @@ func _test_multitouch_combat() -> void:
 	_touch_event(4, _center("AttackBtn"), false)
 	await _physics(2)
 	_check(_player._combo == combo, "空白区起触滑入攻击不误出刀")
+	# 法弹有真实收势；下一种技能的独立触控验证从动作结束开始。
+	while not _player._skill_action.is_empty():
+		await _physics(1)
 	_player._heavy_cd = 0
 	_player._dash_cd = 0
 	_player._heal_cd = 0

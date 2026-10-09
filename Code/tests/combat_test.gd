@@ -34,6 +34,7 @@ var _dash_fails := 0
 var _heavy_verified := false
 var _heavy_fails := 0
 var _bolt_verified := false
+var _bolt_verification_running := false
 var _bolt_fails := 0
 ## 法弹命中异步校验：靶怪与发射前血量（collision_mask 漏配曾致法弹永不命中，此处锁回归）
 var _bolt_target: MonsterBase
@@ -78,7 +79,7 @@ var _bolt_multi_a: MonsterBase
 var _bolt_multi_b: MonsterBase
 var _bolt_multi_hp_a := 0.0
 var _bolt_multi_hp_b := 0.0
-## 近战前摇 1.1× 距离门：1.05× 内命中、1.15× 外取消（翻案项回归锁）
+## 近战前摇1.1×距离门：闸内命中、1.15×外空挥；两者均付出冷却/收招。
 var _windup_verified := false
 var _windup_fails := 0
 var _windup_timer := -1.0
@@ -121,6 +122,10 @@ var _windup_target: MonsterBase
 ## 摆位锚点：观察窗内每帧把玩家钉回原位（营地围攻的击退会把玩家
 ## 推出 1.1× 距离门，距离门测的是固定站桩语义）
 var _windup_stand_pos := Vector2.INF
+var _windup_attack_id := ""
+var _windup_paused_actors: Array[Node] = []
+var _windup_sim_was_processing := false
+var _windup_player_was_processing := false
 
 
 ## 冲刺技能验证：MP 消耗 + 位移窗口 + 无敌帧 + 冷却拦截
@@ -188,7 +193,8 @@ func _verify_bolt() -> void:
 		return
 	_player.current_mp = _player.stats.max_mp()
 	var mp_before: float = _player.current_mp
-	var bolts_before := get_tree().get_nodes_in_group("player_bolts").size()
+	var bolts_before := _player._equipment_root_serial
+	_bolt_verification_running = true
 	_player._try_cast_bolt()
 	if not (_player.current_mp < mp_before):
 		_bolt_fails += 1
@@ -201,10 +207,14 @@ func _verify_bolt() -> void:
 	if _player.current_mp < mp_second:
 		_bolt_fails += 1
 		print("  FAIL  冷却未拦截连续法弹")
-	var bolts_after := get_tree().get_nodes_in_group("player_bolts").size()
+	while not _player._skill_released:
+		await get_tree().physics_frame
+	var bolts_after := _player._equipment_root_serial
 	if bolts_after <= bolts_before:
 		_bolt_fails += 1
 		print("  FAIL  法弹弹体未生成")
+	while not _player._skill_action.is_empty():
+		await get_tree().physics_frame
 	# 命中验证：贴脸对准靶怪补射一发（弹体出生即与其碰撞体重叠，规避走位抖动），稍后校验掉血
 	var target := _find_alive_any()
 	var dir := (target.global_position - _player.global_position).normalized()
@@ -219,6 +229,7 @@ func _verify_bolt() -> void:
 	_bolt_target = target
 	_bolt_check_timer = 0.0
 	_bolt_verified = true
+	_bolt_verification_running = false
 	if _bolt_fails == 0:
 		print("  PASS  法弹技能（MP 消耗/冷却拦截/弹体生成；命中判定稍后输出）")
 
@@ -582,6 +593,12 @@ func _verify_bolt_multihit() -> void:
 		_teleport_to_any_populated()
 		return
 	_bolt_multi_retries = 0
+	# 新施法前摇期间保持这组真实碰撞体重叠，避免测成随机走位躲弹。
+	a.set_physics_process(false)
+	b.set_physics_process(false)
+	_player._knockback = Vector2.ZERO
+	_player._move_vel = Vector2.ZERO
+	_player._protect_timer = maxf(_player._protect_timer, 0.4)
 	b.global_position = a.global_position  # 完全重叠
 	_player.global_position = a.global_position - Vector2(40.0, 0.0)
 	_player.facing = Vector2.RIGHT
@@ -601,6 +618,9 @@ func _bolt_multi_check(delta: float) -> void:
 	if _bolt_multi_timer < 0.3:
 		return
 	_bolt_multi_timer = -1.0
+	for target in [_bolt_multi_a, _bolt_multi_b]:
+		if is_instance_valid(target):
+			target.set_physics_process(true)
 	# 检查窗内个体被释放（0.3s 内法弹击杀或生态层死亡/捕食/流式回收，与守卫
 	# 无关）→ 本轮作废换对重测（调度器下步重进 _verify_bolt_multihit）；预算
 	# 5 轮后按「已释放=被打死=受损」兜底判定，不再静默 SCRIPT ERROR
@@ -619,14 +639,11 @@ func _bolt_multi_check(delta: float) -> void:
 		print("  FAIL  法弹多重命中守卫失效（a受损 %s / b受损 %s）" % [a_damaged, b_damaged])
 
 
-## 近战前摇距离门（1.1×）：1.05× 站桩应命中；1.15× 前摇结束应取消出刀不结算。
-## 旧实现 1.2× 容差下 1.15× 的出刀照 hit——本用例锁住翻案后的边界
+## 真实前摇距离门：起手后才移出1.15×范围，并检查该招唯一ID是否被玩家处理。
+## 空挥也进入冷却/收招，不能再把“冷却>0”误当成“已伤害玩家”。
 func _verify_windup_band() -> void:
 	var m := _find_melee()
 	if m == null:
-		# v4 流式世界（据点式）：本地无近战原型 → 传送到 melee 原型物种据点
-		# （火把哥布林 = melee_swarm 基础怪；上一段死亡测试把玩家留在重生点=斑块中心，
-		# 那里 2400 内无营地），下步重试（预算 10 步）
 		if _windup_retries > 10:
 			_windup_fails += 1
 			print("  FAIL  场上无基础近战原型可验证前摇距离门")
@@ -637,72 +654,102 @@ func _verify_windup_band() -> void:
 		return
 	_windup_retries = 0
 	_windup_target = m
-	# 残血靶会触发逃跑 AI（_wants_flee 把 S_ATTACK 切成 S_FLEE，前摇静默取消）
-	# ——前序段 AOE 误伤过的怪当选靶时压回满血
+	# 只隔离这不到一秒的距离观察窗。真正被测目标仍走原物理/RVO和完整出招。
+	_windup_sim_was_processing = WorldSim.is_processing()
+	WorldSim.set_process(false)
+	_windup_player_was_processing = _player.is_physics_processing()
+	_player.teleport_to(m.global_position + Vector2(m.inst.species.attack_range * 0.9, 0.0))
+	_player.set_physics_process(false)
+	for body: Node in get_tree().get_nodes_in_group("monsters"):
+		if body != m and body.is_physics_processing():
+			_windup_paused_actors.append(body)
+			body.set_physics_process(false)
+			(body as MonsterBase)._clear_attack_context()
 	m.current_hp = m.inst.max_hp()
-	m._attack_cd = 0.0
-	m.state = MonsterBase.S_ATTACK
-	m._melee_windup = 0.05
-	_player._hurt_iframes = 0.0
-	# 复活保护帧会吞掉 1.05× 的出刀命中（上一段死亡测试刚 _respawn 过）。
-	# 摆位 0.9×（闸内留 3px+ 余量而非贴 1.0× 正缘：RVO 邻怪挤碰可把靶怪推出
-	# 1~2px，贴缘摆位实测 6 跑 1 挂——距离门语义不变：闸内命中/闸外取消）
-	_player._protect_timer = 0.0
-	_player.global_position = m.global_position + Vector2(m.inst.species.attack_range * 0.9, 0.0)
+	_prepare_windup_actor(m)
 	_windup_stand_pos = _player.global_position
 	_windup_phase = 1
 	_windup_timer = 0.0
-	_windup_verified = true  # 异步推进
+	_windup_verified = true
+
+
+func _prepare_windup_actor(m: MonsterBase) -> void:
+	m._clear_attack_context()
+	m._attack_cd = 0.0
+	m._melee_windup = 0.0
+	m._attack_recovery = 0.0
+	m._stagger_timer = 0.0
+	m._knockback = Vector2.ZERO
+	m.state = MonsterBase.S_ATTACK
+	m._player_ref = _player
+	_player._hurt_iframes = 0.0
+	_player._protect_timer = 0.0
+	_player._dash_timer = 0.0
+	_player._knockback = Vector2.ZERO
+	_windup_attack_id = ""
+
+
+func _finish_windup_band() -> void:
+	_windup_timer = -1.0
+	_windup_stand_pos = Vector2.INF
+	WorldSim.set_process(_windup_sim_was_processing)
+	_player.set_physics_process(_windup_player_was_processing)
+	_player._knockback = Vector2.ZERO
+	for body in _windup_paused_actors:
+		if is_instance_valid(body):
+			body.set_physics_process(true)
+	_windup_paused_actors.clear()
 
 
 func _windup_check(delta: float) -> void:
 	_windup_timer += delta
 	var m := _windup_target
-	if m != null and is_instance_valid(m) and _windup_stand_pos != Vector2.INF:
-		_player.global_position = _windup_stand_pos
-	if m == null or not is_instance_valid(m) or m.state == MonsterBase.S_CORPSE:
-		# 靶怪被生态层误杀（捕食/老死竞态，与距离门无关）→ 换靶重跑摆位（预算内）
-		if _windup_retries > 10:
-			_windup_fails += 1
-			print("  FAIL  前摇距离门靶怪连续失效（生态层竞态）")
-			_windup_timer = -1.0
-			return
-		_windup_retries += 1
-		_windup_timer = -1.0
-		_windup_verified = false  # 重走 _verify_windup_band 找新靶
+	if not is_instance_valid(m) or m.state == MonsterBase.S_CORPSE:
+		_windup_fails += 1
+		print("  FAIL  前摇距离门目标在隔离观察窗中失效")
+		_finish_windup_band()
+		return
+	_player.global_position = _windup_stand_pos
+	# 旧弹幕若恰好到场，不让其保护帧掩盖被测攻击；唯一ID仍明确区分来源。
+	_player._hurt_iframes = 0.0
+	if _windup_timer > 2.0:
+		_windup_fails += 1
+		print("  FAIL  真实前摇距离门状态未在预算内完成：阶段%d" % _windup_phase)
+		_finish_windup_band()
 		return
 	match _windup_phase:
-		1:
-			if _windup_timer < 0.2:
+		1, 3:
+			if m._melee_windup <= 0.0 or m._attack_context.is_empty():
 				return
-			# 观察靶怪冷却而非玩家 iframes：营地邻怪的攻击也会置 iframes，
-			# 假信号双向污染；出刀结算才进冷却、被取消保持 0，判据唯一
-			if m._attack_cd > 0.0:
-				print("  PASS  前摇出刀在 1.05× 内命中")
-			else:
-				_windup_fails += 1
-				print("  FAIL  前摇出刀在 1.05× 内未命中（距离门误判出圈？）")
-			# 第二段：1.15× 前摇应被取消。检查窗口取 0.12s——
-			# 早于"取消→追近→二次前摇 0.2s"的合法再命中周期（≈0.3s），
-			# 若第一刀未被取消（旧 1.2× 行为），0.05s 时即结算命中
-			m._attack_cd = 0.0
-			m.state = MonsterBase.S_ATTACK
-			m._melee_windup = 0.05
-			_player._hurt_iframes = 0.0
-			_player._protect_timer = 0.0
-			_player.global_position = m.global_position + Vector2(m.inst.species.attack_range * 1.15, 0.0)
-			_windup_stand_pos = _player.global_position
-			_windup_phase = 2
+			_windup_attack_id = str(m._attack_context["attack_id"])
+			if _windup_phase == 3:
+				# 必须先看到真实预警，再侧撤到射程外，不能从未起手就假通过。
+				_windup_stand_pos = m.global_position + Vector2(m.inst.species.attack_range * 1.15, 0.0)
+				_player.global_position = _windup_stand_pos
+			_windup_phase += 1
 			_windup_timer = 0.0
-		2:
-			if _windup_timer < 0.12:
+		2, 4:
+			if m._melee_windup > 0.0 or not m._attack_context.is_empty() or m._attack_cd <= 0.0:
 				return
-			if m._attack_cd <= 0.0:
-				print("  PASS  前摇期间走出 1.15× 出刀被取消（未结算伤害）")
+			var contacted := _player._guard_seen_attacks.has(_windup_attack_id)
+			if _windup_phase == 2:
+				if contacted and m._attack_recovery > 0.0:
+					print("  PASS  真实前摇在1.1×闸内按唯一攻击ID命中并收招")
+				else:
+					_windup_fails += 1
+					print("  FAIL  闸内真实攻击未接触玩家或缺少收招")
+				_prepare_windup_actor(m)
+				_windup_stand_pos = m.global_position + Vector2(m.inst.species.attack_range * 0.9, 0.0)
+				_player.global_position = _windup_stand_pos
+				_windup_phase = 3
+				_windup_timer = 0.0
 			else:
-				_windup_fails += 1
-				print("  FAIL  1.15× 出圈仍被结算（距离门宽于 1.1×）")
-			_windup_timer = -1.0
+				if not contacted and m._attack_recovery > 0.0:
+					print("  PASS  预警后走出1.15×：本招零接触，空挥仍付冷却和收招")
+				else:
+					_windup_fails += 1
+					print("  FAIL  1.15×出圈仍接触玩家，或空挥未付收招")
+				_finish_windup_band()
 
 
 func _ready() -> void:
@@ -800,6 +847,11 @@ func _process(delta: float) -> void:
 
 
 func _step() -> void:
+	# 前摇距离观察未完成前，不能开始猎杀同一靶或移动被观察玩家。
+	if _windup_timer >= 0.0:
+		return
+	if _bolt_verification_running or not _player._skill_action.is_empty():
+		return
 	if _queue_index >= TARGET_ORDER.size():
 		# 世界 v5 掩体博弈段：六物种猎杀全部收尾后追加（前置曾把 150s 时限
 		# 吃光导致后续观察断言连锁失败——新段一律放队尾）

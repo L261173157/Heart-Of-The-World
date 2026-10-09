@@ -9,6 +9,7 @@ frames_override = ExtResource("2_frames")
 species_name = "熔岩龟王"
 tint = Color(0.75, 0.55, 0.25, 1)
 ai_archetype = "guardian"
+guardian_boss_moves = true
 habitats = Array[String](["lava"])
 base_strength = 12.0
 base_agility = 1.0

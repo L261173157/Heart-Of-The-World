@@ -56,10 +56,16 @@ func _attack_tick(_delta: float, player: Node2D) -> void:
 func _chase_tick(delta: float, player: Node2D) -> void:
 	if player != null and player.visible and _attack_cd <= 0.0 \
 			and global_position.distance_to(player.global_position) < inst.species.charge_trigger_dist:
+		if not _try_attack_slot(player):
+			velocity = _pressure_velocity(player)
+			return
 		state = S_TELL
 		_state_timer = inst.species.charge_tell_time
 		_charge_dir = (player.global_position - global_position).normalized()
 		_begin_attack_warning(player, inst.attack_power() * inst.species.charge_damage_mult)
+		_charge_dir = _attack_aim_dir
+		_show_attack_sector(minf(360.0, inst.move_speed() * _speed_mult() \
+			* inst.species.charge_speed_mult * inst.species.charge_max_time))
 		velocity = Vector2.ZERO
 		set_tint(Color(1.0, 0.85, 0.6))  # 前摇预警色
 		_squash(Vector2(1.12, 0.88), 0.45)  # 低头蹲伏预备
@@ -72,7 +78,13 @@ func _chase_tick(delta: float, player: Node2D) -> void:
 	super(delta, player)
 
 
-func _extra_state_tick(delta: float, _player: Node2D) -> void:
+func _extra_state_tick(delta: float, player: Node2D) -> void:
+	if (state == S_TELL or state == S_CHARGE) and (player == null or not player.visible):
+		_clear_attack_context()
+		velocity = Vector2.ZERO
+		state = S_PATROL
+		_apply_mood_color()
+		return
 	match state:
 		S_TELL:
 			velocity = Vector2.ZERO
@@ -103,7 +115,8 @@ func _extra_state_tick(delta: float, _player: Node2D) -> void:
 ## 为 100，会把物种实际冲锋速度截断到走路速度并提前超时。仍通过基类
 ## 同一物理移动/接触钩子；撞同伴由真实碰撞中止，追击/巡逻继续正常避让。
 func _on_nav_velocity(safe_velocity: Vector2) -> void:
-	super(velocity if state == S_CHARGE else safe_velocity)
+	super(velocity if state == S_CHARGE else Vector2.ZERO \
+		if state == S_TELL or state == S_TIRED else safe_velocity)
 
 
 ## 冲锋终止判定（move_and_slide 之后，当帧碰撞数据）：
@@ -175,6 +188,16 @@ func _end_charge(stunned: bool) -> void:
 	else:
 		state = S_CHASE
 		_apply_mood_color()
+
+
+## 奔跑中的冲撞不被轻易打停；中型蓄力可被重击打断，高韧性仍遵守基类免疫。
+func _can_stagger(heavy: bool) -> bool:
+	return state != S_CHARGE and super(heavy)
+
+
+func _on_staggered() -> void:
+	_state_timer = 0.0
+	_attack_cd = maxf(_attack_cd, 0.4)
 
 
 func _apply_mood_color() -> void:

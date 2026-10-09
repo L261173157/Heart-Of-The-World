@@ -12,6 +12,7 @@ const Skill := preload("res://scripts/character/character_stats.gd")
 const SpritePlayback := preload("res://scripts/animation/sprite_playback.gd")
 const DirectionalWeapon := preload("res://scripts/player/directional_weapon.gd")
 const GuardFeedback := preload("res://scripts/player/guard_feedback.gd")
+const SkillFeedback := preload("res://scripts/player/skill_feedback.gd")
 
 ## 原画四帧：前两帧蓄势，第三帧挥刃，第四帧收招；总时长仍是 0.32s。
 const ATTACK_WINDUP := 0.16
@@ -94,6 +95,15 @@ var _attack_previous_angle := -ATTACK_HALF_ARC
 var _attack_pose := &"right"
 var _weapon_visual: Node2D
 var _attack_sweep_sign := 1.0
+var _attack_output_mult := 1.0
+## 重击与法弹拥有互斥的动作时相，费用在起手支付，效果只在释放边界结算一次。
+var _skill_action := ""
+var _skill_elapsed := 0.0
+var _skill_released := false
+var _skill_serial := 0
+var _skill_direction := Vector2.RIGHT
+var _skill_visual_flip := false
+var _skill_feedback: Node2D
 var _weapon_clearance := CircleShape2D.new()
 var _obstacles_hit_this_swing := {}
 var _respawn_timer := 0.0
@@ -147,7 +157,7 @@ var _hurt_anim_timer := 0.0
 var _attack_buffered := false
 ## 普攻预输入缓冲剩余时间：攻击冷却中按下不丢弃，转好即出刀（连击不断段）
 var _attack_buffer_timer := 0.0
-const ATTACK_BUFFER_TIME := 0.12
+const ATTACK_BUFFER_TIME := 0.20
 ## 普攻命中顿帧节流标记（AOE 同帧命中多只只压一次 time_scale）
 var _last_hit_stop := -9999.0
 ## 传送吟唱读取的单调活动序号：两套输入/真实伤害统一递增。
@@ -238,6 +248,9 @@ func _ready() -> void:
 	_guard_feedback.z_index = 5
 	add_child(_guard_feedback)
 	_guard_feedback.clear()
+	_skill_feedback = SkillFeedback.new()
+	_skill_feedback.name = "SkillFeedback"
+	add_child(_skill_feedback)
 	TouchInput.guard_canceled.connect(_on_guard_input_canceled)
 	# 跨场景仍按住F/旧触点不算新手势，单独实例化Player也遵守此边界。
 	_guard_fresh_press_required = Input.is_action_pressed("guard") or TouchInput.guard_held
@@ -307,6 +320,7 @@ func begin_guard() -> void:
 		_guard_fresh_press_required = true
 		return
 	activity_serial += 1
+	_cancel_skill_action()
 	# 架盾取消当前普通挥击的余下判定/表现，但绝不返还该刀已支付的冷却。
 	_attack_timer = 0.0
 	_attack_anim_linger = 0.0
@@ -391,6 +405,7 @@ func _notification(what: int) -> void:
 
 
 func _clear_pending_actions() -> void:
+	_cancel_skill_action()
 	_attack_buffered = false
 	_attack_buffer_timer = 0.0
 
@@ -605,13 +620,14 @@ func save_snapshot() -> Dictionary:
 ## 安全回城起手条件；世界再结合危险/模态/地图状态作最终判断。
 func can_begin_town_return() -> bool:
 	return not _is_dead and not GameState.dialogue_open and _dash_timer <= 0.0 \
-		and _attack_timer <= 0.0 and _attack_anim_linger <= 0.0 \
+		and _attack_timer <= 0.0 and _attack_anim_linger <= 0.0 and _skill_action.is_empty() \
 		and _hurt_iframes <= 0.0 and _knockback.length_squared() < 1.0 \
 		and _move_vel.length_squared() < 1.0 and guard_state == "idle"
 
 
 ## 安全传送：只清移动/动作残留，不返还资源、冷却或增益；世界负责目的地校验和保存。
 func teleport_to(destination: Vector2) -> void:
+	_clear_pending_actions()
 	teleport_serial += 1
 	activity_serial += 1
 	cancel_guard(true, true)
@@ -685,7 +701,9 @@ func _physics_process(delta: float) -> void:
 			_set_visual_base(Color.WHITE)  # 强化结束，收回金色光泽
 	_dash_buff_timer = maxf(0.0, _dash_buff_timer - delta)
 	_combo_timer = maxf(0.0, _combo_timer - delta)
-	_attack_buffer_timer = maxf(0.0, _attack_buffer_timer - delta)
+	# 到期同一帧先兑现冷却，不先减掉最后一个物理步的预输入。
+	if _attack_cooldown > 0.0 or not _skill_action.is_empty():
+		_attack_buffer_timer = maxf(0.0, _attack_buffer_timer - delta)
 	_protect_timer = maxf(0.0, _protect_timer - delta)
 	_hurt_iframes = maxf(0.0, _hurt_iframes - delta)
 	if _combo_timer <= 0.0 and guard_state != "counter":
@@ -700,6 +718,7 @@ func _physics_process(delta: float) -> void:
 		guard_state = "idle"
 		_push_guard()
 	_hurt_anim_timer = maxf(0.0, _hurt_anim_timer - delta)
+	_advance_skill_action(delta)
 
 	if _is_dead:
 		velocity = Vector2.ZERO
@@ -762,7 +781,7 @@ func _physics_process(delta: float) -> void:
 	if _attack_buffered:
 		_attack_buffered = false
 		_try_attack()
-	elif _attack_buffer_timer > 0.0 and _attack_cooldown <= 0.0:
+	elif _attack_buffer_timer > 0.0 and _attack_cooldown <= 0.0 and _skill_action.is_empty():
 		# 预输入兑现：冷却转好的第一时间出刀
 		_attack_buffer_timer = 0.0
 		_try_attack()
@@ -773,6 +792,10 @@ func _physics_process(delta: float) -> void:
 	# HeroMotion v2：目标速度经加减速逼近（起停重量感），击退仍直接叠加；
 	# 起步/反向转身按加速走（跟手），松手滑步按减速走（利落）
 	var move_mult := Skill.GUARD_MOVE_MULT if _guard_is_held() else 1.0
+	if _skill_action == "heavy":
+		move_mult = Skill.HEAVY_MOVE_MULT
+	elif _skill_action == "bolt":
+		move_mult = Skill.BOLT_MOVE_MULT
 	if guard_state == "broken":
 		move_mult = 0.0
 	var target_vel := dir * stats.move_speed() * move_mult
@@ -789,7 +812,7 @@ func _physics_process(delta: float) -> void:
 			guard_direction = facing
 			_guard_feedback.show_state(guard_state, guard_direction, guard_charge)
 		# 素材朝右基准（AI 英雄与骑士包一致）：左右移动翻转即可，攻击方向由挥砍特效表达
-		if absf(dir.x) > 0.1 and _attack_anim_linger <= 0.0:
+		if absf(dir.x) > 0.1 and _attack_anim_linger <= 0.0 and _skill_action.is_empty():
 			visual.flip_h = dir.x < 0.0
 		_spawn_dust(delta)
 	move_and_slide()
@@ -856,6 +879,9 @@ func _dir_anims() -> Dictionary:
 func _update_anim(delta := 0.0) -> void:
 	if visual == null or visual.sprite_frames == null or _is_dead:
 		# 死亡由 _die 一次性定姿/播放，不能逐帧重启或回退到活体 idle。
+		return
+	if not _skill_action.is_empty():
+		# 技能动作在本物理步推进后统一绘制，避免重复做刀刃裁墙查询。
 		return
 	var want := "idle"
 	visual.material = null
@@ -967,6 +993,8 @@ func _try_dash() -> void:
 		return
 	if guard_state != "idle" or guard_charge > 0:
 		cancel_guard()
+	if not _skill_action.is_empty():
+		_clear_pending_actions()
 	current_mp -= Skill.DASH_COST
 	EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
 	_push_skills()
@@ -1037,7 +1065,7 @@ func _spawn_afterimage() -> void:
 ## 重击：消耗 MP，圆形 AOE 高倍率伤害 + 冲击环特效 + 震屏顿帧
 func _try_heavy_attack() -> void:
 	activity_serial += 1
-	if guard_state != "idle":
+	if guard_state != "idle" or not _skill_action.is_empty() or GameState.dialogue_open or get_tree().paused:
 		return
 	if _heavy_cd > 0.0 or current_mp < Skill.HEAVY_COST or _is_dead:
 		return
@@ -1046,6 +1074,10 @@ func _try_heavy_attack() -> void:
 	current_mp -= Skill.HEAVY_COST
 	EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
 	_push_skills()
+	_start_skill_action("heavy")
+
+
+func _release_heavy_attack() -> void:
 	SfxManager.play("heavy")
 	EventBus.camera_shake_requested.emit(5.0)
 	_play_ring(Skill.HEAVY_RADIUS, Color(1.0, 0.85, 0.4, 0.9))
@@ -1086,7 +1118,7 @@ func _try_heavy_attack() -> void:
 ## 法弹：消耗 MP，朝当前朝向射出智力加成弹体
 func _try_cast_bolt() -> void:
 	activity_serial += 1
-	if guard_state != "idle":
+	if guard_state != "idle" or not _skill_action.is_empty() or GameState.dialogue_open or get_tree().paused:
 		return
 	if _bolt_cd > 0.0 or current_mp < Skill.BOLT_COST or _is_dead:
 		return
@@ -1095,6 +1127,10 @@ func _try_cast_bolt() -> void:
 	current_mp -= Skill.BOLT_COST
 	EventBus.player_mp_changed.emit(current_mp, stats.max_mp())
 	_push_skills()
+	_start_skill_action("bolt")
+
+
+func _release_bolt() -> void:
 	SfxManager.play("bolt")
 	var effects := stats.bolt_effects()
 	_equipment_root_serial += 1
@@ -1106,9 +1142,110 @@ func _try_cast_bolt() -> void:
 		_equipment_pending_bolts.erase(_equipment_pending_bolts.keys()[0])
 	effects.merge({"root_id": root_id, "paid_mp": Skill.BOLT_COST, "focus_f": focus_f,
 		"player_source": weakref(self)})
-	PlayerBolt.spawn(get_parent(), global_position + facing * 22.0, facing,
+	PlayerBolt.spawn(get_parent(), global_position + _skill_direction * 22.0, _skill_direction,
 		CombatMath.magic_damage(stats.magic_attack() * Skill.BOLT_MULT) * stats.equipment_bolt_damage_mult(),
 		stats.equip_element(), effects)
+
+
+## 技能动作直接使用现有分层身体帧；相位由物理时间驱动，不依赖渲染帧率。
+func _start_skill_action(kind: String) -> void:
+	_clear_pending_actions()
+	_attack_timer = 0.0
+	_attack_anim_linger = 0.0
+	attack_shape.set_deferred("disabled", true)
+	_hit_this_swing.clear()
+	_weapon_visual.clear()
+	_skill_serial += 1
+	_skill_action = kind
+	_skill_elapsed = 0.0
+	_skill_released = false
+	_skill_direction = facing.normalized() if facing != Vector2.ZERO else Vector2.RIGHT
+	_skill_visual_flip = visual.flip_h if absf(_skill_direction.x) <= 0.1 else _skill_direction.x < 0.0
+	_hurt_anim_timer = 0.0
+	_visual_bob = 0.0
+	visual.offset = Vector2.ZERO
+	visual.rotation = 0.0
+	_update_skill_visual()
+
+
+func _cancel_skill_action() -> void:
+	if _skill_action.is_empty():
+		return
+	_skill_serial += 1
+	_skill_action = ""
+	_skill_elapsed = 0.0
+	_skill_released = false
+	if is_instance_valid(_skill_feedback):
+		_skill_feedback.clear()
+	if is_instance_valid(_weapon_visual):
+		_weapon_visual.clear()
+
+
+func _skill_windup() -> float:
+	return Skill.HEAVY_WINDUP if _skill_action == "heavy" else Skill.BOLT_WINDUP
+
+
+func _skill_impact_time() -> float:
+	return Skill.HEAVY_IMPACT_TIME if _skill_action == "heavy" else Skill.BOLT_RELEASE_TIME
+
+
+func _skill_duration() -> float:
+	return _skill_windup() + _skill_impact_time() + (Skill.HEAVY_RECOVERY if _skill_action == "heavy" else Skill.BOLT_RECOVERY)
+
+
+func _advance_skill_action(delta: float) -> void:
+	if _skill_action.is_empty() or _is_dead:
+		return
+	if GameState.dialogue_open:
+		_clear_pending_actions()
+		return
+	var serial := _skill_serial
+	_skill_elapsed += delta
+	if not _skill_released and _skill_elapsed >= _skill_windup():
+		# 先立结算标记，再发事件；低帧率跨过整段也只能结算一次。
+		_skill_released = true
+		if _skill_action == "heavy":
+			_release_heavy_attack()
+		else:
+			_release_bolt()
+		# 命中事件可能升级暂停、传送或销毁角色；不能把回调已取消的动作画回来。
+		if serial != _skill_serial or is_queued_for_deletion():
+			return
+	if _skill_elapsed >= _skill_duration():
+		_cancel_skill_action()
+		_update_anim()
+	else:
+		_update_skill_visual()
+
+
+func _update_skill_visual() -> void:
+	var windup := _skill_windup()
+	var impact_end := windup + _skill_impact_time()
+	var phase := "windup" if _skill_elapsed < windup else ("impact" if _skill_elapsed < impact_end else "recovery")
+	var anim := &"attack3" if _skill_action == "heavy" else &"attack1"
+	if not visual.sprite_frames.has_animation(anim):
+		anim = &"idle"
+	visual.animation = anim
+	visual.pause()
+	var frame := 0 if _skill_elapsed < windup * 0.5 else (1 if phase == "windup" else (2 if phase == "impact" else 3))
+	visual.set_frame_and_progress(mini(frame, visual.sprite_frames.get_frame_count(anim) - 1), 0.0)
+	visual.flip_h = _skill_visual_flip
+	visual.material = null
+	visual.speed_scale = 1.0
+	var progress := clampf(_skill_elapsed / windup, 0.0, 1.0)
+	_skill_feedback.show_action(_skill_action, phase, _skill_direction, progress)
+	if _skill_action != "heavy" or phase == "recovery":
+		_weapon_visual.clear()
+		return
+	var angle := -1.4 - sin(progress * PI) * 0.3
+	if phase == "impact":
+		angle = lerpf(-1.4, 1.4, clampf((_skill_elapsed - windup) / _skill_impact_time(), 0.0, 1.0))
+	angle *= -1.0 if _skill_visual_flip else 1.0
+	_weapon_visual.show_swing(_skill_direction, angle,
+		_weapon_visible_reach(_skill_direction.rotated(angle)), PackedVector2Array(),
+		phase == "impact", 1.0, true, 3, _attack_hand_position(),
+		str(visual.sprite_frames.get_meta("hero_skin", "blue")), phase == "windup")
+	_clip_weapon_blade()
 
 
 ## 治疗：消耗 MP 回复智力加成生命，绿色涟漪特效（深区续航的资源取舍）；
@@ -1243,7 +1380,7 @@ func _try_attack() -> void:
 	if GameState.dialogue_open or get_tree().paused:
 		_clear_pending_actions()
 		return
-	if _attack_cooldown > 0.0:
+	if _attack_cooldown > 0.0 or not _skill_action.is_empty():
 		# 冷却中按下不丢：进预输入缓冲，冷却一转好立即兑现（连击不断段）
 		_attack_buffer_timer = ATTACK_BUFFER_TIME
 		return
@@ -1251,13 +1388,16 @@ func _try_attack() -> void:
 	_mark_equipment_combat()
 	_equipment_swing_checked = false
 	_equipment_swing_f = stats.equip_mechanism("combo")
-	_attack_cooldown = maxf(stats.attack_interval(), ATTACK_WINDOW)
+	_combo = _combo % 3 + 1
+	_attack_cooldown = stats.combo_attack_interval(_combo)
+	_attack_output_mult = stats.combo_output_mult()
+	_attack_buffer_timer = 0.0
+	_attack_buffered = false
 	_attack_timer = ATTACK_WINDOW
 	_attack_anim_linger = ATTACK_WINDOW + ATTACK_ANIM_LINGER
 	_hit_this_swing.clear()
 	_obstacles_hit_this_swing.clear()
 	# 连击推进：窗口内连续攻击累积段位 1→2→3，第三段为重击（1.5×伤害 2×击退）
-	_combo = _combo % 3 + 1
 	_combo_timer = stats.combo_window()
 	# 朝向吸附：攻击瞬间朝扇形内最近敌人修正，解决"边退边打"的方向冲突
 	var aim: Variant = _aim_assist()
@@ -1627,6 +1767,7 @@ func take_damage(amount: float, from_position := Vector2.INF, source_name := "",
 func _die() -> void:
 	if _is_dead:
 		return
+	_clear_pending_actions()
 	cancel_guard(true, true)
 	_is_dead = true
 	_equipment_pending_bolts.clear()
@@ -1755,7 +1896,7 @@ func _on_attack_body_entered(body: Node) -> void:
 		return
 	_hit_this_swing.append(body)
 	var is_counter := guard_state == "counter" and _counter_charge > 0
-	var mult := stats.equipment_guard_counter_mult(_counter_charge) if is_counter else stats.sword_damage_mult()
+	var mult := stats.equipment_guard_counter_mult(_counter_charge) if is_counter else stats.sword_damage_mult() * _attack_output_mult
 	if not is_counter:
 		if _combo == 3:
 			mult *= Skill.COMBO_HEAVY_MULT
@@ -1788,6 +1929,7 @@ func _on_attack_body_entered(body: Node) -> void:
 	var lifesteal := 0.0 if is_counter else stats.lifesteal_per_hit()
 	if not is_counter and _empower_timer > 0.0:
 		lifesteal += stats.max_hp() * Skill.EMPOWER_HEAL_FRAC
+	lifesteal *= _attack_output_mult if not is_counter else 1.0
 	if lifesteal > 0.0:
 		current_hp = minf(stats.max_hp(), current_hp + lifesteal)
 		EventBus.player_hp_changed.emit(current_hp, stats.max_hp())
@@ -1893,7 +2035,7 @@ func _resolve_equipment_swing_hit(is_counter: bool, hit_position: Vector2) -> vo
 			kind = "orange"
 		elif not is_counter and _combo == 3 and _equipment_combo_cd <= 0.0:
 			_equipment_combo_cd = Skill.EQUIP_COMBO_ICD
-			current_hp = minf(stats.max_hp(), current_hp + stats.equipment_combo_heal())
+			current_hp = minf(stats.max_hp(), current_hp + stats.equipment_combo_heal() * _attack_output_mult)
 			EventBus.player_hp_changed.emit(current_hp, stats.max_hp())
 			kind = "orange"
 	EventBus.equipment_particles_requested.emit(kind, hit_position, _attack_direction)
@@ -1944,7 +2086,7 @@ func _equipment_has_pursuit() -> bool:
 
 func _equipment_has_active_action() -> bool:
 	if _dash_timer > 0.0 or _attack_timer > 0.0 or _attack_anim_linger > 0.0 \
-			or guard_state != "idle":
+			or guard_state != "idle" or not _skill_action.is_empty():
 		return true
 	for bolt in get_tree().get_nodes_in_group("player_bolts"):
 		# 命中主弹在帧末才回池/分裂，尚在树内的结算帧也不可穿插换装。

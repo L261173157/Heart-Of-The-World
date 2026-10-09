@@ -114,6 +114,8 @@ func actions_and_presets() -> void:
 	hud._more_panel.hide()
 	await tap(button("ShortcutBtn"))
 	check(player._heavy_cd > 0, "configured shortcut casts actual heavy attack")
+	while not player._skill_action.is_empty():
+		await get_tree().physics_frame
 	hud._set_shortcut("bolt")
 	player.current_mp = player.stats.max_mp()
 	player._push_hud()

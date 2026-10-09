@@ -2099,7 +2099,7 @@ func _toast_receipt(message: String, item_receipt: Dictionary = {}) -> void:
 const BENEFIT_NAMES := {
 	"max_hp": "生命上限", "hp_regen": "生命回复/秒", "max_mp": "精力上限",
 	"mp_regen": "精力回复/秒", "physical": "物理攻击", "magic": "魔法攻击",
-	"heal": "治疗回复", "move": "移动速度", "attack_interval": "攻击间隔",
+	"heal": "治疗回复", "move": "移动速度", "attack_interval": "平均普攻间隔",
 	"heavy_cooldown": "重击冷却", "lifesteal": "普攻吸血", "gold": "金币倍率",
 	"xp": "经验倍率", "knock": "击退倍率",
 }

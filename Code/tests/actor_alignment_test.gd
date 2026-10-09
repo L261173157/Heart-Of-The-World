@@ -142,26 +142,43 @@ func _combat_wall_lifecycle() -> void:
 	await _step(90) # 先累计真实行走，旧实现会让本体和技能源已明显分离
 	TouchInput.queue_dash()
 	await _step()
-	var cast_body := player.global_position
 	var mp_before := player.current_mp
-	TouchInput.queue_attack()
-	TouchInput.queue_bolt()
 	TouchInput.queue_heavy()
 	await _step()
-	var bolts := get_tree().get_nodes_in_group("player_bolts")
-	_check(bolts.size() == 1 and player.current_mp < mp_before and player._heavy_cd > 0.0,
-		"冲刺过程中真实消费法弹/重击输入与资源")
-	if bolts.size() == 1:
-		var bolt: PlayerBolt = bolts[0]
-		# 从真实弹体已走寿命倒推发射点，避免依赖本帧新节点是否已经物理更新。
-		var origin := bolt.global_position - bolt.direction * PlayerBolt.SPEED * (PlayerBolt.LIFE_TIME - bolt._life)
-		_check(origin.distance_to(cast_body + Vector2.RIGHT * 22.0) < 0.1,
-			"法弹实际发射点与冲刺当帧本体 +22px 一致")
+	_check(player._skill_action == "heavy" and player.current_mp < mp_before and player._heavy_cd > 0.0,
+		"冲刺过程中真实消费重击输入并进入有前摇的动作")
+	var release_body := player.global_position
+	for frame in 40:
+		if player._skill_released:
+			break
+		release_body = player.global_position
+		await _step()
 	var ring_ok := false
 	for child in get_children():
 		if child is Line2D and child.visible:
-			ring_ok = ring_ok or child.global_position.distance_to(cast_body) < 0.1
-	_check(ring_ok, "重击真实冲击环以冲刺当帧本体为圆心")
+			ring_ok = ring_ok or child.global_position.distance_to(release_body) < 0.1
+	_check(ring_ok, "重击真实冲击环以释放帧本体为圆心")
+	while not player._skill_action.is_empty():
+		await _step()
+	TouchInput.queue_bolt()
+	await _step()
+	var cast_body := player.global_position
+	var bolts := get_tree().get_nodes_in_group("player_bolts")
+	for frame in 30:
+		if not bolts.is_empty():
+			break
+		cast_body = player.global_position
+		await _step()
+		bolts = get_tree().get_nodes_in_group("player_bolts")
+	_check(bolts.size() == 1, "施法前摇结束真实生成一颗法弹")
+	if bolts.size() == 1:
+		var bolt: PlayerBolt = bolts[0]
+		var origin := bolt.global_position - bolt.direction * PlayerBolt.SPEED * (PlayerBolt.LIFE_TIME - bolt._life)
+		_check(origin.distance_to(cast_body + Vector2.RIGHT * 22.0) < 0.1,
+			"法弹实际发射点与释放帧本体 +22px 一致")
+	while not player._skill_action.is_empty():
+		await _step()
+	TouchInput.queue_attack()
 	var attack_seen := false
 	var attack_origin_ok := true
 	for frame in 20:

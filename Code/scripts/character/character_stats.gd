@@ -38,6 +38,20 @@ var upgrade_vigor: int = 0
 
 ## 三段连击：窗口内连续普攻，第三段重击（高伤重击退）；超时重置
 const COMBO_HEAVY_MULT := 1.5
+## 普攻快接慢收：保留极限攻速的完整扫掠下限，基础构筑不再每刀空等0.85s。
+## 三刀总伤害与命中回血按整个循环压缩比例归一，攻速手感不凭空提高持续收益。
+const COMBO_CADENCE := [0.56, 0.62, 0.76]
+const COMBO_MIN_INTERVAL := 0.26
+
+func combo_attack_interval(step: int) -> float:
+	return maxf(COMBO_MIN_INTERVAL, attack_interval() * COMBO_CADENCE[clampi(step, 1, 3) - 1])
+
+func combo_mean_interval() -> float:
+	return (combo_attack_interval(1) + combo_attack_interval(2) + combo_attack_interval(3)) / 3.0
+
+func combo_output_mult() -> float:
+	return minf(1.0, combo_mean_interval() / maxf(COMBO_MIN_INTERVAL, attack_interval()))
+
 
 ## 连击维持窗口：随攻速自适应——窗口若贴着攻击间隔上限（曾为 0.9 == 0.9），
 ## 慢攻速构筑的续段余量只剩 0.05s，三段重击形同虚设；快攻构筑维持 0.9 不变
@@ -53,12 +67,20 @@ const HEAVY_COST := 22.0
 const HEAVY_COOLDOWN := 4.0
 const HEAVY_RADIUS := 80.0
 const HEAVY_MULT := 2.4
+const HEAVY_WINDUP := 0.28
+const HEAVY_IMPACT_TIME := 0.08
+const HEAVY_RECOVERY := 0.22
+const HEAVY_MOVE_MULT := 0.45
 ## 法弹：智力系远程（与沼泽蛛对射 / 风筝走位的构筑选择）。
 ## 倍率 2.0（2026-09-03 数值统一设计）：智力构筑 = 大 MP 池短窗爆发（~19s 倾泻）
 ## + 射程安全 + 强治疗，持续期回落到近战五成——定位爆发法术而非站桩替代
 const BOLT_COST := 8.0
 const BOLT_COOLDOWN := 0.8
 const BOLT_MULT := 2.0
+const BOLT_WINDUP := 0.16
+const BOLT_RELEASE_TIME := 0.04
+const BOLT_RECOVERY := 0.16
+const BOLT_MOVE_MULT := 0.7
 ## 治疗：MP→HP 的资源博弈（MP 同时供冲刺/重击/法弹/治疗，取舍即深度）
 const HEAL_COST := 25.0
 const HEAL_COOLDOWN := 8.0
@@ -517,13 +539,13 @@ func benefit_snapshot() -> Dictionary:
 	return {"max_hp": max_hp(), "hp_regen": hp_regen_per_sec(), "max_mp": max_mp(),
 		"mp_regen": mp_regen_per_sec(), "physical": physical_attack(),
 		"magic": magic_attack(), "heal": heal_power() * HEAL_MULT,
-		"move": move_speed(), "attack_interval": attack_interval(),
+		"move": move_speed(), "attack_interval": combo_mean_interval(),
 		"heavy_cooldown": HEAVY_COOLDOWN * cooldown_mult(),
-		"lifesteal": lifesteal_per_hit(), "gold": gold_mult(),
+		"lifesteal": lifesteal_per_hit() * combo_output_mult(), "gold": gold_mult(),
 		"xp": passive_mult("xp", 1.1) * (1.0 + equip_affix("xp")),
 		"knock": knockback_mult(), "guard": guard_strength(),
 		"guard_hit_cost": equipment_guard_hit_cost(20.0), "guard_drain": equipment_guard_drain_per_sec(),
-		"guard_counter": equipment_guard_counter_mult(3), "combo_heal": equipment_combo_heal(),
+		"guard_counter": equipment_guard_counter_mult(3), "combo_heal": equipment_combo_heal() * combo_output_mult(),
 		"heavy_damage": physical_attack() * HEAVY_MULT * heavy_damage_mult(),
 		"bolt_damage": magic_attack() * BOLT_MULT * bolt_damage_mult() * equipment_bolt_damage_mult(),
 		"focus_refund": equipment_focus_refund(BOLT_COST),

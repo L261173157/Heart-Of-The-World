@@ -22,6 +22,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - suite: combat_feel
+            tests: hero_combat_timing,common_combat,boss_moves
           - suite: motion_smoothing
             tests: locomotion_cadence,render_motion
           - suite: frame_pacing
@@ -119,6 +121,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y xvfb
           xvfb-run -a python3 Code/tests/run_map_performance_visual.py "$GODOT" --log-dir test-results/frame_pacing/rendered
+      - name: Render combat stages and mobile telegraphs
+        if: matrix.suite == 'combat_feel'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          xvfb-run -a python3 Code/tests/run_combat_feel_visual.py "$GODOT" --log-dir test-results/combat_feel/rendered
       - name: Preserve test logs
         if: always()
         uses: actions/upload-artifact@v4

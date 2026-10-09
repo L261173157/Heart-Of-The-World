@@ -69,6 +69,17 @@ extends Resource
 @export var detect_radius: float = 170.0
 @export var attack_range: float = 32.0
 @export var attack_cooldown: float = 1.2
+## 普通近战：预备→锁向命中→短收招；冷却余下时间可移动施压。
+@export var melee_windup_time: float = 0.2
+@export var melee_recovery_time: float = 0.22
+@export var melee_half_angle: float = 0.95
+## 远程吐息：预警开始锁定弹道，出手后短暂定身，随后恢复间距移动。
+@export var ranged_windup_time: float = 0.3
+@export var ranged_recovery_time: float = 0.24
+## 有界受击硬直：同一冷却窗不延期；poise≥0.75及Boss免疫。
+@export var stagger_time: float = 0.12
+@export var heavy_stagger_time: float = 0.2
+@export var stagger_rearm_time: float = 0.85
 ## 残血逃跑比例（<=0 永不逃跑，如狂暴/守卫型）
 @export var flee_hp_ratio: float = 0.25
 ## 护甲：受到伤害的减免比例（0~0.8）
@@ -99,6 +110,17 @@ extends Resource
 ## guardian 原型：重击前摇时长 / 砸击判定半径倍率（attack_range × 此值）
 @export var guard_windup_time: float = 0.8
 @export var guard_smash_range_mult: float = 1.7
+## 熔岩龟王专用三招/半血阶段；默认关闭保留其它守卫。
+@export var guardian_boss_moves: bool = false
+@export var guardian_phase_hp_ratio: float = 0.5
+@export var guardian_phase_time: float = 1.1
+@export var guardian_phase_recovery: float = 0.35
+@export var guardian_sweep_half_angle: float = PI * 0.34
+@export var guardian_sweep_range_mult: float = 2.2
+@export var guardian_sweep_trigger_mult: float = 0.9
+@export var guardian_eruption_radius_mult: float = 0.95
+@export var guardian_move_recoveries: Array[float] = [0.9, 0.7, 1.0]
+@export var guardian_move_windup_mults: Array[float] = [1.0, 1.15, 1.4]
 ## ranged 原型：与目标保持的距离（被贴近即后撤拉开）
 @export var keep_away_dist: float = 120.0
 ## melee_swarm / soldier 原型：同伴受击的支援半径（仇恨连锁，0 = 无支援）
