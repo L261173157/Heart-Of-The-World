@@ -7,3 +7,8 @@ extends MonsterBase
 
 func ally_assist_radius() -> float:
 	return inst.species.assist_radius
+
+
+## 围攻原型的近圈择侧幅度，保持各物种的移动性格。
+func _pressure_flank_mult() -> float:
+	return 1.0

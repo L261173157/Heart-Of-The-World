@@ -80,7 +80,7 @@ func _test_preview_formulas() -> void:
 	s.equips["weapon"] = replacement
 	_check(preview["after"] == s.benefit_snapshot(), "装备比较调用实际衍生公式")
 	s.agility = 100
-	_check(s.preview_attribute("agility")["after"]["attack_interval"] == s.attack_interval(),
+	_check(s.preview_attribute("agility")["after"]["attack_interval"] == s.combo_mean_interval(),
 			"攻速到下限后预览不会虚构收益")
 
 

@@ -203,7 +203,7 @@ def run_acceptance(args, godot, source, output, env, parser) -> int:
                     "Only five verified paid chapter bonus foods are reconstructed; 280 gold buys upgrades",
                     "Ecology and unrelated actors are frozen during isolated live original-Boss combat",
                     "Optional aging advances 1199 normal WorldSim bridge ticks, not human play",
-                    "Bot reads AI state and collision geometry; this is not novice difficulty or iPhone QA",
+                    "Bot classifies visible windup/recovery states, committed ground geometry and current obstacles with180ms reaction delay/18px clearance; own cooldowns only; not novice difficulty or iPhone QA",
                     "Touch commands include standard Godot mouse-emulation events for ordinary menu tabs",
                     "MoreBtn closes More; MoreClose clipped-row regression is tested separately"]}
 

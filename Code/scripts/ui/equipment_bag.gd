@@ -13,7 +13,7 @@ const SLOT_NAMES := {"weapon": "武器", "offhand": "副手", "helmet": "头盔"
 const RARITIES := ["白 · 普通", "绿 · 精良", "蓝 · 稀有", "紫 · 史诗", "橙 · 传奇"]
 const RARITY_COLORS := [Color("d5dedc"), Color("93cb9d"), Color("91c8f0"), Color("d2aaf1"), Color("ffc16d")]
 const PAGE_SIZE := 24
-const STAT_NAMES := {"max_hp": "最大生命", "max_mp": "最大精力", "physical": "物理攻击", "magic": "魔法攻击", "hp_regen": "生命恢复 / 秒", "mp_regen": "精力恢复 / 秒", "heal": "治疗回复", "move": "移动速度", "attack_interval": "普攻间隔 / 秒", "heavy_cooldown": "重击冷却 / 秒", "lifesteal": "每次命中吸血", "gold": "金币倍率", "xp": "经验倍率", "guard": "格挡强度", "guard_hit_cost": "挡击耗能（20伤害）", "guard_drain": "持续举盾耗能 / 秒", "guard_counter": "满蓄反击倍率", "combo_heal": "第三击生命回复", "heavy_damage": "重击原始伤害", "bolt_damage": "法弹原始伤害", "focus_refund": "法弹命中返能", "bolt_damage_mult": "法弹伤害倍率", "sword_damage_mult": "普攻伤害倍率"}
+const STAT_NAMES := {"max_hp": "最大生命", "max_mp": "最大精力", "physical": "物理攻击", "magic": "魔法攻击", "hp_regen": "生命恢复 / 秒", "mp_regen": "精力恢复 / 秒", "heal": "治疗回复", "move": "移动速度", "attack_interval": "平均普攻间隔 / 秒", "heavy_cooldown": "重击冷却 / 秒", "lifesteal": "每次命中吸血", "gold": "金币倍率", "xp": "经验倍率", "guard": "格挡强度", "guard_hit_cost": "挡击耗能（20伤害）", "guard_drain": "持续举盾耗能 / 秒", "guard_counter": "满蓄反击倍率", "combo_heal": "第三击生命回复", "heavy_damage": "重击原始伤害", "bolt_damage": "法弹原始伤害", "focus_refund": "法弹命中返能", "bolt_damage_mult": "法弹伤害倍率", "sword_damage_mult": "普攻伤害倍率"}
 
 
 var input_allowed: Callable

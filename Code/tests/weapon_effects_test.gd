@@ -182,6 +182,7 @@ func _test_player_cast() -> void:
 	GameState.stats.passives = {"bolt_seek": 1, "bolt_split": 1}
 	var player: Player = preload("res://scenes/player/player.tscn").instantiate()
 	_world.add_child(player)
+	player.set_process(false) # 本段隔离自然回蓝，精确核对施法费用。
 	player.position = Vector2(500, 500)
 	player.current_mp = player.stats.max_mp()
 	player.facing = Vector2.RIGHT
@@ -189,6 +190,8 @@ func _test_player_cast() -> void:
 	var mp := player.current_mp
 	TouchInput.queue_bolt()
 	await _frames(2)
+	_check(get_tree().get_nodes_in_group("player_bolts").is_empty(), "真实触屏法弹前摇不提前出弹")
+	await _frames(10)
 	var bolts := get_tree().get_nodes_in_group("player_bolts")
 	_check(bolts.size() == 1 and bolts[0]._seek and bolts[0]._split
 		and player._bolt_cd > 0.0 and absf(player.current_mp - (mp - CharacterStats.BOLT_COST)) < 0.2,

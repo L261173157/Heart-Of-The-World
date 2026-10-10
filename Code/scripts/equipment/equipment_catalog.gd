@@ -236,7 +236,7 @@ static func mechanism_description(item: Dictionary) -> String:
 	var factor := level_factor(int(item.get("item_level", 1)))
 	match str(item.get("mechanism", "")):
 		"combo":
-			return "连击第三击回复%.2f%%最大生命（2秒间隔）；重击伤害−10%%" % factor
+			return "连击第三击基础回复%.2f%%最大生命（随普攻节奏折算；2秒间隔）；重击伤害−10%%" % factor
 		"shield":
 			return "满蓄反击倍率%.2f；持续举盾每秒耗5精力" % (2.2 + 0.2 * factor)
 		"focus":

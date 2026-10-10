@@ -151,8 +151,15 @@ func _run() -> void:
 	hp_a = a.current_hp
 	TouchInput.queue_heavy()
 	await _frames(2)
+	_check(a.current_hp == hp_a, "重击前摇不提前造成伤害")
+	for frame in 60:
+		if _player._skill_released:
+			break
+		await _frames()
 	_check(a.current_hp < hp_a and is_equal_approx(_player.current_mp, mp - CharacterStats.HEAVY_COST),
 		"重击实际命中/原有费用保持")
+	while not _player._skill_action.is_empty():
+		await _frames()
 	await _wall(0.3)
 	# 空挥必须有挥击表现，但没有命中停顿。
 	a.position = _player.position + Vector2(500, 0)
@@ -160,7 +167,7 @@ func _run() -> void:
 	_player._heavy_cd = 0.0
 	requests = _stop_requests
 	TouchInput.queue_heavy()
-	await _frames(2)
+	await _frames(40)
 	_check(_stop_requests == requests and not _stop.active, "重击空挥不伪造命中顿帧")
 	# 多颗真实法弹同帧接触一个身体，不通过辅助函数伪造多目标闭环。
 	a.position = _player.position + Vector2(130, 0)

@@ -19,3 +19,8 @@ func _process(delta: float) -> void:
 	var sway := roundf(sin(_wobble) * 1.2)
 	if visual.offset.x != sway:
 		visual.offset = Vector2(sway, visual.offset.y)
+
+
+## 围攻原型的近圈择侧幅度，保持各物种的移动性格。
+func _pressure_flank_mult() -> float:
+	return 0.3

@@ -116,7 +116,7 @@ func _run() -> void:
 	var heavy := _target(Vector2(60, 0))
 	await _frames(2)
 	_player._try_heavy_attack()
-	await _frames(4)
+	await _frames(24)
 	_check(not heavy.inst.is_alive and _receipt(heavy), "actual paid heavy AOE settles attributed source")
 	await _reset()
 	var counter := _target(Vector2(38, 0))
@@ -162,6 +162,7 @@ func _run() -> void:
 	var dead_target := _target(Vector2(90, 0))
 	await _frames(2)
 	_player._try_cast_bolt()
+	await _frames(11) # 先完成真实施法，再验证已经飞出的弹体跨死亡归因。
 	_player._die()
 	await _frames(30)
 	_check(not dead_target.inst.is_alive and not _receipt(dead_target), "projectile arriving after player death cannot create gear")
@@ -173,7 +174,7 @@ func _run() -> void:
 
 func _incoming_sources() -> void:
 	await _reset()
-	var attacker := _target(Vector2(38, 0))
+	var attacker := _target(Vector2(30, 0))
 	await _frames(2)
 	GameState.equipment_preferred_slot = "offhand"
 	var hp := _player.current_hp
@@ -184,7 +185,7 @@ func _incoming_sources() -> void:
 	await _frames(30)
 	_check(not attacker.inst.is_alive and _receipt(attacker), "incoming-tagged source settles after preference changes")
 	await _reset()
-	var blocked := _target(Vector2(38, 0))
+	var blocked := _target(Vector2(30, 0))
 	await _frames(2)
 	GameState.equipment_preferred_slot = "helmet"
 	Input.action_press("guard")
@@ -212,7 +213,7 @@ func _incoming_sources() -> void:
 	_check(not recycled.attack_context.has("equipment_source") and recycled.attack_context["attack_id"] != first_attack_id, "pooled enemy projectile clears stale equipment source and attack ID")
 	recycled.queue_free()
 	await _reset()
-	var immune := _target(Vector2(38, 0))
+	var immune := _target(Vector2(30, 0))
 	await _frames(2)
 	_player._protect_timer = 1.0
 	immune._perform_attack(_player)

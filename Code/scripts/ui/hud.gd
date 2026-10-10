@@ -641,8 +641,8 @@ func _setup_hp_ghost_bar() -> void:
 	hp_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
-## Boss 顶部血条：砖红丝带名牌 + TS BigBar 宽条，顶部居中（战斗播报位下方，
-## y=132 与其 90~122 错开——此前两通道几何重叠，Boss 战中击杀播报直接盖住 Boss 名字）；
+## Boss 顶部血条：砖红丝带名牌 + TS BigBar 宽条，顶部居中；
+## 世界播报随实际名牌/血条下缘避让，击杀播报仍在底部独立通道。
 ## 满血也显示——遭遇即有血量锚点（通用头顶条满血不显示）
 func _setup_boss_bar() -> void:
 	# 名牌走丝带签：RibbonLabel 即文本位（_on_boss_tracked 只写 text 不换节点）
@@ -656,7 +656,7 @@ func _setup_boss_bar() -> void:
 	# ×2 ≥ 条高时中心拉伸区变负、填充整条消失（隔离探针实证 m14/h22=0 红像素）
 	_boss_bar.custom_minimum_size = Vector2(520, 24)
 	_boss_bar.show_percentage = false
-	# TS BigBar：框=BigBar_Base 九宫（端帽 48 保形），填充=BigBar_Fill 原红横向平铺
+	# TS BigBar：框=拼接后的 BigBar_Base 九宫，填充=BigBar_Fill 原红横向平铺
 	var fill := StyleBoxTexture.new()
 	fill.texture = HotwTheme.cropped_texture(HotwTheme.TS_UI + "/Bars/BigBar_Fill.png")
 	fill.texture_margin_left = 14.0
@@ -666,7 +666,7 @@ func _setup_boss_bar() -> void:
 	fill.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE
 	_boss_bar.add_theme_stylebox_override("fill", fill)
 	var boss_bg := StyleBoxTexture.new()
-	boss_bg.texture = HotwTheme.cropped_texture(HotwTheme.TS_UI + "/Bars/BigBar_Base.png")
+	boss_bg.texture = HotwTheme.big_bar_base_texture()
 	boss_bg.texture_margin_left = 16.0
 	boss_bg.texture_margin_top = 4.0
 	boss_bg.texture_margin_right = 16.0
@@ -680,6 +680,7 @@ func _setup_boss_bar() -> void:
 	_boss_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	(get_node("Root") as Control).add_child(_boss_layer)
 	_place_below_modal_layers(_boss_layer)
+	_boss_layer.resized.connect(_layout_world_toast)
 	EventBus.boss_tracked.connect(_on_boss_tracked)
 	EventBus.boss_hp_changed.connect(_on_boss_hp)
 
@@ -688,6 +689,31 @@ func _on_boss_tracked(active: bool, boss_name: String) -> void:
 	_boss_layer.visible = active
 	if active:
 		_boss_name_label.text = "⚔ %s" % boss_name
+	_layout_world_toast()
+
+
+func _layout_world_toast() -> void:
+	var top := 154.0
+	if _boss_layer != null and _boss_layer.visible:
+		# 容器首帧尚未排版时也预留真实最小高度；后续 resized 再跟随实值。
+		# 留出 12px，连收据底板的 10px 外扩也不压到 Boss 血条。
+		var boss_height := maxf(_boss_layer.size.y, _boss_layer.get_combined_minimum_size().y)
+		top = maxf(top, _boss_layer.position.y + boss_height + 12.0)
+	toast_label.offset_top = top
+	toast_label.offset_bottom = top + 68.0
+
+
+func _layout_boss_hud() -> void:
+	var root: Control = get_node("Root")
+	# 窄横屏仍保持居中，把丝带与血槽一起收进雷达左侧的对称空档。
+	# 先降低两层最小宽度，再缩容器，避免首次挂载仍被旧 520px 宽度撑开。
+	var width := clampf((%Minimap.position.x - 12.0 - root.size.x * 0.5) * 2.0, 240.0, 520.0)
+	_boss_bar.custom_minimum_size.x = width
+	(_boss_layer.get_child(0) as Control).custom_minimum_size.x = minf(360.0, width)
+	_boss_layer.reset_size()
+	_boss_layer.size.x = width
+	_boss_layer.position = Vector2((root.size.x - width) * 0.5, 98)
+	_layout_world_toast()
 
 
 func _on_boss_hp(current: float, maximum: float) -> void:
@@ -2099,7 +2125,7 @@ func _toast_receipt(message: String, item_receipt: Dictionary = {}) -> void:
 const BENEFIT_NAMES := {
 	"max_hp": "生命上限", "hp_regen": "生命回复/秒", "max_mp": "精力上限",
 	"mp_regen": "精力回复/秒", "physical": "物理攻击", "magic": "魔法攻击",
-	"heal": "治疗回复", "move": "移动速度", "attack_interval": "攻击间隔",
+	"heal": "治疗回复", "move": "移动速度", "attack_interval": "平均普攻间隔",
 	"heavy_cooldown": "重击冷却", "lifesteal": "普攻吸血", "gold": "金币倍率",
 	"xp": "经验倍率", "knock": "击退倍率",
 }
@@ -2603,8 +2629,6 @@ func _layout_six_button_hud() -> void:
 	quest_label.position = Vector2(336, 24)
 	quest_label.custom_minimum_size = Vector2.ZERO
 	quest_label.size = Vector2(_tracked_plate.size.x - 32, 66)
-	toast_label.offset_top = 154
-	toast_label.offset_bottom = 222
 	# 当前交互居民的名字在角色上方；反馈放到下方中间的空档，不压住名字或六键。
 	var feedback_width := minf(480.0, maxf(240.0, root.size.x - 728.0))
 	_combat_toast.offset_left = -feedback_width * 0.5
@@ -2613,7 +2637,7 @@ func _layout_six_button_hud() -> void:
 	_combat_toast.offset_bottom = root.size.y - 96.0
 	_combat_toast.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_combat_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_boss_layer.position.y = 98
+	_layout_boss_hud()
 	_more_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_more_panel.offset_left = -minf(816, root.size.x - 232)
 	_more_panel.offset_right = -366

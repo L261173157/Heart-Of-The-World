@@ -14,6 +14,9 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "hero_combat_timing": (["res://tests/hero_combat_timing_test.tscn", "--quit-after", "20000"], "=== HERO COMBAT TIMING PASS"),
+    "common_combat": (["res://tests/common_combat_test.tscn", "--quit-after", "20000"], "=== COMMON COMBAT PASS"),
+    "boss_moves": (["res://tests/boss_moves_test.tscn", "--quit-after", "20000"], "=== BOSS MOVES PASS"),
     "render_motion": (["res://tests/render_motion_test.tscn", "--quit-after", "10000"], "=== RENDER MOTION PASS"),
     "ecology_index": (["-s", "tests/ecology_index_test.gd"], "=== ECOLOGY INDEX PASS"),
     "map_performance": (["res://tests/map_performance_test.tscn", "--quit-after", "10000"], "=== MAP PERFORMANCE PASS"),

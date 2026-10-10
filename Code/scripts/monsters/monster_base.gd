@@ -10,7 +10,9 @@ extends CharacterBody2D
 const SpritePlayback := preload("res://scripts/animation/sprite_playback.gd")
 const ImpactFeedback := preload("res://scripts/combat/impact_feedback.gd")
 const EnemyAttackContext := preload("res://scripts/combat/enemy_attack_context.gd")
+const MonsterAttackCue := preload("res://scripts/monsters/monster_attack_cue.gd")
 const MonsterGuardHint := preload("res://scripts/monsters/monster_guard_hint.gd")
+const EnemyAttackSlots := preload("res://scripts/combat/enemy_attack_slots.gd")
 const EquipmentDropLedger := preload("res://scripts/equipment/equipment_drops.gd")
 
 const S_PATROL := 0
@@ -34,13 +36,8 @@ const HUNT_MAX_DIST := 24000.0
 const HUNT_RECHECK_INTERVAL := 0.5
 const MIGRATE_ARRIVE_DIST := 24.0
 const KNOCKBACK_DECAY := 900.0
-## 通用近战前摇：出刀前短暂站定预警（此前火把哥布林/骷髅兵冷却一到瞬间结算，
-## 玩家"看不见攻击发生"就挨刀——被打时必须读得出攻击来源与规避窗口）。
-## 与石魔像蓄力圈同一设计语言；前摇期间走出 attack_range×1.1 即取消本次出刀
-## （1.1 而非 1.0：0.2s 前摇内玩家脚程就能跨出整个攻击距离，按 1.0 严格复查
-## 会让近战怪对会走位的玩家刀刀挥空；10% 容差 = "认真逃离才躲得掉"）
+## 兼容旧调用的默认前摇；实际出招以 SpeciesData 为真源。
 const MELEE_WINDUP := 0.2
-## 近战出刀前摇的站定预警色（"接下来 0.2 秒要出刀"的可读性信号）
 const WINDUP_TINT := Color(1.0, 0.72, 0.4)
 ## 导航直线兜底距离：目标超出此距离（≈导航窗边缘）不查路径，直线+滑行
 ## （窗内 NavigationAgent 走导航网格绕障；窗外反正看不见，直线即可）
@@ -126,10 +123,18 @@ var _base_modulate := Color.WHITE
 var _attack_cd := 0.0
 ## 近战前摇剩余时间（> 0 = 预警站定中，结束时出刀）
 var _melee_windup := 0.0
+var _attack_recovery := 0.0
+var _attack_aim_dir := Vector2.ZERO
+var _attack_slot_target_id := 0
+## 前摇实际起手物理帧，供时相/并发回归观察（不持久化）。
+var _attack_started_frame := 0
+var _stagger_timer := 0.0
+var _stagger_rearm := 0.0
 ## 前摇锁定的招式强度/ID；出手时只更新来向，不重新读取成长或协同倍率。
 var _attack_context: Dictionary = {}
 var _attack_context_state := -1
 var _guard_hint: Node2D
+var _attack_cue: Node2D
 ## 仇恨锁：群体响应期间不因脱离侦测圈而放弃追击
 var _aggro_lock := 0.0
 ## 巢穴被捣毁的全族激怒：侦测提升 + 不再逃跑
@@ -474,6 +479,7 @@ func body_k() -> float:
 
 
 func _physics_process(delta: float) -> void:
+	_stagger_rearm = maxf(0.0, _stagger_rearm - delta)
 	_knockback_rearm = maxf(0.0, _knockback_rearm - delta)
 	if state == S_CORPSE:
 		velocity = Vector2.ZERO
@@ -490,7 +496,8 @@ func _physics_process(delta: float) -> void:
 		_hunt_recheck_remaining = HUNT_RECHECK_INTERVAL
 	# LOD 远档：屏外常规状态（巡逻含巡猎/追击/迁徙）10Hz 降频处理；
 	# 攻击/逃跑/子类扩展状态（>=10）与近圈个体逐位走原路径
-	if state != S_ATTACK and state != S_FLEE and state < 10 \
+	if _stagger_timer <= 0.0 and _attack_recovery <= 0.0 \
+			and state != S_ATTACK and state != S_FLEE and state < 10 \
 			and player != null and player.visible \
 			and global_position.distance_squared_to(player.global_position) \
 					>= LOD_FAR_DIST * LOD_FAR_DIST:
@@ -522,6 +529,9 @@ func _near_tick(delta: float, player: Node2D) -> void:
 	_action_anim_timer = maxf(0.0, _action_anim_timer - delta)
 	_hurt_anim_cd = maxf(0.0, _hurt_anim_cd - delta)
 	_sync_growth_hp()
+	if player == null or not player.visible:
+		_attack_recovery = 0.0
+		_release_attack_slot()
 	# 离开攻击状态（逃跑/受击断招/死亡/迁徙）即作废进行中的前摇；非死亡的中断
 	# 同时收回前摇预警色——否则走位拉开距离取消出刀后，怪身上一直挂着
 	# "要出刀"的橙色直到下次受击，前摇预警的可信度被破坏；
@@ -536,19 +546,29 @@ func _near_tick(delta: float, player: Node2D) -> void:
 			and (state == S_PATROL or state == S_CHASE or state == S_ATTACK):
 		state = S_FLEE
 
-	match state:
-		S_PATROL:
-			_patrol(delta, player)
-		S_CHASE:
-			_chase_tick(delta, player)
-		S_ATTACK:
-			_attack_tick(delta, player)
-		S_FLEE:
-			_flee_tick(player)
-		S_MIGRATING:
-			_migrate_tick()
-		_:
-			_extra_state_tick(delta, player)
+	if _attack_recovery > 0.0:
+		_attack_recovery = maxf(0.0, _attack_recovery - delta)
+		if _attack_recovery <= 0.0:
+			_release_attack_slot()
+	if _stagger_timer > 0.0:
+		_stagger_timer = maxf(0.0, _stagger_timer - delta)
+		velocity = Vector2.ZERO
+	elif _attack_recovery > 0.0:
+		velocity = Vector2.ZERO
+	else:
+		match state:
+			S_PATROL:
+				_patrol(delta, player)
+			S_CHASE:
+				_chase_tick(delta, player)
+			S_ATTACK:
+				_attack_tick(delta, player)
+			S_FLEE:
+				_flee_tick(player)
+			S_MIGRATING:
+				_migrate_tick()
+			_:
+				_extra_state_tick(delta, player)
 	# 同帧逃跑、迁徙或子类取消即撤下预警；不能留一个幽灵盾等下一次出招。
 	if not _attack_context.is_empty() and state != _attack_context_state:
 		_clear_attack_context()
@@ -557,7 +577,7 @@ func _near_tick(delta: float, player: Node2D) -> void:
 	velocity = _velocity_with_impact(velocity)
 	_knockback = _knockback.move_toward(Vector2.ZERO, KNOCKBACK_DECAY * delta)
 	# 击退是短暂外力，不交给 RVO 的普通行走限速/避让抵消（实测会吞成零位移）。
-	# 仍经真实身体 move_and_slide 抵墙，AI/前摇计时照常运行，不新增硬直状态。
+	# 仍经真实身体 move_and_slide 抵墙，独立硬直窗也不会吞掉外力。
 	if has_impulse:
 		_awaiting_rvo = false
 		move_and_slide()
@@ -640,7 +660,9 @@ func _on_nav_velocity(safe_velocity: Vector2) -> void:
 	_awaiting_rvo = false
 	if state == S_CORPSE:
 		return
-	velocity = safe_velocity
+	# 前摇/收招/硬直的脚点锁定，避免 RVO 在原地动作期间悄悄漂移。
+	velocity = Vector2.ZERO if _stagger_timer > 0.0 or _attack_recovery > 0.0 \
+		or _melee_windup > 0.0 else safe_velocity
 	move_and_slide()
 	_post_move_and_anim(_pending_move_delta)
 
@@ -791,10 +813,10 @@ func _play_action_anim(anim: String, dur: float) -> bool:
 		return false
 	if anim == "attack" or anim == "windup":
 		var target := _get_player()
-		if target != null and target.visible:
-			var dx := target.global_position.x - global_position.x
-			if absf(dx) > 1.0:
-				visual.flip_h = dx < 0.0
+		var dx := _attack_aim_dir.x if not _attack_aim_dir.is_zero_approx() else \
+			(target.global_position.x - global_position.x if target != null and target.visible else 0.0)
+		if absf(dx) > 0.01:
+			visual.flip_h = dx < 0.0
 	_action_visual_flip = visual.flip_h
 	SpritePlayback.restart(visual, anim,
 		SpritePlayback.speed_for_window(visual.sprite_frames, anim, dur))
@@ -859,6 +881,7 @@ func take_damage(amount: float, from_position := Vector2.INF, p_heavy := false,
 	EventBus.damage_number.emit(global_position, int(round(dealt)), false, p_effective)
 	_pulse_red()
 	_show_impact(from_position, p_heavy, p_effective)
+	_try_stagger(p_heavy, from_position)
 	# 受击帧动画（Warrior Guard/Lancer Defence 演出）：只在无进行中动作时播——
 	# 不打断出招/吐息/蓄力（动作优先，闪红已给受击反馈）；0.45s 最小间隔防
 	# 高频多段伤害下重启抽搐成定格
@@ -924,10 +947,14 @@ func on_migrate(to_region_id: String, p_dest := Vector2.INF) -> void:
 	if state == S_CORPSE:
 		return
 	_clear_attack_context()
+	_melee_windup = 0.0
+	_attack_recovery = 0.0
+	_stagger_timer = 0.0
 	var target := p_dest if p_dest != Vector2.INF else WorldSim.sim.get_region_center(to_region_id)
 	var dir := target - global_position
 	anchor = global_position + (dir.normalized() * 900.0 if dir.length() > 1.0 else dir)
 	state = S_MIGRATING
+	set_tint(_restore_tint())
 	_hunt_mode = false
 
 
@@ -962,6 +989,8 @@ func on_sim_death() -> void:
 		return
 	_clear_attack_context()
 	_melee_windup = 0.0
+	_attack_recovery = 0.0
+	_stagger_timer = 0.0
 	state = S_CORPSE
 	_hunt_mode = false
 	velocity = Vector2.ZERO
@@ -1020,56 +1049,132 @@ func _wants_flee(player: Node2D) -> bool:
 
 func _chase_tick(_delta: float, player: Node2D) -> void:
 	if player == null or not player.visible:
+		_clear_attack_context()
 		state = S_PATROL
 		return
 	var dist := global_position.distance_to(player.global_position)
-	# 激怒期间脱离判定同样放大——否则捣巢后"全族激愤"的怪追两步就脱战回巡逻
 	var drop_radius: float = inst.species.detect_radius * 1.3
 	if _enrage_timer > 0.0:
 		drop_radius *= ENRAGE_DETECT_MULT
 	if dist > drop_radius and _aggro_lock <= 0.0:
+		_clear_attack_context()
 		state = S_PATROL
 		return
 	if dist <= inst.species.attack_range:
 		state = S_ATTACK
+		velocity = Vector2.ZERO
 		return
-	velocity = _nav_velocity_toward(player.global_position, inst.move_speed() * _speed_mult())
+	velocity = _pressure_velocity(player) if _uses_melee_pressure() and _attack_cd > 0.0 \
+		else _nav_velocity_toward(player.global_position, inst.move_speed() * _speed_mult())
 
 
-func _attack_tick(_delta: float, player: Node2D) -> void:
+func _uses_melee_pressure() -> bool:
+	return inst.species.ai_archetype in ["melee_swarm", "soldier", "splitter"]
+
+
+## 根据双方实际位置侧移逼近，不读取攻击/冲刺输入；只在近圈择侧，远处仍走正常导航。
+func _pressure_velocity(player: Node2D) -> Vector2:
+	var offset := global_position - player.global_position
+	var speed := inst.move_speed() * _speed_mult()
+	if offset.length() > inst.species.attack_range * 2.5 + 48.0:
+		return _nav_velocity_toward(player.global_position, speed)
+	if offset.is_zero_approx():
+		offset = Vector2.RIGHT
+	var side := 1.0 if inst.id % 2 == 0 else -1.0
+	var radius := maxf(26.0, inst.species.attack_range * 0.92)
+	var target := player.global_position + offset.normalized().rotated(side * 0.6 * _pressure_flank_mult()) * radius
+	return _nav_velocity_toward(target, speed * 0.55)
+
+
+func _pressure_flank_mult() -> float:
+	return 0.7
+
+
+func _attack_tick(delta: float, player: Node2D) -> void:
 	if player == null or not player.visible:
 		_cancel_melee_windup()
 		state = S_PATROL
 		return
-	var dist := global_position.distance_to(player.global_position)
-	if dist > inst.species.attack_range * 1.1:
-		_cancel_melee_windup()
-		state = S_CHASE
-		return
-	# 只约束本通用近战入口；守卫范围砸击/冲锋各自保留原有判定。
-	# 前摇期间每帧复查，挡住就撤销旧招式并继续导航找路，不隔墙站桩挥空。
+	# 掩体可取消刀路，不使用远程贴脸豁免或旧射线缓存。
 	if not _has_melee_los(player):
 		_cancel_melee_windup()
 		velocity = _nav_velocity_toward(player.global_position, inst.move_speed() * _speed_mult())
 		return
-	velocity = Vector2.ZERO
-	# 前摇两段式：冷却转好先站定预警，MELEE_WINDUP 秒后结算伤害；
-	# 每物理帧的 1.1× 距离门就是"出刀前复查"——玩家前摇期间拉开距离
-	# 则本次出刀取消（不进冷却，走位规避有真实收益）
 	if _melee_windup > 0.0:
-		_melee_windup -= _delta
+		velocity = Vector2.ZERO
+		_melee_windup = maxf(0.0, _melee_windup - delta)
 		if _melee_windup <= 0.0:
-			_melee_windup = 0.0
-			set_tint(_restore_tint())  # 收回出刀预警色
+			set_tint(_restore_tint())
 			_attack_cd = inst.species.attack_cooldown
 			_clear_attack_warning()
+			_start_attack_recovery(inst.species.melee_recovery_time)
 			_perform_attack(player)
 		return
-	if _attack_cd <= 0.0:
-		_melee_windup = MELEE_WINDUP
+	var dist := global_position.distance_to(player.global_position)
+	if dist > inst.species.attack_range * 1.1:
+		state = S_CHASE
+		velocity = _nav_velocity_toward(player.global_position, inst.move_speed() * _speed_mult())
+		return
+	if _attack_cd <= 0.0 and _try_attack_slot(player):
+		_melee_windup = maxf(0.05, inst.species.melee_windup_time)
 		_begin_attack_warning(player, inst.attack_power() * _melee_damage_mult())
+		_show_attack_sector(inst.species.attack_range * 1.1, inst.species.melee_half_angle)
+		_play_action_anim("attack", _melee_windup + inst.species.melee_recovery_time)
+		velocity = Vector2.ZERO
 		set_tint(WINDUP_TINT)
-		_squash(Vector2(1.08, 0.92), 0.2)  # 出刀前蹲伏预备
+		_squash(Vector2(1.08, 0.92), _melee_windup)
+	else:
+		velocity = _pressure_velocity(player)
+
+
+func _try_attack_slot(player: Node2D) -> bool:
+	if player == null:
+		return false
+	if _attack_slot_target_id != 0 and _attack_slot_target_id != player.get_instance_id():
+		_release_attack_slot()
+	if EnemyAttackSlots.acquire(self, player):
+		_attack_slot_target_id = player.get_instance_id()
+		return true
+	return false
+
+
+func _release_attack_slot() -> void:
+	if _attack_slot_target_id != 0:
+		EnemyAttackSlots.release(self, _attack_slot_target_id)
+		_attack_slot_target_id = 0
+
+
+func _start_attack_recovery(duration: float) -> void:
+	_attack_recovery = maxf(0.0, duration)
+	velocity = Vector2.ZERO
+
+
+## 轻击只打断轻体型，重击可打断中型；Boss和高韧性不被无限连击锁住。
+func _can_stagger(heavy: bool) -> bool:
+	return not inst.species.is_boss and inst.species.poise < (0.75 if heavy else 0.35)
+
+
+func _try_stagger(heavy: bool, from_position: Vector2) -> void:
+	if from_position == Vector2.INF or current_hp <= 0.0 or _stagger_rearm > 0.0 \
+			or not _can_stagger(heavy):
+		return
+	_stagger_timer = inst.species.heavy_stagger_time if heavy else inst.species.stagger_time
+	_stagger_rearm = maxf(_stagger_timer + 0.35, inst.species.stagger_rearm_time)
+	_attack_recovery = 0.0
+	_melee_windup = 0.0
+	_clear_attack_context()
+	_on_staggered()
+	state = S_FLEE if inst.species.ambient else S_CHASE
+	velocity = Vector2.ZERO
+	set_tint(_restore_tint())
+	_action_anim_timer = 0.0
+	_play_action_anim("hurt", maxf(0.05, _stagger_timer))
+	_hurt_anim_cd = maxf(0.45, _stagger_timer)
+
+
+## 子类在这里清理被真正打断的前摇，不影响有韧性的持续出招。
+func _on_staggered() -> void:
+	pass
 
 
 ## 子类只改伤害倍率，避免覆写普攻时漏掉共用出招/命中表现。
@@ -1079,23 +1184,22 @@ func _melee_damage_mult() -> float:
 
 ## 普攻执行；source 名传给玩家做死亡信息
 func _perform_attack(player: Node2D) -> void:
-	if not _has_melee_los(player):
-		_clear_attack_context()
-		return
-	_squash(Vector2(0.92, 1.08), 0.14)  # 出刀瞬间过冲
-	# 出招帧与伤害结算同相位（Interact/Attack 条带 0.3~0.4s 非循环完整走完，
-	# 压制窗略宽防冷却期 walk 盖掉收招）
-	_play_action_anim("attack", 0.45)
-	if player.has_method("take_damage"):
+	_squash(Vector2(0.92, 1.08), 0.14)
+	# 前摇已播放整段动作，命中时不重启第0帧；直接调用仍有兼容表现。
+	if _action_anim_timer <= 0.0 or visual.animation != &"attack":
+		_play_action_anim("attack", maxf(0.12, inst.species.melee_recovery_time))
+	var offset := player.global_position - global_position
+	var direction := _attack_aim_dir if not _attack_aim_dir.is_zero_approx() else offset.normalized()
+	var inside_arc := offset.is_zero_approx() or direction.dot(offset.normalized()) >= cos(inst.species.melee_half_angle)
+	if offset.length() <= inst.species.attack_range * 1.1 and inside_arc \
+			and _has_melee_los(player) and player.has_method("take_damage"):
 		var context := _damage_context(player, inst.attack_power() * _melee_damage_mult())
 		var landed: Variant = player.take_damage(CombatMath.physical_damage(float(context["strength"])),
 			global_position, inst.display_name(), context)
-		# 完全格挡/无敌/重复动作不叠加“受伤”邪光，防御接触由玩家反馈。
-		# 旧的测试靶返回 null，仍保留原有命中表现。
 		if landed != false:
-			EventBus.fx_requested.emit("orb", (player as Node2D).global_position,
+			EventBus.fx_requested.emit("orb", player.global_position,
 				1.5 if inst.species.is_boss else 0.8)
-	_clear_attack_context()
+	_clear_attack_context(_attack_recovery > 0.0)
 
 
 ## 普通近战检查整段障碍，排除两端身体；不能复用远程的60px贴脸豁免/终点回撤。
@@ -1113,6 +1217,10 @@ func _has_melee_los(player: Node2D) -> bool:
 
 ## 准备阶段锁定真实招式强度，不消耗伤害 RNG；所有盾数值/分档在角色公式中。
 func _begin_attack_warning(player: Node2D, strength: float, blockable := true) -> void:
+	_attack_started_frame = Engine.get_physics_frames()
+	_attack_aim_dir = (player.global_position - global_position).normalized()
+	if _attack_aim_dir.is_zero_approx():
+		_attack_aim_dir = Vector2.LEFT if visual.flip_h else Vector2.RIGHT
 	_attack_context = EnemyAttackContext.create(strength, blockable)
 	_attack_context_state = state
 	if _guard_hint == null:
@@ -1144,15 +1252,28 @@ func _damage_context(player: Node2D, fallback_strength: float,
 	return context
 
 
+func _show_attack_sector(reach: float, half_angle := 0.0) -> void:
+	if _attack_cue == null:
+		_attack_cue = MonsterAttackCue.new()
+		_attack_cue.z_index = -1
+		add_child(_attack_cue)
+	_attack_cue.show_sector(_attack_aim_dir, reach, half_angle)
+
+
 func _clear_attack_warning() -> void:
 	if _guard_hint != null:
 		_guard_hint.clear()
+	if _attack_cue != null:
+		_attack_cue.visible = false
 
 
-func _clear_attack_context() -> void:
+func _clear_attack_context(keep_attack_slot := false) -> void:
 	_attack_context = {}
 	_attack_context_state = -1
+	_attack_aim_dir = Vector2.ZERO
 	_clear_attack_warning()
+	if not keep_attack_slot:
+		_release_attack_slot()
 
 
 func _cancel_melee_windup() -> void:

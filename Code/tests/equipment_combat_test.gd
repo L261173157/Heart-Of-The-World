@@ -67,6 +67,9 @@ func _monster(offset: Vector2) -> MonsterBase:
 	return monster
 
 func _clear() -> void:
+	if is_instance_valid(_player):
+		while not _player._skill_action.is_empty():
+			await _frames()
 	for target in _targets:
 		if is_instance_valid(target):
 			target.queue_free()
@@ -134,8 +137,8 @@ func _combo_contract() -> void:
 	_player._try_attack()
 	await _frames(20)
 	_check(first.current_hp < 10000.0 and second.current_hp < 10000.0, "第三段真实扫掠同时命中两只活体")
-	_check(is_equal_approx(_player.current_hp - hp, _player.stats.max_hp() * 0.006),
-		"同一第三刀只按首个活体回复最大HP*.006")
+	_check(is_equal_approx(_player.current_hp - hp, _player.stats.max_hp() * 0.006 * _player.stats.combo_output_mult()),
+		"同一第三刀只按首个活体回复最大HP*.006并按新连击节奏归一")
 	_check(_bursts.count("orange") == 1 and _bursts.count("hit") == 0,
 		"一次根攻击仅一个主要橙色装备反馈")
 	_check(_player._equipment_combo_cd > 1.5, "真实命中开启2秒游戏ICD")
@@ -249,6 +252,7 @@ func _tradeoff_damage_contract() -> void:
 	await _frames(2)
 	seed(431)
 	_player._try_heavy_attack()
+	await _frames(36)
 	var plain := 10000.0 - target.current_hp
 	target.current_hp = 10000.0
 	_equip("combo", 10)
@@ -256,6 +260,7 @@ func _tradeoff_damage_contract() -> void:
 	_player.current_mp = 100.0
 	seed(431)
 	_player._try_heavy_attack()
+	await _frames(36)
 	var orange := 10000.0 - target.current_hp
 	_check(absf(orange / plain - 0.9) < 0.001, "真实重击伤害保留橙剑*.9，而非仅面板显示")
 	_check(_player._equipment_combo_cd == 0.0, "重击技能不会借三连橙剑制造回血触发")
@@ -266,6 +271,7 @@ func _tradeoff_damage_contract() -> void:
 	_player.current_mp = 100.0
 	seed(877)
 	_player._try_cast_bolt()
+	await _frames(11)
 	var plain_bolt := get_tree().get_first_node_in_group("player_bolts") as PlayerBolt
 	var plain_main := plain_bolt.damage
 	var plain_shard := plain_bolt._split_damage
@@ -278,6 +284,7 @@ func _tradeoff_damage_contract() -> void:
 	_player.current_mp = 100.0
 	seed(877)
 	_player._try_cast_bolt()
+	await _frames(11)
 	var focus_bolt := get_tree().get_first_node_in_group("player_bolts") as PlayerBolt
 	_check(is_equal_approx(focus_bolt.damage / plain_main, 0.95)
 		and is_equal_approx(focus_bolt._split_damage / plain_shard, 0.95),

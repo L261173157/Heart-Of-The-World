@@ -14,6 +14,8 @@ const S_SPIT_WINDUP := 10
 var _backoff_stuck := 0.0
 var _cornered := false
 var _spit_windup := 0.0
+var _spit_dir := Vector2.RIGHT
+var _spit_distance := 0.0
 
 
 func _chase_tick(_delta: float, player: Node2D) -> void:
@@ -39,7 +41,6 @@ func _chase_tick(_delta: float, player: Node2D) -> void:
 			# 退无可退：原地按冷却吐息，保持反击能力
 			velocity = Vector2.ZERO
 			if _attack_cd <= 0.0 and _has_los(player.global_position):
-				_attack_cd = inst.species.attack_cooldown
 				_spit(player)
 			return
 		# 被贴近：后撤拉开距离（导航绕障，不再顶墙站桩滑步）
@@ -53,9 +54,8 @@ func _chase_tick(_delta: float, player: Node2D) -> void:
 		# 视线有真实收益）。不做定点侧翼：侧翼点在多岩区会选到不可达口袋，
 		# 导航返回无路径后直撞墙原地振荡（combat 掩体用例实测）
 		if _has_los(player.global_position):
-			velocity = Vector2.ZERO
+			velocity = _spacing_velocity(player)
 			if _attack_cd <= 0.0:
-				_attack_cd = inst.species.attack_cooldown
 				_spit(player)
 			return
 		velocity = _nav_velocity_toward(player.global_position, inst.move_speed())
@@ -74,15 +74,43 @@ func _is_backed_into_wall() -> bool:
 	return false
 
 
+## 冷却期慢速侧移保持间距；被掩体挡住时仍走原有寻路接近入口。
+func _spacing_velocity(player: Node2D) -> Vector2:
+	var away := (global_position - player.global_position).normalized()
+	if away.is_zero_approx():
+		away = Vector2.RIGHT
+	var side := 1.0 if inst.id % 2 == 0 else -1.0
+	var distance := clampf(inst.species.keep_away_dist + 45.0,
+		inst.species.keep_away_dist, inst.species.attack_range * 0.85)
+	var target := player.global_position + away.rotated(side * 0.25) * distance
+	return _nav_velocity_toward(target, inst.move_speed() * 0.35)
+
+
 func _spit(player: Node2D) -> void:
-	# 吐息动作上屏（Archer_Shoot 8 帧@10fps）：本原型从不进 S_ATTACK，
-	# 旧状态映射下这条攻击帧永远没有播放路径（2026-09-28 动作补齐）
-	_play_action_anim("attack", 0.75)
-	# 飞弹实际离手前留出与近战同长的可读前摇；风筝/困兽和射击冷却仍走原入口。
+	if not _try_attack_slot(player):
+		return
 	state = S_SPIT_WINDUP
-	_spit_windup = MELEE_WINDUP
+	_spit_windup = maxf(0.05, inst.species.ranged_windup_time)
+	_attack_cd = inst.species.attack_cooldown
 	velocity = Vector2.ZERO
+	_spit_distance = global_position.distance_to(player.global_position)
 	_begin_attack_warning(player, inst.attack_power())
+	_spit_dir = _attack_aim_dir
+	_show_attack_sector(inst.species.attack_range)
+	_play_action_anim("attack", _spit_windup + inst.species.ranged_recovery_time)
+	set_tint(WINDUP_TINT)
+
+
+func _restore_tint() -> Color:
+	return WINDUP_TINT if state == S_SPIT_WINDUP else super()
+
+
+func _on_staggered() -> void:
+	_spit_windup = 0.0
+
+
+func _on_nav_velocity(safe_velocity: Vector2) -> void:
+	super(Vector2.ZERO if state == S_SPIT_WINDUP else safe_velocity)
 
 
 func _extra_state_tick(delta: float, player: Node2D) -> void:
@@ -93,21 +121,30 @@ func _extra_state_tick(delta: float, player: Node2D) -> void:
 		_clear_attack_context()
 		_spit_windup = 0.0
 		state = S_PATROL
+		set_tint(_restore_tint())
 		return
 	_spit_windup = maxf(0.0, _spit_windup - delta)
 	if _spit_windup > 0.0:
 		return
 	_clear_attack_warning()
-	# 蓄力期间出现掩体仍不穿墙射击；下一次继续正常导航重取视线。
-	if _has_los(player.global_position):
+	# 只沿开始预警的射线检查新掩体，不在释放瞬间追踪玩家重新瞄准。
+	var query := PhysicsRayQueryParameters2D.create(global_position,
+		global_position + _spit_dir * _spit_distance, 1)
+	query.exclude = [get_rid()]
+	if player is CollisionObject2D:
+		query.exclude = [get_rid(), (player as CollisionObject2D).get_rid()]
+	query.hit_from_inside = true
+	if get_world_2d().direct_space_state.intersect_ray(query).is_empty():
 		_release_spit(player)
-	_clear_attack_context()
+	_start_attack_recovery(inst.species.ranged_recovery_time)
+	_clear_attack_context(true)
 	state = S_CHASE
+	set_tint(_restore_tint())
 
 
 func _release_spit(player: Node2D) -> void:
 	_squash(Vector2(0.94, 1.06), 0.12)  # 吐息轻弹
-	var dir := (player.global_position - global_position).normalized()
+	var dir := _spit_dir
 	var context := _damage_context(player, inst.attack_power(), true, -dir)
 	Projectile.spawn(get_parent(), global_position + dir * 16.0, dir,
 		CombatMath.magic_damage(float(context["strength"])), 270.0, inst.display_name(),
