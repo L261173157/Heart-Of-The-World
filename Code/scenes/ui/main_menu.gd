@@ -49,7 +49,7 @@ func _ready() -> void:
 	%ArchiveSave.pressed.connect(_manual_save)
 	%SettingsBtn.pressed.connect(_toggle_settings)
 	%SettingsClose.pressed.connect(_close_layers)
-	%QuitBtn.pressed.connect(func() -> void: get_tree().quit())
+	%QuitBtn.pressed.connect(_quit)
 	# iOS 应用不应自行退出（App Store 审核常见拒因）；仅桌面保留退出键
 	if OS.has_feature("ios"):
 		%QuitBtn.visible = false
@@ -182,6 +182,12 @@ func _has_progress() -> bool:
 func _start() -> void:
 	if _starting or %SettingsLayer.visible or %NewGameConfirm.visible or %ArchiveLayer.visible:
 		return
+	if GameState._load_incomplete:
+		_toast("存档未能完整读取，请保留原存档后重试")
+		return
+	if not GameState.world_generation_supported():
+		_toast("此存档的世界格式当前不支持，请使用兼容的新版本继续")
+		return
 	_starting = true
 	get_tree().change_scene_to_file("res://scenes/main/main.tscn")
 
@@ -246,13 +252,22 @@ func _toggle_archive() -> void:
 func _do_new_game() -> void:
 	if not %NewGameConfirm.visible:
 		return
-	GameState.reset_all()
+	var saved := GameState.reset_all()
 	_close_layers()
 	%StartBtn.text = "开始冒险"
 	%NewBtn.visible = false
 	_layout_menu()
 	%StartBtn.grab_focus()
-	_toast("进度已清空，新的冒险从这里开始")
+	_toast("进度已清空，新的冒险从这里开始" if saved else "新冒险保存失败，暂存于内存；请在退出前重试保存")
+
+
+## 主动退出不会收到窗口关闭通知；同步保存失败时留在菜单保留内存与重试。
+func _quit() -> void:
+	# 只读保护没有可提交的写入；允许退出，原始文件保持不动。
+	if GameState.equipment_read_only() or GameState.save_now():
+		get_tree().quit()
+	else:
+		_toast("保存失败，尚未退出；请检查存储后重试")
 
 
 # --- 冒险档案（进度概览 + 手动保存） ---
@@ -264,7 +279,7 @@ func _refresh_archive() -> void:
 	%EmptyHint.visible = not has_progress
 	%InfoGrid.visible = has_progress
 	%AutoHint.visible = has_progress
-	%ArchiveSave.disabled = not has_progress
+	%ArchiveSave.disabled = not has_progress and not GameState.last_save_failed
 	if not has_progress:
 		return
 	var day := 1

@@ -21,6 +21,13 @@ var _charge_dir := Vector2.RIGHT
 var _charge_start := Vector2.ZERO
 
 
+func setup(p_inst: MonsterInstance) -> void:
+	super(p_inst)
+	# setup 已恢复血量；重建节点也应立即拥有低血行为与颜色。
+	_on_taken_damage(0.0, Vector2.INF)
+	_sync_avoidance_speed()
+
+
 func _speed_mult() -> float:
 	return ENRAGE_SPEED_MULT if _enraged else 1.0
 

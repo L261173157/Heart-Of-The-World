@@ -38,7 +38,7 @@ func _run() -> void:
 	var q: Dictionary = game.get("campaign_quest")
 	var checks := {
 		"actual_v18_client": int(constants.get("SAVE_VERSION", 0)) == 18,
-		"new_v19_save": int(raw.get("version", 0)) == 19 and int(raw.get("campaign_min_reader", 0)) == 19,
+		"new_current_save": int(raw.get("version", 0)) >= 19 and int(raw.get("campaign_min_reader", 0)) == int(raw.get("version", 0)),
 		"earned_conclude_on_disk": raw.campaign_quest.quests[stage].evidence[action].get("kind", "") == "conclude" and raw.campaign_quest.quests[stage].receipt.paid,
 		"old_reader_does_not_understand_conclude": not q.quests[stage].evidence.has(action),
 		"paid_tombstone_retained": q.quests[stage].receipt.paid,
@@ -141,13 +141,13 @@ def main() -> int:
             errors = unexpected_errors("campaign_reunion_compatibility", output)
             unchanged = phase != "read" or digest(save.read_bytes()) == before
             saved = json.loads(save.read_bytes())
-            schema_ok = saved.get("version") == 19 and saved.get("campaign_min_reader") == 19 and saved.get("equipment_schema") == 1
+            schema_ok = saved.get("version") == 20 and saved.get("campaign_min_reader") == 20 and saved.get("equipment_schema") == 1
             current_backups = {str(path): digest(path.read_bytes()) for path in root.glob("save.json.pre-equipment-*.bak")}
             backups_retained = all(current_backups.get(path) == sha for path, sha in backups.items())
-            migration_exact = json.loads(original).get("version", 0) >= 19 or before in current_backups.values()
+            migration_exact = json.loads(original).get("version", 0) >= 20 or before in current_backups.values()
             backups.update(current_backups)
             ok = code == 0 and MARKER in output and not errors and unchanged and schema_ok and backups_retained and migration_exact
-            entry.update(status="passed" if ok else "failed", exit=code, marker_found=MARKER in output, errors=errors, output_sha256=digest(save.read_bytes()), read_only_unchanged=unchanged, schema_v19=schema_ok, exact_migration_backup=migration_exact, prior_backups_retained=backups_retained, backups=current_backups)
+            entry.update(status="passed" if ok else "failed", exit=code, marker_found=MARKER in output, errors=errors, output_sha256=digest(save.read_bytes()), read_only_unchanged=unchanged, schema_current=schema_ok, exact_migration_backup=migration_exact, prior_backups_retained=backups_retained, backups=current_backups)
             write_report()
             print(f"[{label}] exit={code} {'PASS' if ok else 'FAIL'}", flush=True)
             if not ok:

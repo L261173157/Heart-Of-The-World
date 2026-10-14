@@ -65,9 +65,11 @@ var _reward_settling := false
 var _equipment_kill_source: Dictionary = {}
 
 var _lod_skip := 0
-## 当前处于远档（_far_tick 主导）：_nav_velocity_toward 走免导航直线分支。
+## 当前处于远档（含跳过的物理帧，_far_tick 主导）：_nav_velocity_toward 走免导航直线分支。
 ## 远档个体屏外不可见，绕障精度无意义；导航查询是怪物侧最大单项成本
 var _far_mode := false
+## 远档只临时挂起避让；回近档恢复进入前的选择，不覆盖主动关闭的直接移动路径。
+var _avoidance_before_far := false
 ## 近档导航查询节流缓存（毫秒时间戳 + 期望速度 + 目标锚）
 var _navq_ms := 0
 var _navq_velocity := Vector2.INF
@@ -174,6 +176,11 @@ var _hp_bar: MonsterHpBar
 
 func setup(p_inst: MonsterInstance) -> void:
 	inst = p_inst
+	_far_mode = false
+	_avoidance_before_far = false
+	_lod_skip = 0
+	_awaiting_rvo = false
+	_pending_move_delta = 0.0
 	# 落点与巡逻锚点：区域内部随机扎根（±45% 半幅），
 	# 避免全员挤在区域中心一团、四周大片空旷；分裂子代在母体死亡处扎根
 	var region: SimRegion = WorldSim.sim.get_region(inst.region_id)
@@ -261,7 +268,7 @@ func setup(p_inst: MonsterInstance) -> void:
 	if _nav != null:
 		_nav.radius = clampf(12.0 * maxf(0.6, inst.size_scale), 8.0, 30.0)
 		_sync_avoidance_speed()
-		_nav.avoidance_enabled = true
+		_set_avoidance_enabled(true)
 		_nav.neighbor_distance = 96.0
 		_nav.max_neighbors = 6
 		var layer := 1 << (absi(hash(inst.species.species_name)) % 30)
@@ -272,6 +279,7 @@ func setup(p_inst: MonsterInstance) -> void:
 
 
 func _exit_tree() -> void:
+	_set_avoidance_enabled(false)
 	_clear_attack_context()
 	# 节点销毁/场景卸载时从注册表摘除，防悬挂引用与跨场景泄漏
 	if inst == null:
@@ -482,6 +490,7 @@ func _physics_process(delta: float) -> void:
 	_stagger_rearm = maxf(0.0, _stagger_rearm - delta)
 	_knockback_rearm = maxf(0.0, _knockback_rearm - delta)
 	if state == S_CORPSE:
+		_set_avoidance_enabled(false)
 		velocity = Vector2.ZERO
 		return
 
@@ -497,20 +506,27 @@ func _physics_process(delta: float) -> void:
 	# LOD 远档：屏外常规状态（巡逻含巡猎/追击/迁徙）10Hz 降频处理；
 	# 攻击/逃跑/子类扩展状态（>=10）与近圈个体逐位走原路径
 	if _stagger_timer <= 0.0 and _attack_recovery <= 0.0 \
+			and _knockback.length_squared() <= 0.01 \
 			and state != S_ATTACK and state != S_FLEE and state < 10 \
 			and player != null and player.visible \
 			and global_position.distance_squared_to(player.global_position) \
 					>= LOD_FAR_DIST * LOD_FAR_DIST:
+		if not _far_mode:
+			_avoidance_before_far = _nav != null and _nav.avoidance_enabled
+			_far_mode = true
+			_set_avoidance_enabled(false)
 		_lod_skip = (_lod_skip + 1) % LOD_STEP
 		if _lod_skip != 0:
 			return
-		_far_mode = true
 		_far_tick(delta * LOD_STEP, player)
-		_far_mode = false
 		if profiling:
 			prof_far_ms += (Time.get_ticks_usec() - _tf) * 0.001
 			prof_far_n += 1
 		return
+	if _far_mode:
+		_far_mode = false
+		_set_avoidance_enabled(_avoidance_before_far)
+		_avoidance_before_far = false
 	_lod_skip = 0
 	var _tn := 0
 	if profiling:
@@ -629,7 +645,7 @@ func _far_move(motion: Vector2) -> void:
 		var collision := move_and_collide(motion, false, safe_margin)
 		if collision == null:
 			return
-		motion = motion.slide(collision.get_normal())
+		motion = collision.get_remainder().slide(collision.get_normal())
 
 
 ## 移动后处理（move_and_slide 之后）：当帧碰撞钩子 + 朝向 + 帧动画。
@@ -653,11 +669,33 @@ func _sync_avoidance_speed() -> void:
 		_nav.max_speed = limit
 
 
+## LOD/死亡真正退出避让服务器；切换时丢弃旧请求，防止迟到回调补走一次。
+func _set_avoidance_enabled(enabled: bool) -> void:
+	if _nav == null:
+		return
+	if not enabled:
+		_awaiting_rvo = false
+		_pending_move_delta = 0.0
+	if _nav.avoidance_enabled == enabled:
+		return
+	_awaiting_rvo = false
+	_pending_move_delta = 0.0
+	_nav.set_velocity(Vector2.ZERO)
+	_nav.set_velocity_forced(Vector2.ZERO)
+	_nav.avoidance_enabled = enabled
+	if enabled:
+		_sync_avoidance_speed()
+		_navq_velocity = Vector2.INF
+		_nav_target = Vector2.INF
+
+
 func _on_nav_velocity(safe_velocity: Vector2) -> void:
 	# 受击当帧已直接完成物理移动，旧避让回调不能再走第二次。
 	if not _awaiting_rvo:
 		return
 	_awaiting_rvo = false
+	if _far_mode or _nav == null or not _nav.avoidance_enabled:
+		return
 	if state == S_CORPSE:
 		return
 	# 前摇/收招/硬直的脚点锁定，避免 RVO 在原地动作期间悄悄漂移。
@@ -992,6 +1030,7 @@ func on_sim_death() -> void:
 	_attack_recovery = 0.0
 	_stagger_timer = 0.0
 	state = S_CORPSE
+	_set_avoidance_enabled(false)
 	_hunt_mode = false
 	velocity = Vector2.ZERO
 	_knockback = Vector2.ZERO

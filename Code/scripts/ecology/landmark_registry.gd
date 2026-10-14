@@ -39,13 +39,15 @@ const NPC_BY_KIND := {
 
 static var _cache: Array = []
 static var _seed_cached := -2147483648
+static var _generation_cached := -1
 
 
 ## 全部地标：[{id, patch_id, kind, pos}]（同种子确定性缓存）
 static func landmarks() -> Array:
-	if _seed_cached == BiomeMap.current_seed() and not _cache.is_empty():
+	if _seed_cached == BiomeMap.current_seed() and _generation_cached == BiomeMap.current_generation() and not _cache.is_empty():
 		return _cache
 	_seed_cached = BiomeMap.current_seed()
+	_generation_cached = BiomeMap.current_generation()
 	_cache = []
 	for def: Dictionary in BiomeMap.patches():
 		var rng := RandomNumberGenerator.new()

@@ -23,7 +23,8 @@ const SAVE_DEBOUNCE := 2.0
 ## v16 启用人物与区域故事；较早批次不能覆盖这些新增收据。
 ## v18 唯一装备实例、六槽、来源掉落、保底与溢出收据。
 ## v19 无分支团聚确认使用 conclude 证据；v18 读者只读保护，旧档原字节备份后升级。
-const SAVE_VERSION := 19
+## v20 持久化世界几何代次；旧世界保持原锚点，新冒险采用归属正确的锚点。
+const SAVE_VERSION := 20
 const GearCatalog = preload("res://scripts/equipment/equipment_catalog.gd")
 const GearInventory = preload("res://scripts/equipment/equipment_inventory.gd")
 const GearDrops = preload("res://scripts/equipment/equipment_drops.gd")
@@ -31,6 +32,9 @@ const GearDrops = preload("res://scripts/equipment/equipment_drops.gd")
 ## 世界种子（世界 v5）：「新的冒险」重掷，游戏内 BiomeMap.configure 消费；
 ## v3 旧档无此键 → DEFAULT_SEED（旧世界与旧 ecology 存档严丝合缝）
 var world_seed: int = BiomeMap.DEFAULT_SEED
+## 缺字段的旧档恒为1；仅无档首启及明确新冒险采用2。未知代次不启动、不覆盖。
+var world_generation: int = 2
+var _unsupported_world_generation := false
 ## 战争迷雾位图（200×200 位，每格 4000px ≈ 据点尺度；行内按 bit 打包，
 ## 25 bytes/行 × 200 行 = 5KB）。空数组 = 全图未探索（懒分配）
 const FOG_GRID := 200
@@ -71,6 +75,7 @@ var equipment_offer_id: int = 0
 ## v18 权威实例账本；stats.equips 仅为派生属性缓存。
 var equipment_state: Dictionary = GearInventory.empty_state()
 var equipment_drop_state: Dictionary = GearDrops.empty_state()
+var _receipt_encoding := preload("res://scripts/equipment/equipment_receipt_encoding.gd").new()
 var pending_items: Dictionary = {}
 var pending_item_sequence := 0
 var item_source_receipts: Dictionary = {}
@@ -83,6 +88,8 @@ var equipment_migration_notice := ""
 var _equipment_busy := false
 var _migration_backup_required := false
 var _loaded_save_bytes := PackedByteArray()
+## 仅整个恢复函数返回成功后解除；任何中途脚本错误均禁止覆盖原文件。
+var _load_incomplete := false
 var _future_save_version := 0
 var _future_equipment_schema := 0
 ## 自动赏金跨场景/进程持久化；{} 表示交接期。
@@ -126,6 +133,8 @@ var dialogue_open := false
 ## 最近一次成功落盘的时刻（Unix 秒）：冒险档案面板显示"最后保存 HH:MM"。
 ## 0 = 尚未保存过（首启无档 / 测试关闭写盘）
 var last_save_unix: float = 0.0
+## 最近一次真实写入失败时保留手动重试入口（即使刚重置后暂无角色进度）。
+var last_save_failed := false
 
 var _save_timer := 0.0
 ## 生态大快照降频（真机性能优化 2026-09-19）：自动防抖档每 2s 一次
@@ -178,11 +187,14 @@ func _ready() -> void:
 	EventBus.monster_killed_by_player.connect(_on_kill_record)
 	# 寿命：游戏日推进 + 倒下缩短（策划：死亡缩短寿命）
 	EventBus.game_day_advanced.connect(_on_game_day)
+	EventBus.world_snapshot_invalidated.connect(_invalidate_world_save_cache)
 	EventBus.player_died.connect(_on_player_died_lifespan)
 
 
 ## 新游戏日：角色寿命 -1 天，剩余不多时一次性预警
 func _on_game_day(_day: int) -> void:
+	# 年龄与跨日时钟必须同档；不能复用午夜前的生态缓存。
+	_invalidate_world_save_cache()
 	stats.age_days += 1.0
 	var left: float = stats.lifespan_remaining()
 	for threshold in [10.0, 5.0, 1.0]:
@@ -504,7 +516,7 @@ func set_setting(key: String, value) -> void:
 ## 重置世界：清空全部进度（主菜单"新的冒险"确认）。
 ## stats 就地重置而非重建对象——Player/HUD/AchievementManager 等订阅者
 ## 持有的是旧对象引用，换血会静默失联（属性不生效/升级不弹窗）
-func reset_all() -> void:
+func reset_all() -> bool:
 	stats.reset()
 	gold = 0
 	tutorial_flags = {}
@@ -520,7 +532,9 @@ func reset_all() -> void:
 	# 世界 v5：新的冒险 = 全新世界——重掷种子并同步 BiomeMap（此后的菜单预览/
 	# 世界装配读到的都是新世界），探索进度归零
 	world_seed = randi()
-	BiomeMap.configure(world_seed)
+	world_generation = 2
+	_unsupported_world_generation = false
+	BiomeMap.configure(world_seed, world_generation)
 	ObstacleField.restore_destroyed([])
 	explored = PackedByteArray()
 	exploration = ExplorationFog.new(world_seed)
@@ -542,6 +556,7 @@ func reset_all() -> void:
 	equipment_offer_id += 1
 	equipment_state = GearInventory.empty_state()
 	equipment_drop_state = GearDrops.empty_state()
+	_receipt_encoding.clear()
 	pending_items = {}
 	pending_item_sequence = 0
 	item_source_receipts = {}
@@ -555,13 +570,15 @@ func reset_all() -> void:
 	_future_equipment_schema = 0
 	_migration_backup_required = false
 	_loaded_save_bytes = PackedByteArray()
+	_load_incomplete = false
 	_equipment_busy = false
 	bounty = {}
 	tracked_quest_id = ""
-	save_now()
+	var saved := save_now()
 	stats_rebuilt.emit()
 	EventBus.player_progress_changed.emit(stats.level, stats.xp, stats.xp_to_next(), stats.pending_points)
 	EventBus.gold_changed.emit(gold)
+	return saved
 
 
 func _apply_settings() -> void:
@@ -648,6 +665,10 @@ func end_world_reward() -> void:
 ## 降频序列化，跳过时复用缓存——文件仍带（可能早至 6s 的）ecology 键
 ## 返回 true 只表示临时档写入/flush/原子替换全部成功；测试禁用写盘也返回 false。
 func save_now(include_ecology := true) -> bool:
+	if _load_incomplete:
+		_save_timer = 0.0
+		EventBus.hint_requested.emit("存档未能完整读取，已禁止覆盖原文件；请保留原存档后重试")
+		return false
 	if equipment_read_only():
 		_save_timer = 0.0
 		if not _future_campaign_warned:
@@ -673,6 +694,7 @@ func save_now(include_ecology := true) -> bool:
 	var data := {
 		"version": SAVE_VERSION,
 		"world_seed": world_seed,
+		"world_generation": world_generation,
 		"level": stats.level,
 		"xp": stats.xp,
 		"pending_points": stats.pending_points,
@@ -701,7 +723,6 @@ func save_now(include_ecology := true) -> bool:
 		"campaign_min_reader": SAVE_VERSION,
 		"equipment_schema": 1,
 		"equipment_state": equipment_state.duplicate(true),
-		"equipment_drop_state": equipment_drop_state.duplicate(true),
 		"pending_items": pending_items.duplicate(true),
 		"pending_item_sequence": pending_item_sequence,
 		"item_source_receipts": item_source_receipts.duplicate(true),
@@ -807,16 +828,21 @@ func save_now(include_ecology := true) -> bool:
 		DirAccess.remove_absolute(tmp_path)
 		return _save_failed("存档原子替换失败（错误码 %d），保留旧档" % err)
 	last_save_unix = saved_at
+	last_save_failed = false
 	_migration_backup_required = false
 	return true
 
 
-## 顶层进度每次重新编码；只有既有门槛准许复用的生态私有快照跳过重复 stringify。
+## 顶层进度每次重新编码；只读来源收据与既有门槛准许复用的生态快照跳过重复 stringify。
 ## 保留历史递归键排序：读档后的巢穴信号、事实序列号与快捷物品顺序依赖它。
-## data 是本次非空进度字典，不含 ecology。按 UTF-8 字节拼接完整合法 JSON，
+## data 是本次非空进度字典，不含 ecology/装备来源账本。按 UTF-8 字节拼接合法 JSON，
 ## 最后的写入、flush、逐字节回读及原子替换仍在 save_now 的同一同步事务内。
 func _encode_save_payload(data: Dictionary, ecology: Variant, cache_ecology: bool) -> PackedByteArray:
 	var payload := JSON.stringify(data, "", true).to_utf8_buffer()
+	payload.resize(payload.size() - 1)
+	payload.append_array(',"equipment_drop_state":'.to_utf8_buffer())
+	payload.append_array(_receipt_encoding.encode(equipment_drop_state))
+	payload.append(125)
 	if ecology == null:
 		return payload
 	var ecology_json := _ecology_json if cache_ecology else PackedByteArray()
@@ -832,6 +858,7 @@ func _encode_save_payload(data: Dictionary, ecology: Variant, cache_ecology: boo
 
 
 func _save_failed(message: String) -> bool:
+	last_save_failed = true
 	push_warning(message)
 	# 失败不是已保存：保留内存进度，恢复可写后自动重试，暂停菜单期间也继续计时。
 	_queue_save()
@@ -853,7 +880,7 @@ func _safe_int(value: Variant, fallback: int) -> int:
 func _safe_float(value: Variant, fallback: float) -> float:
 	match typeof(value):
 		TYPE_FLOAT:
-			return value
+			return value if is_finite(value) else fallback
 		TYPE_INT:
 			return float(value)
 		_:
@@ -961,6 +988,7 @@ func _sanitize_bounty(value: Variant) -> Dictionary:
 func _load() -> void:
 	if not FileAccess.file_exists(SAVE_PATH):
 		return
+	_load_incomplete = true
 	var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
 	if file == null:
 		return
@@ -970,7 +998,15 @@ func _load() -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_warning("存档损坏，已忽略")
 		return
-	var data: Dictionary = parsed
+	if not _restore_save_data(parsed):
+		return
+	_load_incomplete = false
+	EventBus.player_progress_changed.emit(stats.level, stats.xp, stats.xp_to_next(), stats.pending_points)
+	EventBus.gold_changed.emit(gold)
+
+
+## 与读取护栏分离：只有正常到达末尾才返回 true。坏字段异常不得被当作成功加载。
+func _restore_save_data(data: Dictionary) -> bool:
 	_future_campaign_min_reader = _safe_int(data.get("campaign_min_reader", 0), 0)
 	_future_campaign_warned = false
 	var version := _safe_int(data.get("version", 1), 1)
@@ -987,6 +1023,11 @@ func _load() -> void:
 			version, SAVE_VERSION])
 	# 世界种子（v4+）：v3 旧档无键 → DEFAULT_SEED，旧世界与旧 ecology 快照严丝合缝
 	world_seed = _safe_int(data.get("world_seed", BiomeMap.DEFAULT_SEED), BiomeMap.DEFAULT_SEED)
+	var raw_generation: Variant = data.get("world_generation", 1)
+	world_generation = _safe_int(raw_generation, 0)
+	_unsupported_world_generation = typeof(raw_generation) not in [TYPE_INT, TYPE_FLOAT] \
+		or not is_finite(float(raw_generation)) or float(raw_generation) != float(world_generation) \
+		or world_generation not in [1, 2]
 	stats.level = maxi(1, _safe_int(data.get("level", 1), 1))
 	stats.xp = maxi(0, _safe_int(data.get("xp", 0), 0))
 	stats.pending_points = maxi(0, _safe_int(data.get("pending_points", 0), 0))
@@ -1007,7 +1048,7 @@ func _load() -> void:
 				continue
 			# 标志值兼容 bool（常态）与数字（旧格式），其余类型视为未完成
 			var flag: Variant = saved_flags[key]
-			if flag == true or _safe_int(flag, 0) > 0:
+			if (typeof(flag) == TYPE_BOOL and flag) or _safe_int(flag, 0) > 0:
 				tutorial_flags[key] = true
 	var saved_codex: Variant = data.get("codex", {})
 	if typeof(saved_codex) == TYPE_DICTIONARY:
@@ -1053,7 +1094,7 @@ func _load() -> void:
 	stats.ensure_passive_choices()
 	# 寿命：读档重建（非法值回落默认）；已越过的警告阈值静默补记防重复播报
 	stats.age_days = maxf(0.0, _safe_float(data.get("age_days", 0.0), 0.0))
-	stats.lifespan_days = maxf(1.0, _safe_float(data.get("lifespan_days", CharacterStats.BASE_LIFESPAN_DAYS), CharacterStats.BASE_LIFESPAN_DAYS))
+	stats.lifespan_days = maxf(0.0, _safe_float(data.get("lifespan_days", CharacterStats.BASE_LIFESPAN_DAYS), CharacterStats.BASE_LIFESPAN_DAYS))
 	_lifespan_warned.clear()
 	for threshold in [10.0, 5.0, 1.0]:
 		if stats.lifespan_remaining() <= threshold:
@@ -1236,9 +1277,9 @@ func _load() -> void:
 			if typeof(id) == TYPE_STRING and id.begins_with("lm_"):
 				discovered_landmarks.append(id)
 	var saved_checkpoints: Variant = data.get("checkpoints", [])
-	if typeof(saved_checkpoints) == TYPE_ARRAY and not saved_checkpoints.is_empty():
+	if typeof(saved_checkpoints) == TYPE_ARRAY and not saved_checkpoints.is_empty() and world_generation_supported():
 		# 校验必须使用本档世界种子，不能借用上一档残留的地标定义。
-		BiomeMap.configure(world_seed)
+		BiomeMap.configure(world_seed, world_generation)
 		var valid_checkpoints := WorldConfig.checkpoints()
 		for id: Variant in saved_checkpoints:
 			if typeof(id) == TYPE_STRING and valid_checkpoints.has(id) \
@@ -1259,18 +1300,19 @@ func _load() -> void:
 			var n := clampi(_safe_int(saved_inventory[key], 0), 0, ITEM_MAX)
 			if n > 0:
 				inventory[key] = n
-	_restore_equipment_state(data)
+	if not _restore_equipment_state(data):
+		return false
 	last_save_unix = maxf(0.0, _safe_float(data.get("last_save_unix", 0.0), 0.0))
 	_apply_settings()
-	EventBus.player_progress_changed.emit(
-		stats.level, stats.xp, stats.xp_to_next(), stats.pending_points
-	)
-	EventBus.gold_changed.emit(gold)
+	return true
 
 # --- v18 装备与物品事务边界 ---
 
+func world_generation_supported() -> bool:
+	return not _unsupported_world_generation and world_generation in [1, 2]
+
 func equipment_read_only() -> bool:
-	return _future_campaign_min_reader > SAVE_VERSION or _future_save_version > SAVE_VERSION or _future_equipment_schema > 1
+	return _load_incomplete or not world_generation_supported() or _future_campaign_min_reader > SAVE_VERSION or _future_save_version > SAVE_VERSION or _future_equipment_schema > 1
 
 func equipment_revision() -> int:
 	return int(equipment_state.get("revision", 0))
@@ -1570,7 +1612,7 @@ func _preserve_equipment_migration_backup() -> bool:
 	backup.close()
 	return written and err == OK and FileAccess.get_file_as_bytes(path) == _loaded_save_bytes
 
-func _restore_equipment_state(data: Dictionary) -> void:
+func _restore_equipment_state(data: Dictionary) -> bool:
 	pending_items = {}
 	pending_item_sequence = maxi(0, _safe_int(data.get("pending_item_sequence", 0), 0))
 	var saved_pending: Variant = data.get("pending_items", {})
@@ -1599,6 +1641,7 @@ func _restore_equipment_state(data: Dictionary) -> void:
 			var item := GearCatalog.sanitize_item(value)
 			if not item.is_empty() and int(item.get("rarity", 0)) == 4 and not str(item.get("id", "")).is_empty(): first_boss_choices.append(item)
 	equipment_drop_state = GearDrops.sanitize_state(data.get("equipment_drop_state", {}))
+	_receipt_encoding.clear()
 	# 尚未选择时，可由同档已确认的来源收据恢复完整候选；已选状态绝不重发。
 	if first_boss_choices.is_empty() and equipment_drop_state.get("first_boss_status", "") == "pending":
 		for receipt: Dictionary in equipment_drop_state.get("receipts", {}).values():
@@ -1643,9 +1686,13 @@ func _restore_equipment_state(data: Dictionary) -> void:
 			equipment_fixed_offers[token] = {"kind": str(value["kind"]), "target": str(value.get("target", item.get("base_id", item.get("slot", "")))), "token": token, "item": item,
 				"price": int(GearCatalog.craft_cost(item)["gold"]) if value["kind"] == "craft" else GearCatalog.purchase_cost(item), "parts": int(GearCatalog.craft_cost(item)["parts"]) if value["kind"] == "craft" else 0}
 
+	return true
+
 ## 旧档兑换档位只从已消毒的真实地图记忆迁移，不用等级、年龄或旧装备推测。
 func _equipment_known_terrain_level() -> int:
-	BiomeMap.configure(world_seed)
+	if not world_generation_supported():
+		return 1
+	BiomeMap.configure(world_seed, world_generation)
 	var highest := 1
 	for byte_index: int in range(exploration.legacy.size() - 1, -1, -1):
 		var bits := int(exploration.legacy[byte_index])

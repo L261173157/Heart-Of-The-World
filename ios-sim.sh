@@ -10,13 +10,11 @@ set -e
 
 GODOT="$HOME/Library/Application Support/Steam/steamapps/common/Godot Engine/Godot.app/Contents/MacOS/Godot"
 REPO="$(cd "$(dirname "$0")" && pwd)"
-IOS_DIR="$REPO/build-output/ios"
-DD="$REPO/build-output/dd-sim"
 UDID="${1:-booted}"
 
-echo "[1/4] 生成 Xcode 工程（Godot 导出）…"
-"$GODOT" --headless --path "$REPO/Code" --export-debug "iOS" "$IOS_DIR/HeartOfTheWorld.ipa" >/dev/null 2>&1 || true
-[ -d "$IOS_DIR/HeartOfTheWorld.xcodeproj" ] || { echo "✗ Xcode 工程未生成"; exit 3; }
+echo "[1/4] 生成并校验本轮 Xcode 工程…"
+source "$REPO/scripts/ios-export.sh"
+hotw_export_debug_project || exit 3
 
 # 模拟器切片自检兜底：Godot（Steam 版）优先读内嵌模板 editor_data/export_templates/，
 # 两处模板 zip 都已修补；若 Godot 升级后模板被还原导致切片缺 arm64，用归档胖库补上

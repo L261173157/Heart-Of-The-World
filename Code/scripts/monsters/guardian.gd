@@ -1,6 +1,6 @@
 ## 重击守卫：普通物种保留原有近身砸击；熔岩龟王单独启用三招与半血阶段。
 ## Boss 地面范围、扇形朝向和落点在前摇开始时锁定，实际命中与同一预警几何一致。
-## 不改生态、成长或伤害公式；阶段由现有生命推导，无新增存档字段。
+## 不改生态、成长或伤害公式；已触发阶段由模拟持久保存，不随成长回血倒退。
 class_name Guardian
 extends MonsterBase
 
@@ -74,7 +74,11 @@ func setup(p_inst: MonsterInstance) -> void:
 	super(p_inst)
 	_boss_loop = inst.species.is_boss and inst.species.guardian_boss_moves
 	# 流式卸载/读档的低血 Boss 直接延续第二阶段，不重复获得变身空窗或回复生命。
-	_boss_phase = 2 if _boss_loop and current_hp <= inst.max_hp() * inst.species.guardian_phase_hp_ratio else 1
+	_boss_phase = 1
+	if _boss_loop:
+		if current_hp <= inst.max_hp() * inst.species.guardian_phase_hp_ratio:
+			_remember_phase_two()
+		_boss_phase = maxi(inst.guardian_phase, 2 if current_hp <= inst.max_hp() * inst.species.guardian_phase_hp_ratio else 1)
 	_ring = RangeRing.new()
 	_ring.radius = inst.species.attack_range * inst.species.guard_smash_range_mult
 	_ring.z_index = -1
@@ -83,6 +87,15 @@ func setup(p_inst: MonsterInstance) -> void:
 	if _boss_loop:
 		_ring.top_level = true
 		set_tint(_restore_tint())
+
+
+## 新阶段走模拟权威入口；同步存档不能复用阶段变化前的生态编码。
+func _remember_phase_two() -> void:
+	if not _is_authoritative_live_source() or inst.guardian_phase >= 2:
+		return
+	WorldSim.sim.report_guardian_phase(inst.id, 2)
+	if inst.guardian_phase == 2:
+		EventBus.world_snapshot_invalidated.emit()
 
 
 func on_sim_death() -> void:
@@ -217,6 +230,7 @@ func _on_taken_damage(_amount: float, _from_position: Vector2) -> void:
 			and current_hp <= inst.max_hp() * inst.species.guardian_phase_hp_ratio:
 		# 半血当帧撤销尚未落下的攻击，绝不把原前摇隐藏后继续结算伤害。
 		_clear_attack_context()
+		_remember_phase_two()
 		_boss_phase = 2
 		_move_cursor = 0
 		state = S_PHASE_CHANGE

@@ -22,6 +22,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - suite: audit_repairs
+            tests: ios_export_safety,mobile_reading_audit,actor_lifecycle_audit,bounty_position_audit,world_generation,world_stream_truth,save_audit_regression,equipment_receipt_encoding
           - suite: combat_feel
             tests: hero_combat_timing,common_combat,boss_moves
           - suite: motion_smoothing

@@ -90,13 +90,14 @@ var _satiety: Dictionary = {}
 ## 按「区域 → 物种名 → 存活实例数组」的查找索引（懒重建缓存）：
 ## 捕食猎物查找/区域计数/扩张收集体原先都是全实例扫描，捕食侧 O(捕食者×全体)。
 ## 桶只是加速结构不是状态真源——候选取用前仍现场过滤 is_alive，
-## 语义与全量扫描严格一致；出生/死亡等变更置脏，下次访问重建；迁徙批次就地更新。
+## 语义与全量扫描严格一致；出生精确增量，死亡/老化后懒重建；迁徙批次就地更新。
 ## 桶内顺序必须与 instances 的插入顺序一致：读档 ID 可以乱序，不能按 ID 排序，
 ## 否则同一随机序列会挑到不同的迁徙者、亲代与猎物。
 var _index: Dictionary = {}
 var _index_order: Dictionary = {}
 var _index_revision := 0
 var _index_dirty := true
+var _index_migration_depth := 0
 
 
 func _buckets() -> Dictionary:
@@ -117,6 +118,23 @@ func _buckets() -> Dictionary:
 			bucket.append(inst)
 		_index_dirty = false
 	return _index
+
+
+## 新生儿总是追加到实例插入序末尾，因此仅复制和更新受影响的桶。
+## 写时复制保留捕食 pass 已持有的旧快照：信号内出生不能渗入该快照。
+## 迁徙信号中的旧缓存时序是特殊契约，此时仍置脏，让查询按原时刻重建。
+func _index_spawned(inst: MonsterInstance) -> void:
+	if _index_migration_depth > 0:
+		_index_dirty = true
+	if _index_dirty:
+		return
+	_index = _index.duplicate()
+	var by_species: Dictionary = _index.get(inst.region_id, {}).duplicate()
+	var bucket: Array = by_species.get(inst.species.species_name, []).duplicate()
+	bucket.append(inst)
+	by_species[inst.species.species_name] = bucket
+	_index[inst.region_id] = by_species
+	_index_order[inst.id] = _index_order.size()
 
 
 ## 扩张批次结束后维护两个桶，避免每个迁出区域都全量重建索引。
@@ -314,6 +332,9 @@ func camp_pos(region: SimRegion, species: SpeciesData) -> Vector2:
 				break
 		if ObstacleField.blocks(pos, 14.0):
 			pos = ObstacleField.nudge_free(pos, 14.0)
+	if _biome_world and BiomeMap.current_generation() >= BiomeMap.GENERATION_CURRENT \
+			and (BiomeMap.region_id_at(pos) != region.id or ObstacleField.blocks(pos, 14.0)):
+		pos = region.center
 	return pos
 
 
@@ -368,7 +389,7 @@ func spawn_instance(species: SpeciesData, region_id: String, age := 0,
 	var region: SimRegion = regions.get(region_id)
 	inst.threat_scale = region.threat if region else 1.0
 	instances[inst.id] = inst
-	_index_dirty = true
+	_index_spawned(inst)
 	_ensure_nest(region_id, species.species_name)
 	instance_spawned.emit(inst)
 	return inst
@@ -485,6 +506,13 @@ func report_hp(id: int, hp: float) -> void:
 	var inst: MonsterInstance = instances.get(id)
 	if inst != null and inst.is_alive:
 		inst.hp_mirror = hp
+
+
+## 守卫 Boss 阶段为单调权威状态，节点重建或血量成长不能使其退回一阶段。
+func report_guardian_phase(id: int, phase: int) -> void:
+	var inst: MonsterInstance = instances.get(id)
+	if inst != null and inst.is_alive and inst.species.is_boss and inst.species.guardian_boss_moves:
+		inst.guardian_phase = maxi(inst.guardian_phase, clampi(phase, 1, 2))
 
 
 func tick() -> void:
@@ -653,6 +681,7 @@ func _process_expansion(stats: Dictionary) -> void:
 			var target_key := "%s|%s" % [target.id, species.species_name]
 			var target_total: int = region_totals.get(target.id, 0)
 			var moved := 0
+			_index_migration_depth += 1
 			for inst in movable:
 				if moved >= species.migrate_count:
 					break
@@ -666,6 +695,7 @@ func _process_expansion(stats: Dictionary) -> void:
 				# 迁入高威胁区的满血怪瞬间显示"已掉血"，数值与视觉互相矛盾
 				moved += 1
 				instance_migrated.emit(inst, target.id)
+			_index_migration_depth -= 1
 			if moved > 0:
 				cells[key]["alive"] = alive - moved
 				if not cells.has(target_key):
@@ -812,6 +842,8 @@ func to_dict() -> Dictionary:
 		# 旧档无 hp 键 = 满血恢复（与拆分前的行为兼容）
 		if inst.is_alive and inst.hp_mirror > 0.0:
 			entry["hp"] = inst.hp_mirror
+		if inst.species.is_boss and inst.species.guardian_boss_moves and inst.guardian_phase > 1:
+			entry["guardian_phase"] = inst.guardian_phase
 		inst_list.append(entry)
 	var anchors := {}
 	for species_name: String in _boss_anchors:
@@ -896,6 +928,13 @@ func restore_from_dict(p_regions: Array, p_species_list: Array[SpeciesData], dat
 		var hp_v: Variant = d.get("hp", null)
 		if typeof(hp_v) in [TYPE_FLOAT, TYPE_INT] and float(hp_v) > 0.0:
 			inst.hp_mirror = float(hp_v)
+		if species.is_boss and species.guardian_boss_moves:
+			var phase: Variant = d.get("guardian_phase", 1)
+			if typeof(phase) == TYPE_INT or (typeof(phase) == TYPE_FLOAT and is_finite(phase)):
+				inst.guardian_phase = clampi(int(phase), 1, 2)
+			# 老档只有血量；在后续成长之前推断已跨越的低血阶段。
+			if inst.hp_mirror > 0.0 and inst.hp_mirror <= inst.max_hp() * species.guardian_phase_hp_ratio:
+				inst.guardian_phase = 2
 		var pos: Variant = d.get("spawn_pos", [])
 		if typeof(pos) == TYPE_ARRAY and (pos as Array).size() == 2 \
 				and typeof(pos[0]) in [TYPE_FLOAT, TYPE_INT] \

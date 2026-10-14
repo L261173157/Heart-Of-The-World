@@ -14,6 +14,20 @@ const SCROLL_OWNER_META := &"mobile_action_touch_owner"
 
 func _ready() -> void:
 	EventBus.touch_input_reset.connect(cancel_touch)
+	bind_popup_input()
+
+
+func bind_popup_input() -> Node:
+	var native_button: Button = self
+	if not native_button is OptionButton:
+		return null
+	var popup := (native_button as OptionButton).get_popup()
+	var observer := popup.get_node_or_null("MobilePopupInput")
+	if observer == null:
+		observer = preload("res://scripts/ui/mobile_option_popup_input.gd").new()
+		observer.name = "MobilePopupInput"
+		popup.add_child(observer)
+	return observer
 
 
 func _input(event: InputEvent) -> void:
@@ -32,11 +46,15 @@ func _input(event: InputEvent) -> void:
 			cancel_touch()
 			get_viewport().set_input_as_handled()
 			if activate:
-				# Raw touches bypass BaseButton GUI handling. Mirror its toggle
-				# transition once; native mouse/keyboard retain their own path.
-				if toggle_mode:
-					button_pressed = not button_pressed
-				pressed.emit()
+				# 原始触屏不走原生 GUI；下拉按钮必须调用原生弹出入口，
+				# 单独发 pressed 不会打开 PopupMenu。鼠标/键盘仍走原生路径。
+				var native_button: Button = self
+				if native_button is OptionButton:
+					(native_button as OptionButton).show_popup()
+				else:
+					if toggle_mode:
+						button_pressed = not button_pressed
+					pressed.emit()
 		elif touch.pressed and not touch.canceled and _touch_index == -1 \
 				and _touch_allowed() and _hit_test(touch.position):
 			if not _begin_scroll_touch(touch.position):
@@ -130,6 +148,9 @@ func _allowed() -> bool:
 
 
 func cancel_touch() -> void:
+	var native_button: Button = self
+	if native_button is OptionButton:
+		(native_button as OptionButton).get_popup().hide()
 	var held := _touch_index != -1
 	_touch_index = -1
 	_touch_inside = false

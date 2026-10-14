@@ -20,6 +20,7 @@ const OBJECTS := {
 }
 
 static var _seed := -2147483648
+static var _generation_cached := -1
 static var _center := Vector2.ZERO
 static var _cell := Vector2i.ZERO
 static var _geometry: Dictionary = {}
@@ -30,9 +31,10 @@ static var _reserved_bounds := Rect2()
 
 
 static func _ensure() -> void:
-	if _seed == BiomeMap.current_seed():
+	if _seed == BiomeMap.current_seed() and _generation_cached == BiomeMap.current_generation():
 		return
 	_seed = BiomeMap.current_seed()
+	_generation_cached = BiomeMap.current_generation()
 	var candidate := BiomeMap.spawn_pos() + OFFSET
 	_cell = Vector2i(floori(candidate.x / CELL), floori(candidate.y / CELL))
 	_center = (Vector2(_cell) + Vector2(0.5, 0.5)) * CELL

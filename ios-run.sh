@@ -1,6 +1,6 @@
 #!/bin/bash
 # 《心之世界》iOS 签名导出 + 真机安装（手动签名通道，无需 Xcode 登录账号）
-# 原理：Godot 生成 Xcode 工程（其内部签名会失败，忽略）→ 无签名构建 →
+# 原理：Godot 仅生成 Xcode 工程（任意导出错误均停止）→ 无签名构建 →
 #       用钥匙串开发证书 + 通配符描述文件手动 codesign → devicectl 装机。
 # 前置：iPhone 用数据线连接并在手机上"信任此电脑"。
 # 用法：./ios-run.sh
@@ -8,8 +8,6 @@ set -e
 
 GODOT="$HOME/Library/Application Support/Steam/steamapps/common/Godot Engine/Godot.app/Contents/MacOS/Godot"
 REPO="$(cd "$(dirname "$0")" && pwd)"
-IOS_DIR="$REPO/build-output/ios"
-DD="$REPO/build-output/dd"
 IDENTITY="Apple Development: Xin Lin (YU7FLV923J)"
 TEAM="3FD979T5VV"
 BUNDLE_ID="com.linxin.heartoftheworld"
@@ -21,11 +19,9 @@ if [ ! -f "$PROFILE" ]; then
 	exit 3
 fi
 
-echo "[1/5] 生成 Xcode 工程（Godot 内部签名失败属预期，忽略）…"
-"$GODOT" --headless --path "$REPO/Code" --export-debug "iOS" "$IOS_DIR/HeartOfTheWorld.ipa" || true
-if [ ! -d "$IOS_DIR/HeartOfTheWorld.xcodeproj" ]; then
-	echo "✗ Xcode 工程未生成，Godot 导出异常终止。"; exit 3
-fi
+echo "[1/5] 生成并校验本轮 Xcode 工程…"
+source "$REPO/scripts/ios-export.sh"
+hotw_export_debug_project || exit 3
 
 echo "[2/5] 无签名构建 .app …"
 xcodebuild build \

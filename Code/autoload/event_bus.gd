@@ -3,6 +3,9 @@
 ## 约定：信号参数用基础类型或数据类，避免传递 Node（世界坐标 Vector2 除外）。
 extends Node
 
+## 持久世界事实变化时作废编码缓存；不强制触发磁盘写入。
+signal world_snapshot_invalidated
+
 # --- 玩家状态 ---
 signal player_hp_changed(current: float, maximum: float)
 signal player_mp_changed(current: float, maximum: float)

@@ -140,6 +140,7 @@ const RECIPES := {
 }
 
 static var _seed_cached := -2147483648
+static var _generation_cached := -1
 static var _clump := FastNoiseLite.new()
 static var _ridge := FastNoiseLite.new()
 static var _pick := FastNoiseLite.new()
@@ -174,9 +175,10 @@ static var _obstacle_hp := {}
 ## 表现层/生态选点/测试均为单线程消费）
 static func _ensure() -> void:
 	var s := BiomeMap.current_seed()
-	if _seed_cached == s:
+	if _seed_cached == s and _generation_cached == BiomeMap.current_generation():
 		return
 	_seed_cached = s
+	_generation_cached = BiomeMap.current_generation()
 	_clump = FastNoiseLite.new()
 	_clump.seed = hash("obstacle|%d|clump" % s)
 	_clump.noise_type = FastNoiseLite.TYPE_SIMPLEX

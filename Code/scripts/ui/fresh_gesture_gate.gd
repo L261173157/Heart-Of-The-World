@@ -32,6 +32,12 @@ func _input(event: InputEvent) -> void:
 		if not armed and held.is_empty():
 			_ready_for_new_press = true
 
+
+## 原生弹窗是独立 Viewport；接续观察释放，避免打开菜单的鼠标/键盘永久挂起。
+func watch_popup(observer: Node) -> void:
+	if not observer.input_observed.is_connected(_input):
+		observer.input_observed.connect(_input)
+
 func require_release() -> void:
 	armed = false
 	_ready_for_new_press = held.is_empty()

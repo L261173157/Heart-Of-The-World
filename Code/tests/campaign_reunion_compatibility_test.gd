@@ -162,7 +162,7 @@ func _write_campaign_expected() -> void:
 
 func _saved_schema_and_backup(original: PackedByteArray) -> void:
 	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(GameState.SAVE_PATH))
-	_check(GameState.SAVE_VERSION == 19 and int(saved.get("version", 0)) == 19 and int(saved.get("campaign_min_reader", 0)) == 19, "conclude证据只写入v19，v18读者不能覆盖")
+	_check(GameState.SAVE_VERSION >= 19 and int(saved.get("version", 0)) == GameState.SAVE_VERSION and int(saved.get("campaign_min_reader", 0)) == GameState.SAVE_VERSION, "conclude证据写入当前版本，v18读者不能覆盖")
 	_check(int(saved.get("equipment_schema", 0)) == 1, "仅升级存档读者边界，装备实例格式仍为1")
 	var source: Dictionary = JSON.parse_string(original.get_string_from_utf8())
 	if int(source.get("version", 0)) < GameState.SAVE_VERSION:

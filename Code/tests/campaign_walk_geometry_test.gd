@@ -143,6 +143,61 @@ func _offset_start_corner() -> void:
 		await _tear_down()
 	Engine.physics_ticks_per_second=original_physics_ticks
 
+func _interior_boss_corner() -> void:
+	# 隔离几何夹具：由完整主线失败的目标/接触边推断的龟王尺寸与位置，
+	# 不是原世界快照，不建立或移动生态Boss，也不把此探针当作故事完成。
+	# 原点格连接已经清楚；问题出在后续路点的12px提前换向。
+	var original_physics_ticks := Engine.physics_ticks_per_second
+	Engine.physics_ticks_per_second=60
+	_world=Node2D.new()
+	add_child(_world)
+	_blocker=StaticBody2D.new()
+	_blocker.name="ExplicitInteriorBossCornerFixture"
+	_blocker.collision_layer=2
+	_blocker.collision_mask=0
+	_blocker.position=Vector2(774088.5,696125.75)
+	var rectangle:=RectangleShape2D.new()
+	rectangle.size=Vector2(42,38)*2.2
+	var collision:=CollisionShape2D.new()
+	collision.shape=rectangle
+	_blocker.add_child(collision)
+	_world.add_child(_blocker)
+	_player=PLAYER_SCENE.instantiate()
+	_world.add_child(_player)
+	_player.set_physics_process(false)
+	_player.set_process(false)
+	_player.position=Vector2(773690.875,696111.125)
+	_player.get_node("Camera2D").snap_to_player()
+	_hud=HUD_SCENE.instantiate()
+	_world.add_child(_hud)
+	await _frames(3)
+	var goal:=Vector2(774000.5,696125.75)
+	var query:=_walk_query()
+	var path:=_walk_plan(_player.global_position,goal,query)
+	_watched_center=Vector2(774032,696176)
+	_watched_next=Vector2(774032,696144)
+	var corner_index:=path.find(_watched_center)
+	_check(corner_index>1 and corner_index+1<path.size() and path[corner_index+1]==_watched_next,
+		"大坐标矩形角确实位于路径内部，不能只检验首路点")
+	var every_segment:=not path.is_empty()
+	for index in range(1,path.size()):
+		every_segment=every_segment and _walk_sweep_clear(path[index-1],path[index],query,index==1)
+	_check(every_segment and path[-1]==goal,"精确格心路段全部可过，原目标仍保持不变")
+	var early:=Vector2(774034.4375,696185)
+	_check(not _walk_blocked(early,query) and early.distance_to(_watched_center)<12.0
+		and not _walk_sweep_clear(early,_watched_next,query),
+		"内部路点12px内的合法身体位置仍会斜切龟王大小的矩形角")
+	var fixed:=_blocker.global_transform
+	var hp:=_player.current_hp
+	var ledger:=GameState.campaign_quest.duplicate(true)
+	if not path.is_empty(): await _walk_to(goal,"原身体实走绕过内部大体型矩形角",8)
+	_check(_player.global_position.distance_to(goal)<=8 and _blocker.global_transform==fixed
+		and collision.shape==rectangle and _blocker.collision_layer==2 and not collision.disabled
+		and _player.current_hp==hp and GameState.campaign_quest==ledger,
+		"原容差内实际到达，未移动障碍、关闭碰撞、改生命或制造故事证据")
+	await _tear_down()
+	Engine.physics_ticks_per_second=original_physics_ticks
+
 func _run() -> void:
 	Engine.time_scale=4
 	GameState.world_seed=BiomeMap.DEFAULT_SEED
@@ -220,5 +275,6 @@ func _run() -> void:
 	await _tear_down()
 	await _closed_gate_contact()
 	await _offset_start_corner()
+	await _interior_boss_corner()
 	print("=== CAMPAIGN WALK GEOMETRY %s (%d checks, %d failures) ===" % ["PASS" if _fails==0 else "FAIL",_checks,_fails])
 	get_tree().quit(0 if _fails==0 else 1)

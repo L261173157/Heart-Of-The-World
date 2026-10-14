@@ -127,8 +127,8 @@ func _walk_to(goal: Vector2, label: String, arrival := 18.0) -> bool:
 			stuck_origin = _player.global_position
 			stuck_frames = 0
 		while cursor < path.size()-1 and _player.global_position.distance_to(path[cursor]) < 12.0:
-			# 首格连接不能被12px提前换向再次斜切；继续靠近格心直到下一段真实清楚。
-			if cursor==1 and not _walk_sweep_clear(_player.global_position,path[cursor+1],query): break
+			# 每个转角都不能被12px提前换向斜切；继续靠近当前路点直到下一段真实清楚。
+			if not _walk_sweep_clear(_player.global_position,path[cursor+1],query): break
 			cursor += 1
 		TouchInput.joystick_active = true
 		TouchInput.move_vector = _player.global_position.direction_to(path[cursor])
