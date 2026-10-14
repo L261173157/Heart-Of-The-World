@@ -68,6 +68,7 @@ const OBJECTS := {
 }
 
 static var _seed := -2147483648
+static var _generation_cached := -1
 static var _sites: Dictionary = {}
 static var _geometry: Dictionary = {}
 static var _gate_cells: Dictionary = {}
@@ -87,9 +88,10 @@ static var _paths: Dictionary = {}
 
 
 static func _ensure() -> void:
-	if _seed == BiomeMap.current_seed():
+	if _seed == BiomeMap.current_seed() and _generation_cached == BiomeMap.current_generation():
 		return
 	_seed = BiomeMap.current_seed()
+	_generation_cached = BiomeMap.current_generation()
 	_sites = {}
 	_geometry = {}
 	_gate_cells = {}

@@ -87,6 +87,7 @@ func _roll_bounty() -> void:
 	var sim_before := WorldSim.sim
 	var player_before := get_tree().get_first_node_in_group("player") as Node2D
 	var position_before := player_before.global_position if player_before != null else Vector2.INF
+	var nav_revision := ObstacleField.nav_revision()
 	var started := Time.get_ticks_usec()
 	var candidates := await _local_targets()
 	_rolling = false
@@ -96,14 +97,31 @@ func _roll_bounty() -> void:
 	if player_after == null or not player_after.visible or _inside_town_room() or position_before.distance_to(player_after.global_position) > 1200.0:
 		_roll_later(1.0)
 		return
-	# 分帧寻路期间生态仍前进；发单前再复核每个已验证可达的活体。
+	# 分帧期间演员会移动、卸载或被替换；发单只消费仍匹配的活体与路径终点。
+	# 玩家也必须仍在已证明连通的格中，机关变化则整次证据作废，稍后重试。
+	var origin := WorldSim.sim.region_of_point(player_after.global_position) if WorldSim.sim != null else null
+	if origin == null or ObstacleField.nav_revision() != nav_revision \
+			or (not candidates.is_empty() and not _route_connected.has(_nav_cell(ObstacleField.nudge_free(player_after.global_position)))):
+		_roll_later(1.0)
+		return
+	var actors := _loaded_actors()
 	for candidate: Dictionary in candidates:
-		var ids: Array = candidate["target_ids"].filter(func(id: int) -> bool:
+		var ids: Array[int] = []
+		var nearest_distance := INF
+		for id: int in candidate["target_ids"]:
 			var inst: MonsterInstance = WorldSim.sim.instances.get(id)
-			return inst != null and _feasible(inst) and inst.region_id == candidate["region_id"])
+			var location := _target_location(inst, actors, player_after.global_position, origin)
+			if location.is_empty() or inst.region_id != candidate["region_id"] \
+					or _nav_cell(location["pos"]) != candidate["verified_cells"].get(id):
+				continue
+			ids.append(id)
+			nearest_distance = minf(nearest_distance, location["distance"])
+			candidate["tier"] = location["tier"]
 		candidate["target_ids"] = ids
 		candidate["count"] = ids.size()
+		candidate["distance"] = nearest_distance
 	candidates = candidates.filter(func(c: Dictionary) -> bool: return int(c["count"]) >= MIN_STOCK)
+	candidates.sort_custom(_nearer_target)
 	_last_roll_msec = (Time.get_ticks_usec() - started) / 1000.0
 	if candidates.is_empty():
 		_roll_delay = EXTINCT_CHECK_INTERVAL
@@ -135,44 +153,42 @@ func _local_targets() -> Array[Dictionary]:
 	_route_slice_started = Time.get_ticks_usec()
 	_max_route_slice_msec = 0.0
 	var player := get_tree().get_first_node_in_group("player") as Node2D
-	if WorldSim.sim == null or player == null or not player.visible or _inside_town_room():
+	var sim := WorldSim.sim
+	if sim == null or player == null or not player.visible or _inside_town_room():
 		return result
-	var origin := WorldSim.sim.region_of_point(player.global_position)
+	var player_pos := player.global_position
+	var origin := sim.region_of_point(player_pos)
 	if origin == null:
 		return result
+	var nav_revision := ObstacleField.nav_revision()
+	# 每轮仅扫描一次演员组；字典保留引用，分帧回来读取的仍是当前坐标。
+	var actors := _loaded_actors()
 	var grouped := {}
-	for inst: MonsterInstance in WorldSim.sim.instances.values():
+	for inst: MonsterInstance in sim.instances.values():
 		if Time.get_ticks_usec() - _route_slice_started >= ROUTE_SLICE_USEC:
 			await get_tree().process_frame
 			while get_tree().paused:
 				await get_tree().process_frame
 			_route_slice_started = Time.get_ticks_usec()
-		if not _feasible(inst) or not inst.spawn_pos.is_finite():
+		if WorldSim.sim != sim or ObstacleField.nav_revision() != nav_revision:
+			return []
+		var location := _target_location(inst, actors, player_pos, origin)
+		if location.is_empty():
 			continue
-		var tier := 0 if inst.region_id == origin.id else 1
-		if tier == 1 and inst.region_id not in origin.neighbor_ids:
-			continue
-		var distance := player.global_position.distance_to(inst.spawn_pos)
-		if distance > (LOCAL_RADIUS if tier == 0 else NEIGHBOR_RADIUS):
-			continue
-		if tier == 1:
-			var cell := GameState.fog_cell_of(inst.spawn_pos)
-			if not GameState.fog_is_explored(cell.x, cell.y):
-				continue
 		var key := inst.region_id + "|" + inst.species.species_name
 		if not grouped.has(key):
 			grouped[key] = {"species": inst.species.species_name, "region_id": inst.region_id,
-				"count": 0, "tier": tier, "distance": distance, "pos": inst.spawn_pos, "instances": []}
+				"count": 0, "tier": location["tier"], "distance": location["distance"],
+				"pos": location["pos"], "instances": []}
 		grouped[key]["count"] += 1
-		grouped[key]["instances"].append(inst)
-		if distance < float(grouped[key]["distance"]):
-			grouped[key]["distance"] = distance
-			grouped[key]["pos"] = inst.spawn_pos
+		grouped[key]["instances"].append({"inst": inst, "distance": location["distance"]})
+		if float(location["distance"]) < float(grouped[key]["distance"]):
+			grouped[key]["distance"] = location["distance"]
+			grouped[key]["pos"] = location["pos"]
 	for candidate: Dictionary in grouped.values():
 		if int(candidate["count"]) >= MIN_STOCK:
 			result.append(candidate)
-	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return a["tier"] < b["tier"] if a["tier"] != b["tier"] else a["distance"] < b["distance"])
+	result.sort_custom(_nearer_target)
 	# 已有近处可行单时无需给远处每个据点做路径搜索。
 	var reachable: Array[Dictionary] = []
 	for candidate: Dictionary in result:
@@ -180,20 +196,78 @@ func _local_targets() -> Array[Dictionary]:
 				or float(candidate["distance"]) > float(reachable[0]["distance"]) + 1200.0):
 			break
 		var individuals: Array = candidate["instances"]
-		individuals.sort_custom(func(a: MonsterInstance, b: MonsterInstance) -> bool:
-			return player.global_position.distance_squared_to(a.spawn_pos) < player.global_position.distance_squared_to(b.spawn_pos))
+		individuals.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["distance"] < b["distance"])
 		var ids: Array[int] = []
-		for inst: MonsterInstance in individuals:
-			if await _route_exists(player.global_position, inst.spawn_pos):
+		var verified_cells := {}
+		for individual: Dictionary in individuals:
+			var inst: MonsterInstance = individual["inst"]
+			var location := _target_location(inst, actors, player_pos, origin)
+			if location.is_empty():
+				continue
+			var target_pos: Vector2 = location["pos"]
+			var reached := await _route_exists(player_pos, target_pos)
+			if WorldSim.sim != sim or ObstacleField.nav_revision() != nav_revision:
+				return []
+			location = _target_location(inst, actors, player_pos, origin)
+			# 目标跨导航格后旧路径不再证明当前位置可达，留待下一轮重新找路。
+			if reached and not location.is_empty() and _nav_cell(location["pos"]) == _nav_cell(target_pos):
 				ids.append(inst.id)
+				verified_cells[inst.id] = _nav_cell(target_pos)
 			if ids.size() >= 7 or _route_visits_left <= 0:
 				break
 		if ids.size() >= MIN_STOCK:
 			candidate["target_ids"] = ids
+			candidate["verified_cells"] = verified_cells
 			candidate["count"] = ids.size()
 			candidate.erase("instances")
 			reachable.append(candidate)
 	return reachable
+
+
+func _loaded_actors() -> Dictionary:
+	var result := {}
+	for node: Node in get_tree().get_nodes_in_group("monsters"):
+		if node is MonsterBase and node.inst != null and not node.is_queued_for_deletion() \
+				and WorldSim.sim != null and WorldSim.sim.instances.get(node.inst.id) == node.inst:
+			result[node.inst.id] = node
+	return result
+
+
+## 出生点是固定据点；已加载演员以真实身体位置为准，卸载后回到模拟位置。
+## 旧世界或同 ID 的异实例节点不得污染当前实例的定位，也绝不回写 spawn_pos。
+func _target_position(inst: MonsterInstance, actors: Dictionary) -> Vector2:
+	var actor: Variant = actors.get(inst.id)
+	if is_instance_valid(actor) and actor is MonsterBase and actor.inst == inst \
+			and actor.is_inside_tree() and not actor.is_queued_for_deletion():
+		return actor.global_position if actor.state != MonsterBase.S_CORPSE else Vector2.INF
+	return inst.spawn_pos
+
+
+func _target_location(inst: MonsterInstance, actors: Dictionary, player_pos: Vector2, origin: SimRegion) -> Dictionary:
+	if inst == null or WorldSim.sim == null or WorldSim.sim.instances.get(inst.id) != inst or not _feasible(inst):
+		return {}
+	var pos := _target_position(inst, actors)
+	if not pos.is_finite():
+		return {}
+	var tier := 0 if inst.region_id == origin.id else 1
+	if tier == 1 and inst.region_id not in origin.neighbor_ids:
+		return {}
+	var distance := player_pos.distance_to(pos)
+	if distance > (LOCAL_RADIUS if tier == 0 else NEIGHBOR_RADIUS):
+		return {}
+	if tier == 1:
+		var cell := GameState.fog_cell_of(pos)
+		if not GameState.fog_is_explored(cell.x, cell.y):
+			return {}
+	return {"pos": pos, "distance": distance, "tier": tier}
+
+
+func _nearer_target(a: Dictionary, b: Dictionary) -> bool:
+	return a["tier"] < b["tier"] if a["tier"] != b["tier"] else a["distance"] < b["distance"]
+
+
+func _nav_cell(pos: Vector2) -> Vector2i:
+	return Vector2i((pos / ObstacleField.CELL).floor())
 
 
 ## 难度门槛来自既有 CombatBandMath，实际年龄/威胁/装备均参与对刀估算。

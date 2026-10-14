@@ -245,7 +245,14 @@ func _test_split_mechanics() -> void:
 	for inst: MonsterInstance in sim.instances.values():
 		if inst.is_alive and inst.species.species_name == "赤炎小魔" and inst.generation == 0:
 			gen0_count += 1
+	# 此处只检验老死与分裂；同 tick 的正常繁衍会偶发抵消死亡数量。
+	# 物种是用例私有副本，立即恢复繁衍率，不影响后续成年/不育检查。
+	var breeding_rate := victim.species.breeding_rate
+	var split_before_aging := spawned.size()
+	victim.species.breeding_rate = 0.0
 	sim.tick()
+	victim.species.breeding_rate = breeding_rate
+	_check(not elder.is_alive and spawned.size() == split_before_aging, "自然老死真实发生且没有生成任何分裂子代")
 	var gen0_after := 0
 	for inst: MonsterInstance in sim.instances.values():
 		if inst.is_alive and inst.species.species_name == "赤炎小魔" and inst.generation == 0:

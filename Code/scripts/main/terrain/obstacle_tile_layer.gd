@@ -90,17 +90,21 @@ func _process(_delta: float) -> void:
 		var entry: Dictionary = _laying.get(origin, {})
 		if entry.is_empty():
 			continue  # 排队期间块已出窗被释放
-		set_cell(item["cell"], item["source"], item["atlas"], item["alternative"])
-		var shape := CollisionShape2D.new()
-		shape.shape = _shared_circle(float(item["r"]))
-		shape.position = (Vector2(item["cell"]) + Vector2(0.5, 0.5)) * ObstacleField.CELL
-		(entry["body"] as StaticBody2D).add_child(shape)
-		(entry["shapes"] as Dictionary)[item["cell"]] = shape
-		entry["remaining"] = int(entry["remaining"]) - 1
-		if entry["remaining"] == 0:
-			add_child(entry["body"])
-			_bodies[origin] = {"body": entry["body"], "shapes": entry["shapes"]}
-			_laying.erase(origin)
+		if item["body"] != entry["body"]:
+			continue  # 同块出窗后重新进窗，旧请求归属于上一碰撞体
+		var cell: Vector2i = item["cell"]
+		var obstacle := ObstacleField.sample_cell(cell)
+		if not obstacle.is_empty():
+			var art: Dictionary = VISUAL_RULES.appearance(cell, obstacle["kind"])
+			set_cell(cell, art["source"], art["atlas"], art["alternative"])
+			var shape := CollisionShape2D.new()
+			shape.shape = _shared_circle(float(obstacle["r"]))
+			shape.position = (Vector2(cell) + Vector2(0.5, 0.5)) * ObstacleField.CELL
+			(entry["body"] as StaticBody2D).add_child(shape)
+			(entry["shapes"] as Dictionary)[cell] = shape
+		else:
+			erase_cell(cell)
+		_finish_queued_cell(origin, entry)
 		budget -= 1
 	var clear_budget := CLEAR_BUDGET
 	while clear_budget > 0 and not _clearing.is_empty():
@@ -116,6 +120,35 @@ func _process(_delta: float) -> void:
 			_clearing.pop_front()
 		else:
 			entry["next"] = next
+
+
+## 取消的请求也恰好扣除一个待铺格计数；全空的块同样完成提交。
+func _finish_queued_cell(origin: Vector2i, entry: Dictionary) -> void:
+	entry["remaining"] = int(entry["remaining"]) - 1
+	if int(entry["remaining"]) == 0:
+		# 破坏事件可从法弹物理回调发出；注册已有形状必须等查询刷新结束。
+		_commit_laying_body.call_deferred(origin, entry["body"])
+
+
+func _commit_laying_body(origin: Vector2i, body: StaticBody2D) -> void:
+	var entry: Dictionary = _laying.get(origin, {})
+	if entry.is_empty() or entry["body"] != body or int(entry["remaining"]) != 0:
+		return  # 等待期间已出窗或同块重入，旧回调不再拥有该块。
+	add_child(body)
+	_bodies[origin] = {"body": body, "shapes": entry["shapes"]}
+	_laying.erase(origin)
+
+
+func _cancel_queued_cell(cell: Vector2i) -> void:
+	for i in range(_lay_queue.size() - 1, -1, -1):
+		var item: Dictionary = _lay_queue[i]
+		if item["cell"] != cell:
+			continue
+		_lay_queue.remove_at(i)
+		var origin: Vector2i = item["origin"]
+		var entry: Dictionary = _laying.get(origin, {})
+		if not entry.is_empty() and item["body"] == entry["body"]:
+			_finish_queued_cell(origin, entry)
 
 
 ## 静态碰撞体工厂：圆形形状按类型半径（KIND_INFO.r），墙层 layer 1
@@ -138,6 +171,7 @@ func _on_obstacle_destroyed(cell: Vector2i, pos: Vector2, kind: String) -> void:
 				var shape: Node = shapes[cell]
 				shape.queue_free()
 				shapes.erase(cell)
+	_cancel_queued_cell(cell)
 	var debris := DebrisBurst.new()
 	debris.position = pos
 	debris.kind = kind
@@ -208,7 +242,7 @@ func _on_chunk_ready(origin: Vector2i) -> void:
 	_laying[origin] = {"body": body, "shapes": {}, "remaining": cells.size()}
 	for c: Dictionary in cells:
 		var art: Dictionary = VISUAL_RULES.appearance(c["cell"], c["kind"])
-		_lay_queue.append({"origin": origin, "cell": c["cell"], "source": art["source"],
+		_lay_queue.append({"origin": origin, "body": body, "cell": c["cell"], "source": art["source"],
 			"atlas": art["atlas"], "alternative": art["alternative"], "r": c["r"]})
 
 
@@ -227,18 +261,7 @@ func _on_campaign_geometry_changed(cells: Array) -> void:
 					(shapes[cell] as CollisionShape2D).set_deferred("disabled", true)
 					(shapes[cell] as Node).queue_free()
 					shapes.erase(cell)
-		# 铺设队列可能还未生成这块的碰撞，扣除对应剩余数避免永远不提交。
-		for i in range(_lay_queue.size() - 1, -1, -1):
-			if _lay_queue[i]["cell"] != cell: continue
-			var origin: Vector2i = _lay_queue[i]["origin"]
-			_lay_queue.remove_at(i)
-			if _laying.has(origin):
-				_laying[origin]["remaining"] = int(_laying[origin]["remaining"]) - 1
-				if int(_laying[origin]["remaining"]) == 0:
-					var entry: Dictionary = _laying[origin]
-					add_child(entry["body"])
-					_bodies[origin] = {"body": entry["body"], "shapes": entry["shapes"]}
-					_laying.erase(origin)
+		_cancel_queued_cell(cell)
 
 
 func _restore_campaign_cell(cell: Vector2i, obstacle: Dictionary) -> void:
@@ -247,7 +270,7 @@ func _restore_campaign_cell(cell: Vector2i, obstacle: Dictionary) -> void:
 	if entry.is_empty(): return  # 窗外只改真源，进窗时按当前快照生成。
 	var art: Dictionary = VISUAL_RULES.appearance(cell, str(obstacle["kind"]))
 	for item: Dictionary in _lay_queue:
-		if item["cell"] == cell and item["origin"] == origin:
+		if item["cell"] == cell and item["origin"] == origin and item["body"] == entry["body"]:
 			item.merge({"source":art["source"], "atlas":art["atlas"], "alternative":art["alternative"], "r":obstacle["r"]}, true)
 			return
 	set_cell(cell, art["source"], art["atlas"], art["alternative"])

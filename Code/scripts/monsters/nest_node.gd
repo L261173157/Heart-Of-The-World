@@ -49,6 +49,9 @@ func setup(p_region_id: String, p_species_name: String, tint: Color, at_position
 		var h := _visual.sprite_frames.get_frame_texture("play", 0).get_height()
 		_visual.position = Vector2(0, -h / 2.0)  # 底边贴巢位锚点
 	add_child(_visual)
+	# 世界先入树再 setup；不能依赖早已执行的 _ready 启动后来创建的精灵。
+	if _visual.sprite_frames != null and _visual.sprite_frames.has_animation(&"play"):
+		_visual.play(&"play")
 	var shape := CollisionShape2D.new()
 	var circle := CircleShape2D.new()
 	circle.radius = 26.0
@@ -63,8 +66,6 @@ func _ready() -> void:
 	collision_layer = 4
 	collision_mask = 0
 	add_to_group("nests")
-	if _visual != null and _visual.sprite_frames != null:
-		_visual.play(&"play")
 
 
 func take_damage(_amount: float, _from_position := Vector2.INF, _heavy := false,

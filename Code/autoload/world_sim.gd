@@ -92,6 +92,8 @@ func _advance_day(delta: float) -> void:
 		_day_accum -= DAY_LENGTH
 		# 绕回 = 新的一天（寿命/成就按天推进）
 		game_day += 1
+		# 同步订阅者（含立即保存）必须观察到新一天的相位。
+		day_time = _day_accum / DAY_LENGTH
 		EventBus.game_day_advanced.emit(game_day)
 	day_time = _day_accum / DAY_LENGTH
 	var night := day_time >= NIGHT_START and day_time < DAWN_END

@@ -27,6 +27,7 @@ func _run() -> void:
 			quit(1)
 			return
 		baseline = baseline.replace(marker, "_index_dirty = true")
+		baseline = baseline.replace("_index_spawned(inst)", "_index_dirty = true")
 	_optimized = _instrument(source)
 	_reference = _instrument(baseline)
 	if _optimized == null or _reference == null:
@@ -37,6 +38,7 @@ func _run() -> void:
 		_compare_fixture(rng_seed, false, false)
 		_compare_fixture(rng_seed, true, false)
 		_compare_fixture(rng_seed, true, true)
+	_compare_cost()
 	for world_seed in [BiomeMap.DEFAULT_SEED, 41, 90210]:
 		_compare_world(world_seed)
 	print("=== ECOLOGY INDEX %s checks=%d signals=%d migrations=%d ===" % [
@@ -48,12 +50,15 @@ func _run() -> void:
 ## 比较每类随机调用数、shuffle 长度及其后连续输出，守住消耗量与后续 RNG 状态。
 func _instrument(source: String) -> GDScript:
 	source = source.replace("class_name EcologySim\n", "")
+	source = source.replace("if _index_dirty:\n\t\t_index = {}", "if _index_dirty:\n\t\t_test_rebuilds += 1\n\t\t_test_scans += instances.size()\n\t\t_index = {}")
 	for method in ["randf", "randi", "randf_range", "randi_range"]:
 		var regex := RegEx.new()
 		regex.compile("(?<![A-Za-z0-9_.])" + method + "\\(")
 		source = regex.sub(source, "_test_" + method + "(", true)
 	source = source.replace("movable.shuffle()", "_test_shuffle(movable)")
 	source += """
+var _test_rebuilds := 0
+var _test_scans := 0
 var _test_draws := [0, 0, 0, 0, 0, 0]
 func _test_randf() -> float:
 	_test_draws[0] += 1
@@ -78,6 +83,43 @@ func _test_shuffle(values: Array) -> void:
 		_failures += 1
 		return null
 	return script
+
+
+## 审计中的真实世界负载；断言消除全量扫描，耗时不代表设备帧时间。
+func _compare_cost() -> void:
+	BiomeMap.configure(BiomeMap.DEFAULT_SEED)
+	ObstacleField.restore_destroyed([])
+	var regions := _world_regions()
+	var species := SpeciesCatalog.build_all()
+	var results: Array = []
+	for script: GDScript in [_reference, _optimized]:
+		seed(20260908)
+		var sim = script.new()
+		sim.setup(regions, species, WorldConfig.initial_population(), WorldConfig.boss_anchors())
+		sim._test_rebuilds = 0
+		sim._test_scans = 0
+		var worst := 0
+		var started := Time.get_ticks_usec()
+		for step in 120:
+			var before: int = sim._test_rebuilds
+			sim.tick()
+			worst = maxi(worst, sim._test_rebuilds - before)
+		results.append({"rebuilds":sim._test_rebuilds, "scans":sim._test_scans,
+			"max_per_tick":worst, "usec":Time.get_ticks_usec()-started,
+			"state":sim.to_dict(), "tail":_rng_tail(), "draws":sim._test_draws})
+	_check(results[0].state == results[1].state and results[0].tail == results[1].tail 		and results[0].draws == results[1].draws, "benchmark exact state and RNG")
+	_check(results[1].scans < results[0].scans * 0.5, "birth index eliminates over half of audited scans")
+	for i in 2:
+		print("ECOLOGY_INDEX_COST implementation=%s rebuilds=%d scans=%d max_per_tick=%d usec=%d" % [
+			"reference" if i == 0 else "optimized", results[i].rebuilds, results[i].scans,
+			results[i].max_per_tick, results[i].usec])
+
+
+func _query_counts(sim) -> Array:
+	var counts: Array = []
+	for region: String in sim.regions:
+		counts.append(sim.alive_count_in(region))
+	return counts
 
 
 func _compare_fixture(rng_seed: int, restored: bool, reentrant: bool) -> void:
@@ -186,6 +228,7 @@ func _compare_step(a, b, events_a: Array, events_b: Array, rng_seed: int,
 	b.tick()
 	var next_b := _rng_tail()
 	_check(a.to_dict() == b.to_dict(), label + " state")
+	_check(JSON.stringify(a.to_dict()) == JSON.stringify(b.to_dict()), label + " serialized bytes")
 	_check(a._satiety == b._satiety, label + " satiety")
 	_check(events_a == events_b, label + " signals and signal-time queries")
 	_check(a._test_draws == b._test_draws, label + " RNG call counts")
@@ -207,11 +250,11 @@ func _actions(sim, step: int) -> void:
 
 
 func _connect(sim, events: Array, reentrant: bool) -> void:
-	sim.instance_spawned.connect(func(inst): events.append(["spawn", _instance(inst)]))
-	sim.instance_died.connect(func(inst, cause): events.append(["die", cause, _instance(inst)]))
+	sim.instance_spawned.connect(func(inst): events.append(["spawn", _instance(inst), _query_counts(sim)]))
+	sim.instance_died.connect(func(inst, cause): events.append(["die", cause, _instance(inst), _query_counts(sim)]))
 	sim.corpse_expired.connect(func(inst): events.append(["expire", _instance(inst)]))
 	sim.nest_changed.connect(func(region, species, active, ransacked):
-		events.append(["nest", region, species, active, ransacked]))
+		events.append(["nest", region, species, active, ransacked, _query_counts(sim)]))
 	sim.boss_respawned.connect(func(species): events.append(["boss", species]))
 	sim.tick_completed.connect(func(summary): events.append(["tick", summary.duplicate(true)]))
 	var mutated := [false]

@@ -304,6 +304,8 @@ func _real_guard() -> void:
 func _stomp_cover() -> void:
 	await _setup()
 	await _wait_state(Guardian.S_WINDUP)
+	# setup 会随机偏移 Boss 出生点；前摇锁定身体后定位目标，确保掩体夹在两者之间。
+	_target.global_position = _boss.global_position + Vector2(80, 0)
 	# 前摇后才放入真实 StaticBody2D，验证落地射线不沿用陈旧的视线缓存。
 	var wall := StaticBody2D.new()
 	wall.collision_layer = 1
@@ -315,6 +317,15 @@ func _stomp_cover() -> void:
 	wall.add_child(collider)
 	add_child(wall)
 	wall.global_position = _boss.global_position + Vector2(65, 0)
+	await _frames(2)
+	var query := PhysicsRayQueryParameters2D.create(_boss.global_position, _target.global_position, 1)
+	query.exclude = [_boss.get_rid(), (_target as CollisionObject2D).get_rid()]
+	query.hit_from_inside = true
+	var cover_hit := get_world_2d().direct_space_state.intersect_ray(query)
+	_check(cover_hit.get("collider") == wall and _boss.state == Guardian.S_WINDUP
+		and _boss._current_move == Guardian.MOVE_STOMP
+		and _target.global_position.distance_squared_to(_boss._move_origin) <= _boss._move_radius * _boss._move_radius
+		and (_target as Target).hits == 0, "前摇中目标在震地范围内且真实射线穿过实体掩体")
 	await _wait_state(Guardian.S_RECOVER)
 	_check((_target as Target).hits == 0, "实际实体掩体挡住近身砸击，不穿墙结算")
 	wall.queue_free()

@@ -47,15 +47,17 @@ static func boss_anchors() -> Dictionary:
 
 
 static var _checkpoints_seed := -2147483648
+static var _checkpoints_generation := -1
 static var _checkpoints: Dictionary = {}
 
 
 ## 可发现复活点目录：家园、有人驻守的地标营地和城塞南门外。
 ## 这里只列目录；是否走到过由 GameState 持久化，绝不按死亡位置解锁未知区。
 static func checkpoints() -> Dictionary:
-	if _checkpoints_seed == BiomeMap.current_seed() and not _checkpoints.is_empty():
+	if _checkpoints_seed == BiomeMap.current_seed() and _checkpoints_generation == BiomeMap.current_generation() and not _checkpoints.is_empty():
 		return _checkpoints
 	_checkpoints_seed = BiomeMap.current_seed()
+	_checkpoints_generation = BiomeMap.current_generation()
 	_checkpoints = {"home": {"name": "家园营地", "position": spawn_pos(), "kind": "camp"}}
 	# 目录存在不代表已解锁；首章真实救援/修复完成后才由任务账本发现此点。
 	_checkpoints[OutpostLayout.CHECKPOINT_ID] = {"name": "修复的前哨", "position": OutpostLayout.checkpoint_position(), "kind": "outpost"}

@@ -136,7 +136,7 @@ var _npc_status_fn: Callable
 func _enter_tree() -> void:
 	# 父节点先入树、子节点先 ready：必须在 Player 恢复坐标并 nudge_free 之前
 	# 配好种子和摧毁覆盖层，否则会按上一世界的墙把合法存档位置挤走。
-	BiomeMap.configure(GameState.world_seed)
+	BiomeMap.configure(GameState.world_seed, GameState.world_generation)
 	CampaignLayout.set_open_gates(CampaignQuest.open_gates_from(GameState.campaign_quest))
 	ObstacleField.restore_destroyed(GameState.destroyed_cells)
 
@@ -1502,7 +1502,7 @@ func _on_instance_spawned(inst: MonsterInstance) -> void:
 	# 击杀（Area2D 回调内）触发的分裂生成会处于物理刷新期，
 	# 此时 add_child 物理体报错，统一延迟到帧末创建
 	if stream_all or _instance_in_view(inst, Vector2.INF):
-		_spawn_monster_node.call_deferred(inst)
+		_spawn_monster_node.call_deferred(inst, _stream_generation)
 	else:
 		_pending_stream[inst.id] = inst
 
@@ -1545,7 +1545,7 @@ func _stream_pass() -> void:
 			continue
 		if _instance_in_view(inst, ppos):
 			_pending_stream.erase(id)
-			_spawn_monster_node.call_deferred(inst)
+			_spawn_monster_node.call_deferred(inst, _stream_generation)
 	# ② 出界节点回收：据点位置不变（走远再回来还在原地）；尸体直接回收。
 	# 不写回节点当前位置——追击/游走会把据点拖离营地，MMO 语义是怪回据点。
 	# 斑块级生成（v5 跑图遭遇）后，巡猎逼近中的实例即便节点走出 2800px，
@@ -1567,7 +1567,7 @@ func _stream_pass() -> void:
 		var nest_visible := _nest_nodes.has(key)
 		var nest_near := _region_in_view(key.get_slice("|", 0))
 		if nest_near and not nest_visible:
-			_create_nest_node.call_deferred(key, key.get_slice("|", 0), key.get_slice("|", 1))
+			_create_nest_node.call_deferred(key, key.get_slice("|", 0), key.get_slice("|", 1), _stream_generation)
 		elif not nest_near and nest_visible:
 			var old: Node = _nest_nodes[key]
 			old.queue_free()
@@ -1626,7 +1626,14 @@ func _nest_pos_of(key: String) -> Vector2:
 	return _sim.camp_pos(region, species)
 
 
-func _spawn_monster_node(inst: MonsterInstance) -> void:
+func _spawn_monster_node(inst: MonsterInstance, generation: int = -1) -> void:
+	# 延迟工作不能跨恢复/初始化世代，也不能替换同 ID 的当前权威实例。
+	if not is_inside_tree() or _sim == null or _sim.instances.get(inst.id) != inst:
+		return
+	if generation >= 0 and generation != _stream_generation:
+		return
+	if is_instance_valid(_nodes.get(inst.id)):
+		return
 	if _inside_town_room():
 		_pending_stream[inst.id] = inst
 		return
@@ -1691,7 +1698,11 @@ func _on_corpse_expired(inst: MonsterInstance) -> void:
 ## 清空全部怪物/巢穴表现态（restore 失败回退 setup 时用）：模拟层 setup 会
 ## 全量清空重建，表现层不同步清场的话，旧世界线的节点残留 _nodes（实例查无、
 ## 永不回收也打不死），待生成池里的旧实例还会被重复生成
+var _stream_generation := 0
+
+
 func _discard_streamed_world() -> void:
+	_stream_generation += 1
 	for id: int in _nodes.keys():
 		var node: Node = _nodes.get(id)
 		if node != null:
@@ -1730,10 +1741,12 @@ func _on_nest_changed(region_id: String, species_name: String, active: bool, p_r
 	var player := get_tree().get_first_node_in_group("player") as Node2D
 	if player != null \
 			and player.global_position.distance_squared_to(_nest_pos_of(key)) <= STREAM_RADIUS * STREAM_RADIUS:
-		_create_nest_node.call_deferred(key, region_id, species_name)
+		_create_nest_node.call_deferred(key, region_id, species_name, _stream_generation)
 
 
-func _create_nest_node(key: String, region_id: String, species_name: String) -> void:
+func _create_nest_node(key: String, region_id: String, species_name: String, generation: int = -1) -> void:
+	if (generation >= 0 and generation != _stream_generation) or not _active_nest_keys.has(key):
+		return
 	if _inside_town_room():
 		return
 	if _nest_nodes.has(key) or not is_inside_tree():

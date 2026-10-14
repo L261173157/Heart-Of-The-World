@@ -17,6 +17,12 @@ const WORLD_SIZE := Vector2(800000.0, 800000.0)
 ## 结构随机种子默认值（世界 v5，2026-09-08 种子参数化）：旧档迁移 / 离线工具 /
 ## 截图取证用固定种子；「新的冒险」经 configure() 掷新种子——每个存档一个全新世界
 const DEFAULT_SEED := 20260908
+## 几何版本属于存档身份；既有世界的全部旧锚点保持逐位不变。
+const GENERATION_LEGACY := 1
+const GENERATION_CURRENT := 2
+## 营地环距8000 + 成员散布500及城塞/剧情建筑均留在世界围墙内。
+const ANCHOR_EDGE_MARGIN := 11000.0
+static var _generation := GENERATION_LEGACY
 ## 当前世界种子（主线程世界装配前 configure 一次，此后只读——工作线程
 ## 分块绘制与主线程采样同今天一样安全）。改动 = 世界换形状，派生缓存全重置
 static var _seed := DEFAULT_SEED
@@ -69,7 +75,11 @@ static var _loops_all_cache := {}
 
 ## 种子切换入口（世界装配前主线程调用）：重置全部派生缓存，此后同种子确定性。
 ## 返回切换后的种子便于链式断言
-static func configure(seed: int) -> int:
+static func configure(seed: int, generation: int = GENERATION_LEGACY) -> int:
+	if generation not in [GENERATION_LEGACY, GENERATION_CURRENT]:
+		push_error("不支持的世界几何版本：%d" % generation)
+		return _seed
+	_generation = generation
 	_seed = seed
 	_patches_cache = []
 	_terrain_by_id = {}
@@ -82,6 +92,10 @@ static func configure(seed: int) -> int:
 ## 当前世界种子（存档 world_seed 的来源）
 static func current_seed() -> int:
 	return _seed
+
+
+static func current_generation() -> int:
+	return _generation
 
 
 static func cell_size() -> Vector2:
@@ -226,6 +240,9 @@ static func patches() -> Array:
 					var nj := j + dj - 1
 					if ni >= 0 and nj >= 0 and ni < GRID_X and nj < GRID_Y:
 						neighbors.append(patch_id(ni, nj))
+			var center := representative_point(i, j)
+			if not center.is_finite():
+				return []
 			list.append({
 				"id": patch_id(i, j),
 				"i": i,
@@ -234,12 +251,40 @@ static func patches() -> Array:
 				"terrain": terrain,
 				"threat": info["threat"],
 				"capacity": info["capacity"],
-				"center": seed_point(i, j),
+				"center": center,
 				"size": cs,
 				"neighbors": neighbors,
 			})
 	_patches_cache = list
 	return list
+
+
+## v1 坐标不可迁移：改中心会连带移动剧情、城墙、检查点和已破坏格覆盖层。
+## 只有显式新建的 v2 世界采用域扭曲逆映射，并以地形同源采样校验区域归属。
+static func representative_point(i: int, j: int) -> Vector2:
+	var target := seed_point(i, j)
+	if _generation == GENERATION_LEGACY or region_id_at(target) == patch_id(i, j):
+		return target
+	var margin := Vector2.ONE * ANCHOR_EDGE_MARGIN
+	var point := target.clamp(margin, WORLD_SIZE - margin)
+	for iteration in 32:
+		var next := (point + target - _warped(point)).clamp(margin, WORLD_SIZE - margin)
+		if next.distance_squared_to(point) < 0.01:
+			point = next
+			break
+		point = next
+	if region_id_at(point) == patch_id(i, j):
+		return point
+	# 有界确定性后备：未来噪声参数变化使迭代不再收敛时仍逐点验证。
+	# 不消费随机数，几何计算不改变生态随机流。
+	for ring in range(1, 33):
+		for direction in 64:
+			var angle := float(direction) * TAU / 64.0
+			var candidate := (point + Vector2(cos(angle), sin(angle)) * ring * 1500.0).clamp(margin, WORLD_SIZE - margin)
+			if region_id_at(candidate) == patch_id(i, j):
+				return candidate
+	push_error("找不到世界内安全代表点：" + patch_id(i, j))
+	return Vector2.INF  # 失败即拒绝生成，发行构建也不能静默接受错误锚点。
 
 
 ## 地形分配：对角进度 dn∈[0,1]（出生角 0 → 远角 1）分带 + 每格噪声扰动。

@@ -85,6 +85,7 @@ var _mp_known := false
 var _hp_full := false
 ## 三选一点击去重：下一帧才接受下一张，避免同帧重复按钮事件连领。
 var _passive_pick_locked := false
+var _passive_press_tokens: Dictionary = {}
 var _death_tween: Tween
 var _day_toast_count := 0
 ## 平滑条目标值（事件写入，_process 逼近）
@@ -246,7 +247,9 @@ func _ready() -> void:
 	# 只隐藏弹层会留下“画面恢复但整个世界永久停住”的触屏死锁。
 	%CodexClose.pressed.connect(_close_codex)
 	for i in 3:
-		passive_cards[i].pressed.connect(_pick_passive.bind(i))
+		passive_cards[i].button_down.connect(_begin_passive_pick.bind(i))
+		passive_cards[i].pressed.connect(_submit_passive_pick.bind(i))
+	EventBus.touch_input_reset.connect(_cancel_passive_presses)
 	GameState.stats.leveled_up.connect(func(new_level: int, _levels: int) -> void:
 		_toast("升级！Lv.%d   属性点 +1" % new_level)
 	)
@@ -1547,6 +1550,10 @@ func _open_passive_pick() -> void:
 		_pop_modal(passive_layer)
 		return
 	GameState.stats.ensure_passive_choices()
+	# 同一层原地刷新也代表全新选择；先取消旧触点，再替换卡片身份。
+	_release_gameplay_touches()
+	if _gesture_gate != null:
+		_gesture_gate.require_release()
 	var chosen: Array[String] = GameState.stats.passive_choices
 	for i in 3:
 		var btn: Button = passive_cards[i]
@@ -1572,12 +1579,33 @@ func _open_passive_pick() -> void:
 	_push_modal(passive_layer)
 
 
-func _pick_passive(index: int) -> void:
+func _begin_passive_pick(index: int) -> void:
+	var btn: Button = passive_cards[index]
+	_passive_press_tokens[index] = {
+		"id": str(btn.get_meta("passive_id", "")),
+		"offer": int(btn.get_meta("passive_offer_id", -1)),
+	}
+
+
+func _cancel_passive_presses() -> void:
+	_passive_press_tokens.clear()
+
+
+func _submit_passive_pick(index: int) -> void:
+	# 真实按钮的提交只能使用按下时看见的身份，不按释放时的位置重新取卡。
+	if not _passive_press_tokens.has(index):
+		return
+	var token: Dictionary = _passive_press_tokens[index]
+	_passive_press_tokens.erase(index)
+	_pick_passive(index, token)
+
+
+func _pick_passive(index: int, token: Dictionary = {}) -> void:
 	if _passive_pick_locked or not passive_layer.visible or index < 0 or index >= passive_cards.size():
 		return
 	var btn: Button = passive_cards[index]
-	var id := str(btn.get_meta("passive_id", ""))
-	var offer_id := int(btn.get_meta("passive_offer_id", -1))
+	var id := str(token.get("id", btn.get_meta("passive_id", "")))
+	var offer_id := int(token.get("offer", btn.get_meta("passive_offer_id", -1)))
 	_passive_pick_locked = true
 	if GameState.stats.claim_passive(id, offer_id):
 		SfxManager.play("passive")
@@ -1945,10 +1973,12 @@ func _on_progress_changed(level: int, xp: int, xp_needed: int, pending_points: i
 		_refresh_inventory()
 	if _stat_layer != null and _stat_layer.visible:
 		_refresh_stat_preview()
+	_refresh_stats_overview()
 
 
 func _on_gold_changed(_amount: int) -> void:
 	_refresh_stats_label(GameState.stats.level, GameState.stats.pending_points)
+	_refresh_stats_overview()
 	if shop_panel.visible:
 		_refresh_shop()
 
@@ -2685,6 +2715,7 @@ func _pop_modal(layer: Control) -> void:
 	get_tree().paused = bool(previous["paused"])
 	if not _modal_stack.is_empty():
 		(_modal_stack.back()["layer"] as Control).show()
+	_refresh_stats_overview()
 	_release_gameplay_touches()
 	if _gesture_gate != null:
 		_gesture_gate.require_release()
@@ -2749,26 +2780,39 @@ func _setup_reading_surfaces() -> void:
 
 func _open_stats_overview() -> void:
 	var body: VBoxContainer = _stats_overview_layer.find_child("Body", true, false)
-	for child in body.get_children():
-		body.remove_child(child)
-		child.queue_free()
-	body.add_child(_readable_label("等级 %d　金币 %d\n%s\n%s" % [GameState.stats.level, GameState.gold, _region_name, _owned_passive_text()]))
+	if body.get_child_count() == 0:
+		var summary := _readable_label()
+		summary.name = "GrowthSummary"
+		body.add_child(summary)
+		for attribute: String in ["strength", "agility", "intellect"]:
+			var button := Button.new()
+			button.name = "PreviewAttribute_" + attribute
+			button.text = "分配" + {"strength": "力量", "agility": "敏捷", "intellect": "智力"}[attribute] + " · 查看收益"
+			button.custom_minimum_size.y = 52
+			button.pressed.connect(_open_stat_preview.bind(attribute))
+			body.add_child(button)
+		var blessing := Button.new()
+		blessing.name = "OpenBlessing"
+		blessing.custom_minimum_size.y = 56
+		blessing.pressed.connect(_open_passive_pick)
+		body.add_child(blessing)
+	_refresh_stats_overview()
+	_push_modal(_stats_overview_layer)
+
+
+## 更新数据不重建按钮、不改模态栈；子页消费资格后也能保持焦点身份。
+func _refresh_stats_overview() -> void:
+	if _stats_overview_layer == null:
+		return
+	var body: VBoxContainer = _stats_overview_layer.find_child("Body", true, false)
+	if body.get_child_count() == 0:
+		return
+	(body.get_node("GrowthSummary") as Label).text = "等级 %d　金币 %d\n%s\n%s" % [GameState.stats.level, GameState.gold, _region_name, _owned_passive_text()]
 	for attribute: String in ["strength", "agility", "intellect"]:
-		var button := Button.new()
-		button.name = "PreviewAttribute_" + attribute
-		button.text = "分配" + {"strength": "力量", "agility": "敏捷", "intellect": "智力"}[attribute] + " · 查看收益"
-		button.custom_minimum_size.y = 52
-		button.disabled = GameState.stats.pending_points <= 0
-		button.pressed.connect(_open_stat_preview.bind(attribute))
-		body.add_child(button)
-	var blessing := Button.new()
-	blessing.name = "OpenBlessing"
+		(body.get_node("PreviewAttribute_" + attribute) as Button).disabled = GameState.stats.pending_points <= 0
+	var blessing := body.get_node("OpenBlessing") as Button
 	blessing.text = "选择赐福（%d次）" % GameState.stats.pending_passive_picks
 	blessing.disabled = GameState.stats.pending_passive_picks <= 0
-	blessing.custom_minimum_size.y = 56
-	blessing.pressed.connect(_open_passive_pick)
-	body.add_child(blessing)
-	_push_modal(_stats_overview_layer)
 
 func _toggle_ecology() -> void:
 	if _ecology_layer.visible:
@@ -3102,6 +3146,8 @@ func _bind_reading_buttons(layer: Control) -> void:
 			button.set_process_input(true)
 			EventBus.touch_input_reset.connect(button.cancel_touch)
 			button.set("input_allowed", _can_use_reading_control)
+		if button is OptionButton and _gesture_gate != null:
+			_gesture_gate.watch_popup(button.bind_popup_input())
 
 func _can_use_reading_control() -> bool:
 	return _gesture_gate == null or _gesture_gate.armed

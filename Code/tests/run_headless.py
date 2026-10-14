@@ -14,6 +14,14 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 CASES = {
+    "equipment_receipt_encoding": (["-s", "tests/equipment_receipt_encoding_test.gd"], "=== EQUIPMENT RECEIPT ENCODING PASS"),
+    "world_generation": (["-s", "tests/world_generation_test.gd"], "=== WORLD GENERATION PASS"),
+    "world_stream_truth": (["-s", "tests/world_stream_truth_test.gd"], "=== WORLD STREAM TRUTH PASS"),
+    "save_audit_regression": ([str(PROJECT / "tests/run_save_audit_regression_test.py")], "=== SAVE AUDIT LIFECYCLE PASS"),
+    "bounty_position_audit": (["res://tests/bounty_position_audit_test.tscn", "--quit-after", "3000"], "=== BOUNTY POSITION AUDIT PASS"),
+    "actor_lifecycle_audit": (["res://tests/actor_lifecycle_audit_test.tscn", "--quit-after", "3000"], "=== ACTOR LIFECYCLE AUDIT PASS"),
+    "ios_export_safety": ([str(PROJECT / "tests/run_ios_export_safety_test.py")], "=== IOS EXPORT SAFETY PASS ==="),
+    "mobile_reading_audit": (["res://tests/mobile_reading_audit_test.tscn", "--quit-after", "20000"], "=== MOBILE READING AUDIT PASS"),
     "hero_combat_timing": (["res://tests/hero_combat_timing_test.tscn", "--quit-after", "20000"], "=== HERO COMBAT TIMING PASS"),
     "common_combat": (["res://tests/common_combat_test.tscn", "--quit-after", "20000"], "=== COMMON COMBAT PASS"),
     "boss_moves": (["res://tests/boss_moves_test.tscn", "--quit-after", "20000"], "=== BOSS MOVES PASS"),
@@ -185,7 +193,7 @@ def run_case(name: str, args: list[str], marker: str | None, env: dict[str, str]
         timeout = max(timeout, 1800)  # 六章实走、分支路线与团聚收束的独立进程链。
     command = ([sys.executable, args[0], godot] if args[0].endswith(".py")
                else [godot, "--headless", "--path", str(PROJECT), *args])
-    if name in {"campaign_reunion_compatibility", "campaign_complete_story", "campaign_cross_family", "campaign_earned_budget", "equipment_earned_budget", "equipment_persistence", "chest_transaction"}:
+    if name in {"save_audit_regression", "campaign_reunion_compatibility", "campaign_complete_story", "campaign_cross_family", "campaign_earned_budget", "equipment_earned_budget", "equipment_persistence", "chest_transaction"}:
         command += ["--log-dir", str(logs / name)]
     print(f"[{name}] 开始", flush=True)
     with subprocess.Popen(command, env=env, stdout=subprocess.PIPE,

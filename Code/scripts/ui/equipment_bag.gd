@@ -929,6 +929,9 @@ func _button_allowed(button: Button) -> bool:
 
 func _option(node_name: String, choices: Array, selected: Variant, action: Callable) -> OptionButton:
 	var button := OptionButton.new()
+	# 下拉框与普通行共用滚动占用、确认层和新手势门禁。
+	button.set_script(preload("res://scripts/ui/reading_action_button.gd"))
+	button.set("input_allowed", _button_allowed.bind(button))
 	button.name = node_name
 	button.custom_minimum_size = Vector2(130, 44)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL

@@ -119,7 +119,9 @@ static func settle(state: Dictionary, source: Dictionary) -> Dictionary:
 		if rarity >= 1:
 			var slot := select_slot(locked, rarity)
 			receipt["items"].append(_make_item(locked, rarity, slot, "item"))
-	state["receipts"][key] = receipt.duplicate(true)
+	var stored := receipt.duplicate(true)
+	_freeze_receipt(stored)
+	state["receipts"][key] = stored
 	# 已结算来源由收据代替，不让交战快照无限重复占用存档。
 	state["sources"].erase(key)
 	return receipt
@@ -270,6 +272,19 @@ static func sanitize_state(raw: Variant) -> Dictionary:
 				clean["first_boss_consumed"] = true
 				if clean["first_boss_status"] not in ["pending", "claimed"]:
 					clean["first_boss_status"] = "pending"
+			_freeze_receipt(kept)
 			clean["receipts"][key] = kept
 			clean["sources"].erase(key)
 	return clean
+
+
+## 历史收据发布后不可原地改写。复制返回值仍可供调用方消费，缓存只读真源。
+static func _freeze_receipt(value: Variant) -> void:
+	if value is Dictionary:
+		for child: Variant in value.values():
+			_freeze_receipt(child)
+		value.make_read_only()
+	elif value is Array:
+		for child: Variant in value:
+			_freeze_receipt(child)
+		value.make_read_only()

@@ -91,9 +91,12 @@ func _measure_speed(monster: MonsterBase, expected: float, label: String) -> voi
 	monster.set_physics_process(true)
 	await _frames(3)
 	var before := monster.position
+	# 等待 process_frame 时引擎可补跑多个物理步；位移期望按实际物理步数积分。
+	var physics_before := Engine.get_physics_frames()
 	await _frames(18)
+	var elapsed_frames := Engine.get_physics_frames() - physics_before
 	var distance := before.distance_to(monster.position)
-	var wanted := expected * 18.0 / Engine.physics_ticks_per_second
+	var wanted := expected * elapsed_frames / Engine.physics_ticks_per_second
 	_check(absf(monster.velocity.length() - expected) < 1.0,
 		"%s：真实速度 %.2f = 公式 %.2f" % [label, monster.velocity.length(), expected])
 	_check(absf(distance - wanted) < maxf(2.5, wanted * 0.04),
@@ -152,12 +155,15 @@ func _same_body_lod() -> void:
 			break
 	_check(reached_near, "不传送、不重建，真实移动跨入900px近档")
 	var before := monster.position
+	# 等待 process_frame 时引擎可补跑多个物理步；位移期望按实际物理步数积分。
+	var physics_before := Engine.get_physics_frames()
 	await _frames(18)
+	var elapsed_frames := Engine.get_physics_frames() - physics_before
 	_check(monster.get_instance_id() == identity and monster._hunt_mode and monster._nav.avoidance_enabled,
 		"跨档后保留同一身体、巡猎和 RVO")
 	_check(absf(monster.velocity.length() - expected) < 1.0,
 		"跨档不将%.2f截成100：实际%.2f" % [expected, monster.velocity.length()])
-	_check(absf(before.distance_to(monster.position) - expected * 18.0 / Engine.physics_ticks_per_second) < 2.5,
+	_check(absf(before.distance_to(monster.position) - expected * elapsed_frames / Engine.physics_ticks_per_second) < 2.5,
 		"近档实际位移与远档同速")
 	monster.queue_free()
 	await _frames(2)
