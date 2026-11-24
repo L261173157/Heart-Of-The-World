@@ -22,7 +22,7 @@ GODOT="/path/to/Godot" python3 Code/tests/run_headless.py
 # 架盾/反击定向：--only guard_counter,guard_controls,hero_slash_motion,directional_attack,mobile_controls
 # 可用 --only save,save_lifecycle,ui_flow 或 --log-dir /tmp/hotw-tests 做定向检查
 ```
-此入口运行既有八测、三组生命周期回归（弹幕池、世界持久化、独立进程存档）四组表现层回归、五组基础玩法回归及四组玩法选择回归，及五组实机交互回归，共二十九测。
+此入口共 **129 项**，清单见 `Code/tests/run_headless.py` 的 `CASES`；CI 矩阵的分组由 `python3 Code/tests/validate_ci_coverage.py` 校验（每项恰好归属一组）。除下列定向组外，还覆盖生态/帧资产/数值/存档/界面流程、三组生命周期回归、六章剧情与前哨的独立进程链、装备与收益预算验收。两个收益预算验收（`equipment_earned_budget`、`campaign_earned_budget`）只接受 4.7 稳定线引擎（`4.7.stable` 或补丁版 `4.7.N.stable`），版本串照常写入证据清单。
 玩法定向入口：`--only gameplay_combat,gameplay_ecology,gameplay_world,gameplay_equipment,gameplay_navigation`，覆盖真实冲锋/法弹/攻击子类、Boss 锚点与任务耗尽、检查点冷启动、装备锁定与实际触屏、局部导航与反复读档。新增玩法必须继续测真实场景/输入/碰撞，不得以辅助函数测试代替闭环。
 第二轮玩法定向入口：`--only boss_age_balance,gameplay_tasks,ecology_feedback,gameplay_choices_ui`，覆盖 Boss 有界战斗年龄/真实出招和技能耗蓝、赏金真实菜单继续与按量结算、因果生态反馈、装备/任务/加点/赐福/补给的真实 UI 输入。存档生命周期额外覆盖候选与赏金的独立进程往返。
 表现层定向入口：`--only ui_visual,menu_layout,animation,actor_alignment`，覆盖 HUD 安全区/模态与输入、主菜单反复开关/取消/焦点、实际动画帧时长/出招朝向/死亡复活，以及八方向冲刺、技能原点、碰撞、怪物 RVO/LOD 和真实帧脚点；修改共享主题、动画或角色绘制位置后必须跑。像素吸附必须从身体和固定美术锚点重新计算，禁止把上一帧 `Visual.global_position` 的取整结果累计回写。
@@ -31,6 +31,17 @@ GODOT="/path/to/Godot" python3 Code/tests/run_headless.py
 干净检出采用两轮导入：首轮仅允许默认中文字体尚未生成缓存的四条已知诊断，第二轮导入及全部运行检查仍须严格通过。
 `save_lifecycle` 在 Linux 子进程中使用文件大小上限验证真实短写/flush 失败，不触碰真实磁盘容量；其它平台仍跑冷启动奖励往返。
 `.github/workflows/godot-tests.yml` 在 PR/main 上运行相同入口，使用校验 SHA512 的官方 Godot 4.7，无 iOS 签名或发布步骤。
+
+**无头回归覆盖不到的三类问题**：无头运行没有窗口（没有焦点事件）、用的是哑元渲染器（真机与 Mac 是 Metal）、跑的是工程目录而非导出包；CI 那 5 组带窗口的视觉回归也固定用 OpenGL 兼容模式。改动 `_notification`、启动流程、渲染/贴图相关代码或导出预设后，按下面三条在真实渲染器与导出包上再验一遍（详见 `Documents/完整回归与真实渲染器验证-2026-11-24.md`）。**这三条会启动真实世界：必须隔离 HOME 并把 `HOTW_TEST_SAVE` 指向夹具副本，绝不读写真实存档。**
+```bash
+GODOT="$HOME/Library/Application Support/Steam/steamapps/common/Godot Engine/Godot.app/Contents/MacOS/Godot"
+W=$(mktemp -d) && mkdir -p "$W/home" "$W/data" "$W/config" "$W/cache" && cp Code/tests/fixtures/test_save.json "$W/save.json"
+( export HOME="$W/home" XDG_DATA_HOME="$W/data" XDG_CONFIG_HOME="$W/config" XDG_CACHE_HOME="$W/cache" HOTW_TEST_SAVE="$W/save.json"; cd "$W"
+  "$GODOT" --headless --path "$OLDPWD/Code" --export-pack "iOS" "$W/hotw.pck"                                  # 只打包，不调用 xcodebuild
+  "$GODOT" --headless --main-pack "$W/hotw.pck" res://scenes/main/main.tscn --quit-after 1800                   # 导出包无头冒烟
+  "$GODOT" --main-pack "$W/hotw.pck" res://scenes/main/main.tscn --write-movie "$W/f.png" --fixed-fps 30 --quit-after 300 )  # 真实渲染器（弹窗几秒），帧文件在 $W 下可直接查看
+```
+判定只认运行期 `ERROR` / `SCRIPT ERROR` / 非退出清理类的 `WARNING`；退出时的 `resources still in use`、`ObjectDB instances were leaked`、`RID … leaked` 是 `--quit-after` 强退的基线噪音。只需要 PCK 时不要用 `--export-debug` 代替 `--export-pack`：4.7.2 下它会自己跑 `xcodebuild … archive`，并把中间产物写进真实的 `~/Library/Developer/Xcode/DerivedData/`。
 
 Steam 版 Godot 二进制：
 ```
@@ -104,6 +115,7 @@ assets/      **ts/（美术 v6 现行真源：Tiny Swords 免费包 428 资产 +
 - 注释与文档用中文；Godot 4 GDScript 语法（`@onready`/`@export`/typed signals）
 - 仓库位于本地路径 `~/dev/Heart-Of-The-World`（2026-09-30 自 iCloud Drive 迁出，根治同步蒸发/「␣N」冲突副本/`.godot` 缓存干扰三类事故；备份走 GitHub 远端）；shell 命令中的路径仍建议加引号
 - GitHub 推送需显式走本地代理（系统代理 git 不自动读取）：`git -c http.proxy=http://127.0.0.1:7890 push ...`
+- 仓库根的 shell 脚本由 macOS 自带 `/bin/bash` 3.2 执行：`$变量` 后面紧跟中文或全角标点时必须写 `${变量}`，否则变量名会并入下一个多字节字符的首字节——值丢失且输出不是合法 UTF-8（Linux CI 是 bash 5，暴露不出来）
 - `.godot/`、`build/`、`*.csproj`、`*.sln` 均被忽略；`.uid` 文件由编辑器生成，随代码提交
 - 行尾 LF；远程 github.com/L261173157/Heart-Of-The-World，主分支 `main`
 - 新想法一律写入 `Documents/开发计划.md` 的"待定池"，不得直接进当前里程碑代码

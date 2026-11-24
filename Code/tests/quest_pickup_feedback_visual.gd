@@ -13,6 +13,8 @@ var _canvas := Vector2i(1280, 720)
 var _checks := 0
 var _fails := 0
 var _action_events: Array[String] = []
+## >0 时按住剧情动态轮询（即使世界未暂停），供"点继续后立即比对"这类窗口使用
+var _passive_hold := 0
 const Data := preload("res://scripts/main/campaign_quest_data.gd")
 
 func _ready() -> void:
@@ -41,7 +43,17 @@ func _ready() -> void:
 	_run.call_deferred()
 
 func _frames(count := 3) -> void:
-	for i in count: await get_tree().process_frame
+	for i in count:
+		_sync_passive_poll()
+		await get_tree().process_frame
+
+## 夹具根节点为 ALWAYS，挂在它下面的世界在"暂停"期间仍会处理。剧情动态轮询在真实
+## 游戏里随世界暂停而停摆；这里对齐该语义（与 camp_pilot_contract_test 同款）。否则玩家
+## 站定后的被动发现、以及"已完成对话转区域线索"，会在结果页/阅读页打开期间改写账本。
+func _sync_passive_poll() -> void:
+	var running := not get_tree().paused and _passive_hold == 0
+	for node: Node in get_tree().get_nodes_in_group("campaign_dynamic"):
+		node.set_physics_process(running)
 
 func _process(_delta: float) -> void:
 	if _world == null: return
@@ -138,9 +150,13 @@ func _continue_story_result(tag: String) -> bool:
 	await _frames(12)
 	_check(_hud._dialogue_panel.is_visible_in_tree() and _hud._dialogue_kind == "story_result" and _reading_state() == state, "earned result remains open without repeating evidence or rewards: " + tag)
 	await _capture("earned-" + tag)
+	# 世界恢复后的首个轮询会把刚完成的对话转成区域线索（正常后果，不是重复发奖）；
+	# 本条断言只看"继续"动作自身，比对窗口内不让该轮询插入，否则成败取决于暂停前的轮询相位。
+	_passive_hold += 1
 	await _touch(_hud._dialogue_yes)
 	_check(not _hud._dialogue_panel.visible and not get_tree().paused, "Continue closes result and resumes world: " + tag)
 	_check(_reading_state() == state and _action_events.size() == event_count, "Continue never repeats action, evidence or reward mutation: " + tag)
+	_passive_hold -= 1
 	return not _hud._dialogue_panel.visible and not get_tree().paused
 
 func _touch(control: Control) -> void:

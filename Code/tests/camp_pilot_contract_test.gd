@@ -25,8 +25,16 @@ func _check(ok: bool, label: String) -> void:
 
 func _frames(count := 3) -> void:
 	for _i in count:
+		_sync_passive_poll()
 		await get_tree().physics_frame
 		await get_tree().process_frame
+
+## 夹具根节点为 ALWAYS，挂在它下面的世界在"暂停"期间仍会处理。剧情动态轮询在
+## 真实游戏里随世界暂停而停摆；这里对齐该语义。否则玩家站定后 0.15s 周期的被动发现
+## 会把对话期间的账本比对污染成随轮询相位变化的随机失败（阅读页/选项预览/结果页）。
+func _sync_passive_poll() -> void:
+	for node: Node in get_tree().get_nodes_in_group("campaign_dynamic"):
+		node.set_physics_process(not get_tree().paused)
 
 func _mount(fresh := false) -> void:
 	if fresh:

@@ -17,7 +17,7 @@ import signal
 import subprocess
 import tempfile
 
-from run_campaign_earned_boss_test import EarnedEvidence, isolated_runtime, stop_driver
+from run_campaign_earned_boss_test import EarnedEvidence, accepted_engine_version, isolated_runtime, stop_driver
 from run_campaign_earned_budget_test import C2_PHASES, STORY_PHASES
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -51,7 +51,7 @@ def main() -> int:
 def run_suite(args, parser, godot: str, root: Path, env: dict[str, str]) -> int:
     env["GODOT_SILENCE_ROOT_WARNING"] = "1"
     version = subprocess.check_output([godot, "--version"], env=env, text=True).strip()
-    if not version.startswith("4.7.stable"):
+    if not accepted_engine_version(version):
         parser.error("Earned equipment acceptance requires Godot4.7 stable")
     evidence = EarnedEvidence(root, godot, version, env, "equipment_earned_budget")
     evidence.manifest["scope"] = {

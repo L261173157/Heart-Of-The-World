@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import subprocess
@@ -23,6 +24,12 @@ from run_campaign_cross_family_test import FIXTURE_LABEL, file_info, probe
 
 PROJECT = Path(__file__).resolve().parents[1]
 MARKER = "=== CAMPAIGN EARNED BOSS PASS"
+
+
+def accepted_engine_version(version: str) -> bool:
+    """4.7 稳定线：基线 4.7.stable 与补丁版 4.7.N.stable（如 Steam 版 4.7.2）。
+    其余分支（4.6/4.8）、非 stable 构建与 PATH 回退仍拒绝；实际版本串照常写入证据清单。"""
+    return re.fullmatch(r"4\.7(\.\d+)?\.stable(\..+)?", version) is not None
 
 
 def digest(path: Path) -> str:
@@ -194,7 +201,7 @@ def main() -> int:
 
 def run_acceptance(args, godot, source, output, env, parser) -> int:
     version = subprocess.check_output([str(godot), "--version"], text=True, env=env).strip()
-    if not version.startswith("4.7.stable"):
+    if not accepted_engine_version(version):
         parser.error("This acceptance requires Godot 4.7 stable, not PATH fallback")
     manifest = {"fixture_label": FIXTURE_LABEL, "engine": version, "source": str(source), "source_sha256": digest(source),
                 "harness_sha256": digest(PROJECT / "tests/campaign_earned_boss_test.gd"),

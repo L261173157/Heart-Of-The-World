@@ -1898,6 +1898,13 @@ func _setup_quick_slot() -> void:
 	HotwTheme.style_ts_round_button(_quick_btn)
 	_quick_icon = HotwTheme.add_icon(_quick_btn, ICON_HEART, 18.0)
 	_quick_badge = HotwTheme.add_badge(_quick_btn, "")
+	# 默认徽标贴底靠右，会压住同样贴底的说明文字（「治疗」对「25MP」，物品名对「×N」）；
+	# 快捷槽改贴右上角，与底部说明、中央状态文字和图标都错开。
+	_quick_badge.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_quick_badge.offset_left = -40.0
+	_quick_badge.offset_top = 0.0
+	_quick_badge.offset_right = -4.0
+	_quick_badge.offset_bottom = 18.0
 	_quick_btn.pressed.connect(_on_quick_slot)
 	_refresh_quick_slot()
 

@@ -15,7 +15,7 @@ PROFILE_UUID="63710279-2591-46dc-bbaa-53532db90472"
 PROFILE="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
 
 if [ ! -f "$PROFILE" ]; then
-	echo "✗ 找不到通配符描述文件（$PROFILE_UUID）。请在 Xcode 登录过一次团队账号以生成它。"
+	echo "✗ 找不到通配符描述文件（${PROFILE_UUID}）。请在 Xcode 登录过一次团队账号以生成它。"
 	exit 3
 fi
 

@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tempfile
 
-from run_campaign_earned_boss_test import EarnedEvidence, isolated_runtime
+from run_campaign_earned_boss_test import EarnedEvidence, accepted_engine_version, isolated_runtime
 
 C2_PHASES = ("chapter1", "depart", "rune_partial", "runes", "rescue", "beacon99", "claim")
 STORY_PHASES = ("c3_prepare", "c3_outer_partial", "c3_outer", "c4", "c5_partial", "c5_finish")
@@ -49,7 +49,7 @@ def main() -> int:
 def run_budget(args, parser, project, godot, root, env) -> int:
     env["GODOT_SILENCE_ROOT_WARNING"] = "1"
     version = subprocess.check_output([godot, "--version"], env=env, text=True).strip()
-    if not version.startswith("4.7.stable"):
+    if not accepted_engine_version(version):
         print("FAIL: earned-budget acceptance requires Godot4.7 stable", flush=True)
         return 1
     save = root / "genuine-c5.json"

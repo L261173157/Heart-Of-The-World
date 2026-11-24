@@ -24,6 +24,10 @@ func _notification(what: int) -> void:
 ## 无法再挂本类时（如主菜单）直接调用。
 static func apply_to(c: Control) -> void:
 	var win := c.get_window()
+	# 启动时首次"获得焦点"通知可能早于场景完成入树（节点已挂载但尚无窗口）：
+	# 无从取窗口矩形，跳过这一次；_ready 随后会补做。
+	if win == null:
+		return
 	var win_rect := Rect2i(win.position, win.size)
 	var safe := DisplayServer.get_display_safe_area().intersection(win_rect)
 	if not safe.has_area():

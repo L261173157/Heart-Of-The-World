@@ -13,5 +13,6 @@ hotw_export_debug_project() {
 		return 3
 	fi
 	python3 "$REPO/scripts/verify-ios-export.py" "$REPO" "$IOS_DIR" || return 3
-	echo "  本轮导出：$IOS_DIR（版本与 PCK 指纹见 export-manifest.json）"
+	# macOS 自带 bash 3.2 会把紧跟变量名的多字节字符首字节并入变量名：路径丢失且输出非法 UTF-8，须用花括号定界。
+	echo "  本轮导出：${IOS_DIR}（版本与 PCK 指纹见 export-manifest.json）"
 }
