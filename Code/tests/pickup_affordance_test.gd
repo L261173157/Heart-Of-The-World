@@ -33,7 +33,7 @@ func _run() -> void:
 			if id == "patrol_record": _check(outpost.snapshot().step_progress == "调查 1/2", "第一条记录立即推进本组动作")
 			if id == "aid_bag":
 				var view := outpost.snapshot()
-				_check(view.step_progress == "救援 3/5" and view.target_object_id == "wounded_patrol" and str(view.next_action).contains(str(view.target_title)) and str(view.next_action).contains("急救包") and not outpost.evidence("rescued"), "拾取后显示真实救援3/5、带药返回实际巡守，未抢先救治")
+				_check(view.step_progress == "救援 3/5" and view.target_object_id == "wounded_patrol" and str(view.next_action).contains(str(view.target_title)) and str(view.next_action).contains("药囊") and not outpost.evidence("rescued"), "拾取后显示真实救援3/5、带药返回实际巡守，未抢先救治")
 		await _complete_chain(Catalog.chain("side_herbalist"), 0)
 		await _complete_chain(Catalog.chain("region_plains"), 1)
 		await _assert_service("region_plains:work_outer", false)

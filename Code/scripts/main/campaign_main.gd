@@ -91,49 +91,49 @@ func payload(a: Dictionary) -> Dictionary:
 			if outcome == "bypass": enabled = true
 			elif outcome == "absent": enabled = living.is_empty()
 			elif outcome == "defeated": enabled = living.is_empty() and _q().get("main_kills",{}).has(a["boss_species"])
-			options.append({"label":{"defeated":"记下我的讨伐","bypass":"操作西侧绕行绞盘","absent":"调查眼前的空城"}[outcome],
+			options.append({"label":{"defeated":"记下我的讨伐","bypass":"操作西侧绕行绞盘","absent":"探一探眼前的空寨"}[outcome],
 				"action":"campaign|act|"+str(a["id"])+"|"+outcome,"enabled":enabled,
-				"consequence":"从西侧打开接近档案的通路，无需击败牛头王" if outcome=="bypass" else ("按空城调查继续前行，保留眼前所见" if outcome=="absent" else "凭你在这座城塞的讨伐经过继续前行"),
-				"risk":"%s以后仍可能复生；已经完成的修复和救援会保留" % a["boss_species"]})
-		return {"kind":"camp_choice","giver":a["title"],"text":("%s仍在城塞中活动。" % a["boss_species"] if not living.is_empty() else "眼下城塞中没有%s。" % a["boss_species"])+"\n"+str(a.get("prompt",a["text"])),"origin":host._world_position(str(a["object"])),"options":options}
+				"consequence":"从西侧开出走近文书之路，不必击败牛头王" if outcome=="bypass" else ("照探空寨前行，照实记下眼前所见" if outcome=="absent" else "凭你在这座山寨讨伐的经过前行"),
+				"risk":"%s日后再复生；已完成的修复与救援都会留着" % a["boss_species"]})
+		return {"kind":"camp_choice","giver":a["title"],"text":("%s仍在山寨里活动。" % a["boss_species"] if not living.is_empty() else "眼下山寨里没有%s。" % a["boss_species"])+"\n"+str(a.get("prompt",a["text"])),"origin":host._world_position(str(a["object"])),"options":options}
 	if kind == "puzzle" and a.get("puzzle_objects",[]).is_empty():
 		var options: Array = []
 		for symbol: String in a.get("puzzle_order",[]):
 			var label: String = {"split":"分队","withdrawal":"撤守","lost":"失联"}.get(symbol,symbol)
-			options.append({"label":"放入「%s」记录"%label,"action":"campaign|sequence|"+str(a["id"])+"|"+symbol,"enabled":true,"consequence":"把这一页放入经过的先后次序","risk":"排错只需重新排列，日志不会丢失"})
-		return {"kind":"camp_choice","giver":a["title"],"text":str(a.get("prompt",a["text"]))+"\n已放置%d/%d张。"%[_q().get("puzzle_progress",{}).get(a["id"],[]).size(),a["puzzle_order"].size()],"origin":host._world_position(str(a["object"])),"options":options}
+			options.append({"label":"放入「%s」记录"%label,"action":"campaign|sequence|"+str(a["id"])+"|"+symbol,"enabled":true,"consequence":"把这一页放进经过的先后次序","risk":"排错了重排便是，手记不会丢"})
+		return {"kind":"camp_choice","giver":a["title"],"text":str(a.get("prompt",a["text"]))+"\n已放入%d/%d页。"%[_q().get("puzzle_progress",{}).get(a["id"],[]).size(),a["puzzle_order"].size()],"origin":host._world_position(str(a["object"])),"options":options}
 	return {}
 func proof(a: Dictionary, choice: String) -> Dictionary:
 	var proof: Dictionary = host._position_proof(str(a["object"]))
-	if a["kind"] == "conclude" and not choice.is_empty(): return {"error":"团聚安排已确认，请在名册前继续返程，不再选择分散或集中派驻"}
+	if a["kind"] == "conclude" and not choice.is_empty(): return {"error":"团聚之事已定，请在名册前接着踏上归途，不必再选分散或集中"}
 	match str(a["kind"]):
 		"route":
 			var route := str(_q().get("quests",{}).get(a["stage"],{}).get("choice",""))
 			var visited: Array = _q().get("main_routes",{}).get(a["id"],{}).get("visited",[])
 			if route not in ["near","outer"] or visited.size() < CampaignLayout.route_waypoints(route).size():
-				return {"error":"请沿已选路线实走：近路穿过石障缺口，外缘经过西侧两处转折；仅在终点确认不能代替通行"}
-			if route=="near" and not _near_barrier_broken(): return {"error":"近路需要实际敲开登记石障并走过缺口，外缘绕行不能记成近路"}
+				return {"error":"请照选定的路走一遍：近路穿过石障缺口，外缘绕过西边两道弯；只到终点确认，算不得走过"}
+			if route=="near" and not _near_barrier_broken(): return {"error":"近路须亲手敲开路册所记的石障、走过缺口；绕外缘不能算作近路"}
 			proof.merge({"route":route,"traversed":true})
 		"obstacle":
 			var cells: Array = CampaignLayout.barrier_cells(str(a["object"]))
-			if cells.is_empty(): return {"error":"没有找到此处登记的可破坏障碍"}
+			if cells.is_empty(): return {"error":"这儿没寻到路册所记、打得碎的障碍"}
 			var broken := false
 			for cell: Vector2i in cells:
 				if "%d,%d"%[cell.x,cell.y] in ObstacleField.destroyed_list(): broken = true
-			if not broken: return {"error":"需要用真实攻击打碎这里的冰障，再核验开出的缺口"}
+			if not broken: return {"error":"须出手打碎这里的冰障，再验一验开出的缺口"}
 			proof.merge({"obstacle_key":str(a["object"]),"destroyed":true})
 		"encounter":
-			if not choice in a.get("choices",[]): return {"error":"请明确选择当前真实可行的接近方式"}
-			if choice != "bypass" and not _live_boss(str(a["boss_species"])).is_empty(): return {"error":"Boss仍在城塞活动，不能登记为空城或已经讨伐"}
+			if not choice in a.get("choices",[]): return {"error":"请选定眼下走得通的进寨之路"}
+			if choice != "bypass" and not _live_boss(str(a["boss_species"])).is_empty(): return {"error":"首领仍在山寨里活动，不能记作空寨或已经讨伐"}
 			proof.merge({"outcome":choice,"verified":true})
 			if choice == "defeated":
 				var kill: Dictionary = _q().get("main_kills",{}).get(a["boss_species"],{})
-				if kill.is_empty() or str(kill.get("region_id","")) != str(CampaignLayout.sites()[_terrain(a)]["region_id"]): return {"error":"当前没有可核实的本人城塞击杀凭证；空城调查仍可如实记录"}
+				if kill.is_empty() or str(kill.get("region_id","")) != str(CampaignLayout.sites()[_terrain(a)]["region_id"]): return {"error":"眼下没有查证得了的、你亲手在这山寨击杀的凭据；探空寨仍可照实记下"}
 				proof["instance_id"] = kill["instance_id"]
 				proof["player_kill"] = true
 		"observe":
 			var region: SimRegion = WorldSim.sim.region_of_point(host._world_position(str(a["object"]))) if WorldSim.sim != null else null
-			if region == null: return {"error":"当前世界尚未就绪，不能编造观察记录"}
+			if region == null: return {"error":"眼前天地还没瞧真切，不能凭空记下所见"}
 			var counts: Dictionary = {}
 			for node: Node in get_tree().get_nodes_in_group("monsters"):
 				if not node is MonsterBase: continue
@@ -153,14 +153,14 @@ func proof(a: Dictionary, choice: String) -> Dictionary:
 	return {"proof":proof}
 func sequence(action_id: String, symbol: String) -> String:
 	var a: Dictionary = host._actions.get(action_id,{})
-	if a.is_empty() or str(a.get("chapter","")).is_empty() or a["kind"] != "puzzle" or not a.get("puzzle_objects",[]).is_empty(): return "未知的证据排列"
-	if not host._at_object(str(a["object"])) or host._paused(str(a["chain"])) or not Data.can_record(_q(),a["stage"],action_id): return "请带齐证据，回到核对板旁再排列"
+	if a.is_empty() or str(a.get("chapter","")).is_empty() or a["kind"] != "puzzle" or not a.get("puzzle_objects",[]).is_empty(): return "不认识的证据排法"
+	if not host._at_object(str(a["object"])) or host._paused(str(a["chain"])) or not Data.can_record(_q(),a["stage"],action_id): return "请把证据带齐，回到对证板旁再排"
 	var order: Array = a["puzzle_order"]
 	var progress: Array = _q().get("puzzle_progress",{}).get(action_id,[]).duplicate()
 	if progress.size() >= order.size() or symbol != str(order[progress.size()]):
 		_q()["puzzle_progress"][action_id] = []
 		host._save()
-		return "次序与日志不合，未完成排列已清空；记录本身保留"
+		return "次序同手记对不上，没排完的已清空；记录本身还留着"
 	progress.append(symbol)
 	_q()["puzzle_progress"][action_id] = progress
 	if progress == order:
@@ -173,7 +173,7 @@ func sequence(action_id: String, symbol: String) -> String:
 		GameState.end_world_reward()
 		return str(a["text"])
 	host._save()
-	return "已排列%d/%d张，继续核对下一份日志"%[progress.size(),order.size()]
+	return "已排好%d/%d页，接着对下一份手记"%[progress.size(),order.size()]
 func _live_boss(species: String) -> Array:
 	var result: Array = []
 	if WorldSim.sim == null: return ["world_not_ready"]
@@ -183,9 +183,9 @@ func _live_boss(species: String) -> Array:
 func _terrain(a: Dictionary) -> String:
 	return str(Catalog.stage(str(a["stage"])).get("terrain",""))
 func _choice_consequence(choice: String) -> String:
-	return {"near":"路较短，需打碎浅滩石障并走过缺口","outer":"路较长，沿西侧外缘走过两个转折"}.get(choice,"按这份安排继续")
+	return {"near":"路短，须打碎浅滩石障、穿过缺口","outer":"路长，沿西边外缘绕过两道弯"}.get(choice,"按这份安排继续")
 func _choice_risk(choice: String) -> String:
-	if choice in ["near","outer"]: return "确认后沿所选路线接应；开通一处缺口不保证沿路一直安全"
+	if choice in ["near","outer"]: return "定下之后沿选定的路前往渡口；打通一处缺口，保不了一路平安"
 	return "确认后保留这段行动；原有检查点和回城继续可用"
 func state() -> Dictionary:
 	var state := {"open_gates":[],"rescued":{},"placements":{},"ending":""}
@@ -202,7 +202,7 @@ func state() -> Dictionary:
 			state["placements"][npc] = {"position":[pos.x,pos.y],"service":"远征补给","hidden":false}
 		state["placements"]["ending:shelter"] = {"hidden":false,"service":"团聚补给"}
 		for beacon: String in ["c2:beacon","c3:beacon","c4:beacon","c5:beacon","c6:beacon"]:
-			state["placements"][beacon] = {"service":"低负载自动转发"}
+			state["placements"][beacon] = {"service":"一灯传一灯"}
 	return state
 
 

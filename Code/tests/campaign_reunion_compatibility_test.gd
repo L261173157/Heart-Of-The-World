@@ -51,7 +51,7 @@ func _reread_history() -> void:
 		_hud._close_dialogue()
 	_campaign.action("campaign|history_action|watch_c5_snow:s4:plans")
 	_check(_archive_payload.get("kind", "") == "info" and not str(_archive_payload.get("text", "")).is_empty(), "旧完成档通过真实处理器重读新名册记录")
-	_check(not _archive_payload.get("questions", []).is_empty() and (JSON.stringify(_archive_payload).contains("低负载") or JSON.stringify(_archive_payload).contains("低负荷")), "旧完成档回读也提供新增追问和低负载转发说明")
+	_check(not _archive_payload.get("questions", []).is_empty() and (JSON.stringify(_archive_payload).contains("慢传")), "旧完成档回读也提供新增追问和低负载转发说明")
 	_hud._close_dialogue()
 	if Data.effective_ending(_cq()) == "reunion":
 		_campaign.action("campaign|history_action|" + FINAL_ACTION)
@@ -79,7 +79,7 @@ func _canonical_world() -> void:
 	var epilogue: String = _campaign.epilogue()
 	for name: String in ["阿苇", "沈渡", "罗墨", "韩铎"]:
 		_check(epilogue.contains(name), "后记记得实际归来的人 " + name)
-	_check(epilogue.contains("自动转发") and epilogue.contains("轮流"), "后记交代归来后远方信标的运行方式")
+	_check(epilogue.contains("一灯传一灯") and epilogue.contains("轮班"), "后记交代归来后远方信标的运行方式")
 
 func _no_duplicate_awards() -> void:
 	var before := _cq().duplicate(true)

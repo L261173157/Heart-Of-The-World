@@ -1641,7 +1641,7 @@ func _on_quest_updated(text: String) -> void:
 			return
 	if _task_snapshot.is_empty() and GameState.outpost_quest.get("stage", "") == "completed" and GameState.outpost_quest.get("last_summary", false):
 		# 修复后仍给出明确的自愿交接，避免通用空任务文案吞掉常驻巡守的后续线索。
-		quest_label.text = "失联的前哨  3/3\n" + ("前哨已恢复 · 与留守巡守交流后续线索" if not GameState.outpost_quest.get("evidence", {}).get("next_clue_received", false) else "区域线索已记录 · 可以自由探索")
+		quest_label.text = "哨音久绝  3/3\n" + ("哨所已复原 · 同留守的巡守打听后续线索" if not GameState.outpost_quest.get("evidence", {}).get("next_clue_received", false) else "区域线索已记录 · 可以自由探索")
 		return
 	if _task_snapshot.is_empty() and not text.is_empty():
 		quest_label.text = "暂无进行中的委托\n与附近居民交流 · 点击查看"

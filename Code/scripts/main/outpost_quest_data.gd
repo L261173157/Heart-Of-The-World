@@ -3,7 +3,7 @@ class_name OutpostQuestData
 extends RefCounted
 
 const ID := "lost_outpost_v1"
-const TITLE := "失联的前哨"
+const TITLE := "哨音久绝"
 const VERSION := 1
 const Legacy := preload("res://scripts/main/camp_quest_data.gd")
 const EVIDENCE := ["patrol_read", "entrance_read", "wounded_found", "supply_read", "aid_taken", "tools_taken", "rescued", "site_surveyed", "signpost_repaired", "next_clue_received"]

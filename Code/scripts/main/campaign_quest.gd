@@ -76,13 +76,13 @@ func _chapter_available(chapter: Dictionary) -> bool:
 
 func accept_chapter(chapter_id: String) -> String:
 	var chapter := Catalog.chapter(chapter_id)
-	if not _chapter_available(chapter): return "还没有取得这段远征的路线线索"
-	if _departure_origin().is_empty() and not _at_chapter_npc(chapter_id): return "请在营地巡守或本章联络员身旁确认接取"
+	if not _chapter_available(chapter): return "还没寻到这一段远征的路书"
+	if _departure_origin().is_empty() and not _at_chapter_npc(chapter_id): return "请到营中巡守或本章的信使身旁，当面接下"
 	if chapter_id in ledger().get("paused_chains", []):
 		ledger()["paused_chains"].erase(chapter_id)
 		_save()
 	if not Data.accept_chapter(ledger(), chapter_id, GameState.stats.level):
-		return "这一章的证据和奖励约定已保留，可继续当前进度"
+		return "这一章的凭据与赏钱约定都留着，可以从眼下接着走"
 	GameState.tracked_quest_id = str(chapter["steps"][0]["id"])
 	_save()
 	var first: Dictionary = chapter["steps"][0]["actions"][0]
@@ -94,7 +94,7 @@ func abandon(stage_id: String) -> String:
 	if not ledger().has("paused_chains"): ledger()["paused_chains"] = []
 	if not chain in ledger()["paused_chains"]: ledger()["paused_chains"].append(chain)
 	_save()
-	return "已暂停此章；实物、救援、机关与奖励收据全部保留"
+	return "这一章暂且搁下；到手的物件、救过的人、开过的机关与领赏的凭据全都留着"
 
 func _proof_exists(action_id: String) -> bool:
 	var a: Dictionary = _actions.get(action_id, {})
@@ -121,15 +121,15 @@ func object_payload(object_id: String) -> Dictionary:
 		var payload: Dictionary = _optional.object_payload(object_id)
 		return _troll_departure_menu(payload) if object_id=="side_troll:giver" and _at_origin(object_id) else payload
 	if _dynamic != null and _dynamic.handles_object(object_id): return _dynamic.object_payload(object_id)
-	if not _at_object(object_id): return _info("请走到物件身旁，确认没有墙体遮挡后再交互")
+	if not _at_object(object_id): return _info("请走到物件跟前，看清没有墙挡着再动手")
 	var object_chapter := _chapter_for_object(object_id)
 	if not object_chapter.is_empty() and _paused(str(object_chapter["id"])):
-		return _action_payload("路书还留在这里。上回没走完的路，要接着走吗？", "继续远征", "campaign|resume|" + str(object_chapter["id"]), object_id, {"rules":"已取得的证据、已完成的机关和已领取的奖励保留。"})
+		return _action_payload("路书还留在这儿。上回没走完的路，要接着走么？", "继续远征", "campaign|resume|" + str(object_chapter["id"]), object_id, {"rules":"到手的凭据、开过的机关和领过的赏都留着。"})
 	for a: Dictionary in _actions.values():
 		if a.get("kind", "") != "puzzle" or not object_id in a.get("puzzle_objects", []): continue
-		if _proof_exists(a["id"]): return _info("符标已经稳稳亮起，通路仍然敞开。")
-		if _paused(str(a["chain"])) or not Data.can_record(ledger(), a["stage"], a["id"]): return _info("符标上只剩半截刻痕，得先找到说明它们次序的记录。")
-		return _action_payload("符标在指尖泛起微光。照着找到的刻痕，试一试它的位置。", "触碰符标", "campaign|rune|" + object_id, object_id, {"questions":a.get("questions",[]),"rules":"错误次序只清除当前未完成的序列；已经取得的证据保留。"})
+		if _proof_exists(a["id"]): return _info("符标稳稳亮着，通路仍敞开着。")
+		if _paused(str(a["chain"])) or not Data.can_record(ledger(), a["stage"], a["id"]): return _info("符标上只剩半截刻痕，得先寻到记着次序的凭据。")
+		return _action_payload("符标在指尖泛起微光。照着寻到的刻痕，试一试它的位置。", "触碰符标", "campaign|rune|" + object_id, object_id, {"questions":a.get("questions",[]),"rules":"按错了只清掉没按完的那一段；到手的凭据都留着。"})
 	var available := _available_object_actions(object_id)
 	if not available.is_empty():
 		var a: Dictionary = available[0]
@@ -142,20 +142,20 @@ func object_payload(object_id: String) -> Dictionary:
 		if not _stage_cache.has(stage_id) or not Data.ready(ledger(), stage_id) or Data.paid(ledger(), stage_id): continue
 		var finish: Dictionary = _stage_cache[stage_id]["actions"][-1]
 		if str(finish["object"]) == object_id:
-			return _action_payload("约好的报酬已经备好，带上它再动身吧。", "领取整笔奖励", "campaign|claim|" + stage_id, object_id, {"rules":"每段奖励仅领取一次；背包放不下的补给存入待领取。"})
+			return _action_payload("说好的赏钱已经备好，带上再动身吧。", "领取整笔奖励", "campaign|claim|" + stage_id, object_id, {"rules":"每段的赏只领一回；行囊装不下的补给存进待领取。"})
 	if object_id == "c6:ending_council" and Data.effective_ending(ledger()) == Data.REUNION: return epilogue_payload()
 	if object_id in _station_origins(): return departure_payload(object_id, _object_title(object_id))
 	for a: Dictionary in _actions.values():
 		if str(a["object"]) == object_id and _proof_exists(str(a["id"])):
-			return QuestPresentation.with_narrative(_info(str(a["text"])), {"rules":"这项行动已完成，不会再次发奖。"})
+			return QuestPresentation.with_narrative(_info(str(a["text"])), {"rules":"这桩行动已经办成，不会再发赏。"})
 	var chapter := _chapter_for_object(object_id)
 	if not chapter.is_empty() and _chapter_available(chapter) and not ledger().get("quests", {}).has(str(chapter["id"]) + ":s1"):
-		return _info("营地巡守保管着这一段的路书，先去听听他的消息。")
-	return _info("这里还留着远征队的痕迹。沿眼前的线索走，也许能找到他们留下的话。")
+		return _info("这一段的路书在营中巡守手上，先去听听他的消息。")
+	return _info("这里还留着远征队的痕迹。顺着眼前的线索走，也许能寻见他们留下的话。")
 
 func object_action(object_id: String, choice: String = "") -> String:
 	var actions := _available_object_actions(object_id)
-	if actions.is_empty(): return "当前没有可以在此提交的行动"
+	if actions.is_empty(): return "眼下没有能在这儿交代的行动"
 	return perform_action(str(actions[0]["id"]), choice)
 
 func perform_action(action_id: String, choice: String = "") -> String:
@@ -163,11 +163,11 @@ func perform_action(action_id: String, choice: String = "") -> String:
 	if _dynamic != null and _dynamic.handles_action(action_id): return _dynamic.perform_action(action_id,choice)
 	if _mutating: return ""
 	var a: Dictionary = _actions.get(action_id, {})
-	if a.is_empty(): return "未识别的战役行动"
-	if not _at_object(str(a["object"])): return "需要亲自到达目标旁，不能远程提交现场证据"
-	if _proof_exists(action_id): return "此项现场行动已记录"
-	if _paused(str(a["chain"])) or not Data.can_record(ledger(), str(a["stage"]), action_id): return "先完成当前的线索与前置行动"
-	if a["kind"] == "puzzle": return "请依次操作现场符标，不能在记录页直接解开机关"
+	if a.is_empty(): return "不认识的远征行动"
+	if not _at_object(str(a["object"])): return "须亲自走到目标跟前，不能隔着远交现场的凭据"
+	if _proof_exists(action_id): return "这桩现场行动已记下"
+	if _paused(str(a["chain"])) or not Data.can_record(ledger(), str(a["stage"]), action_id): return "先办完眼下的线索与前头的行动"
+	if a["kind"] == "puzzle": return "请依次动现场的符标，不能在记录页上直接解机关"
 	var proof := _position_proof(str(a["object"]))
 	if _main != null:
 		var checked: Dictionary = _main.proof(a,choice)
@@ -179,7 +179,7 @@ func perform_action(action_id: String, choice: String = "") -> String:
 	if not Data.record(ledger(), str(a["stage"]), action_id, proof):
 		GameState.end_world_reward()
 		_mutating = false
-		return "现场条件尚未满足，证据没有提交"
+		return "现场的条件还没凑齐，凭据没交上"
 	_settle_ready()
 	_save()
 	GameState.end_world_reward()
@@ -189,13 +189,13 @@ func perform_action(action_id: String, choice: String = "") -> String:
 	return str(a["text"])
 
 func _rune(object_id: String) -> String:
-	if not _at_object(object_id): return "请走到对应符标旁再操作"
+	if not _at_object(object_id): return "请走到对应的符标跟前再动手"
 	for a: Dictionary in _actions.values():
 		var objects: Array = a.get("puzzle_objects", [])
 		if str(a.get("chapter", "")).is_empty(): continue
 		if not object_id in objects: continue
-		if _proof_exists(a["id"]): return "这组机关已经完成"
-		if _paused(str(a["chain"])) or not Data.can_record(ledger(), a["stage"], a["id"]): return "先继续远征并核对现场刻痕的次序"
+		if _proof_exists(a["id"]): return "这组机关已经开了"
+		if _paused(str(a["chain"])) or not Data.can_record(ledger(), a["stage"], a["id"]): return "先接着远征，对一对现场刻痕的次序"
 		if not ledger().has("puzzle_progress"): ledger()["puzzle_progress"] = {}
 		var progress: Array = ledger()["puzzle_progress"].get(a["id"], []).duplicate()
 		var order: Array = a["puzzle_order"]
@@ -203,7 +203,7 @@ func _rune(object_id: String) -> String:
 		if progress.size() >= order.size() or symbol != str(order[progress.size()]):
 			ledger()["puzzle_progress"][a["id"]] = []
 			_save()
-			return "次序不合，符光熄灭。请按" + _order_text(a) + "重新操作，已有记录保留"
+			return "次序不合，符光熄灭。请按" + _order_text(a) + "重新操作，已有的记录都留着"
 		progress.append(symbol)
 		ledger()["puzzle_progress"][a["id"]] = progress
 		if progress == order:
@@ -214,8 +214,8 @@ func _rune(object_id: String) -> String:
 			Data.record(ledger(), a["stage"], a["id"], proof)
 			_settle_ready()
 		_save()
-		return str(a["text"]) if progress == order else "符标响应（%d/%d），继续前往下一枚" % [progress.size(), order.size()]
-	return "这不是当前机关的符标"
+		return str(a["text"]) if progress == order else "符标应和（%d/%d），接着去下一枚" % [progress.size(), order.size()]
+	return "这不是眼前这组机关的符标"
 
 func _position_proof(object_id: String) -> Dictionary:
 	var pos := _world_position(object_id)
@@ -242,18 +242,18 @@ func _pay(stage_id: String) -> bool:
 	return true
 
 func claim(stage_id: String) -> String:
-	if _mutating or not owns(stage_id) or not Data.ready(ledger(), stage_id): return "尚未完成这段行动"
+	if _mutating or not owns(stage_id) or not Data.ready(ledger(), stage_id): return "这一段还没办完"
 	var stage: Dictionary = _stage_cache[stage_id]
 	var last: Dictionary = stage["actions"][-1]
 	var claim_object := _optional.action_object(last) if _optional != null and _optional.handles_action(str(last["id"])) else str(last["object"])
-	if not _at_object(claim_object): return "请到这一段的交付物件或联络员身旁领取"
+	if not _at_object(claim_object): return "请到这一段交付的物件或信使身旁领取"
 	_mutating = true
 	GameState.begin_world_reward()
 	var paid := _pay(stage_id)
 	_save()
 	GameState.end_world_reward()
 	_mutating = false
-	return "奖励已领取，收据已保存" if paid else "已领取，或当前无法结算；未领取的奖励仍保留"
+	return "赏已领，领条已存" if paid else "已经领过，或这会儿结不了账；没领的赏仍留着"
 
 func snapshots() -> Array:
 	var result: Array = []
@@ -322,8 +322,8 @@ func snapshot(stage_id: String) -> Dictionary:
 		"next_action":action_text,"target_title":target_title,"step_progress":step_progress,
 		"need": stage["required"].size(), "progress": progress_count, "claim_at_npc": true,
 		"chapter_stage": "claim" if ready else "act", "ui_state": "claimable" if ready else "in_progress",
-		"ui_status": "奖励待领取" if ready else "远征记录", "ui_objective": ("到%s领取奖励，溢出补给存待领取" % _object_title(object_id)) if ready else (str(next["verb"]) + " · " + target_title),
-		"ui_reward": "+%d金币 +%d经验%s；每段一次，接章时冻结基础预算" % [reward.get("gold",0), reward.get("xp",0), " +"+ItemCatalog.name_of(str(reward["bonus"])) if not str(reward.get("bonus", "")).is_empty() else ""],
+		"ui_status": "赏待领取" if ready else "远征记录", "ui_objective": ("到%s领取奖励，溢出补给存待领取" % _object_title(object_id)) if ready else (str(next["verb"]) + " · " + target_title),
+		"ui_reward": "+%d金币 +%d经验%s；每段一回，接下这一章时便定下基础数目" % [reward.get("gold",0), reward.get("xp",0), " +"+ItemCatalog.name_of(str(reward["bonus"])) if not str(reward.get("bonus", "")).is_empty() else ""],
 		"gold":reward.get("gold",0),"xp":reward.get("xp",0),"bonus":reward.get("bonus",""),
 		"target_object_id":object_id,"target_name":target_title,"target_pos":[pos.x,pos.y] if pos.is_finite() else [],"ui_guide_mode":"object","ui_knowledge":"npc_intel", "history":_earned_history(stage), "rules":str(next.get("rules", ""))}
 
@@ -337,7 +337,7 @@ static func _action_guidance(action: Dictionary, target: String) -> String:
 		"repair": return "%s · %s" % [action.get("verb", "修复"), target]
 		"puzzle": return ("触碰%s" if not action.get("puzzle_objects", []).is_empty() else "到%s排列记录") % target
 		"route": return "前往%s" % target
-		"choice": return "到%s选择方案" % target
+		"choice": return "到%s选定方案" % target
 		"obstacle": return "清除%s" % target
 		_: return "%s · %s" % [action.get("verb", "调查"), target]
 
@@ -453,55 +453,55 @@ func _at_origin(id: String) -> bool:
 func travel_options() -> Array:
 	var options: Array = []
 	if Data.effective_ending(ledger()) == Data.REUNION:
-		options.append({"terrain":"shelter","chapter":"","title":"平原团聚避难所","repaired":true})
+		options.append({"terrain":"shelter","chapter":"","title":"平原团聚驿馆","repaired":true})
 	for chapter: Dictionary in Catalog.main_chapters():
 		if _chapter_available(chapter):
 			options.append({"terrain":chapter["terrain"],"chapter":chapter["id"],"title":chapter["title"],"repaired":Data.ready(ledger(),str(chapter["id"])+":s4")})
 	return options
 
-func departure_payload(origin_id: String, giver: String = "远征联络员") -> Dictionary:
-	if not _at_origin(origin_id): return _info("请到远征联络员身旁确认路线")
+func departure_payload(origin_id: String, giver: String = "远征信使") -> Dictionary:
+	if not _at_origin(origin_id): return _info("请到远征信使身旁确认路线")
 	var options: Array = []
 	if _dynamic != null: options.append_array(_dynamic.expedition_options(origin_id))
 	if origin_id == "side_troll:departure":
 		options.append({"label":"沿旧旗线索前往遗迹","action":"campaign|depart|side_troll|"+origin_id,"enabled":true,
-			"consequence":"沿旧旗上的路标，前往遗迹入口","risk":"旧旗留下已久，遗迹里如今有什么还不清楚"})
+			"consequence":"沿旧旗上的路标，前往遗迹入口","risk":"旧旗留下已久，遗迹里如今有什么，还说不准"})
 	for destination: Dictionary in travel_options():
 		options.append({"label":"前往" + str(destination["title"]),"action":"campaign|depart|"+str(destination["terrain"])+"|"+origin_id,"enabled":true,
-			"consequence":"接下这段远征，沿路书前往接应入口","risk":"建议Lv6或等效构筑并备足补给；龟王若仍在，须迎战" if destination["terrain"]=="lava" else "路书年代已久，前方是否安全还需当面查看"})
+			"consequence":"接下这段远征，沿路书前往接应入口","risk":"建议Lv6或同等装备，备足补给；龟王若还在，须迎战" if destination["terrain"]=="lava" else "路书年代已久，前头安不安全，还须到跟前去看"})
 	if origin_id != "home:patrol":
-		options.append({"label":"返回家园营地","action":"campaign|depart|home|"+origin_id,"enabled":true,"consequence":"沿已修复的远征线路返回","risk":"赶路不会回复生命或精力"})
-		if _service_available(origin_id): options.append({"label":"联络站补给","action":"campaign|shop|"+origin_id,"enabled":true,"consequence":"查看联络站的补给与价钱","risk":"购买前仍需确认"})
+		options.append({"label":"返回家园营地","action":"campaign|depart|home|"+origin_id,"enabled":true,"consequence":"沿修好的远征路回去","risk":"赶路不会回复生命或精力"})
+		if _service_available(origin_id): options.append({"label":"驿站补给","action":"campaign|shop|"+origin_id,"enabled":true,"consequence":"看看驿站的补给与价钱","risk":"购买前仍需确认"})
 	if Data.ready(ledger(),"watch_c6_lava:s4"):
-		options.append({"label":"阅读结局后记","action":"campaign|epilogue_menu","enabled":true,"utility":true,"consequence":"翻阅这趟远征留下的后记","risk":"只记下已经发生的事"})
+		options.append({"label":"读结局后记","action":"campaign|epilogue_menu","enabled":true,"utility":true,"consequence":"翻阅这趟远征留下的后记","risk":"只记下已经发生的事"})
 	if origin_id == "home:patrol" and OutpostQuestData.valid_legacy(GameState.camp_quest):
 		options.append({"label":"原营地调查 / 交付","action":"outpost:legacy","enabled":true,
 			"consequence":"翻出此前的营地委托，继续调查或领取报酬","risk":"已经领取的报酬不会重发"})
 	if not _chapter_history_options().is_empty():
 		options.append({"label":"翻阅已取得的远征记录","action":"campaign|history_menu","enabled":true,"utility":true,"consequence":"按已经走过的章节重读纸页和谈话","risk":"只读，不改变证据与报酬"})
-	options.append({"label":"前哨任务 / 原记录","action":"outpost:menu","enabled":true,"consequence":"翻阅前哨留下的记录","risk":"已经领取的报酬不会重发"})
-	var opening := "石安守住前哨了。林地阿苇还等着远征队的回信。带上旧路书，去问问。" if origin_id == "home:patrol" else "你带回的路书已经摊开。接下来往哪一站走？"
+	options.append({"label":"哨所一节 / 旧记录","action":"outpost:menu","enabled":true,"consequence":"翻阅哨所留下的记录","risk":"已经领取的报酬不会重发"})
+	var opening := "石安守住哨所了。林间的阿苇还等着远征队的回信。带上旧路书，去问问。" if origin_id == "home:patrol" else "你带回的路书已经摊开。接下来往哪一处走？"
 	if Data.ready(ledger(), "watch_c2_forest:s4") and origin_id == "home:patrol":
-		opening = "你从远方带回了新的路标。路书上能走的几段都在这里，准备好了就动身吧。"
+		opening = "你从远方带回了新的路标。路书上走得通的几段都在这儿，备好了便动身吧。"
 	if Data.ready(ledger(),"watch_c6_lava:s4"):
 		opening = completed_summary(ledger()) + "\n后记已经收好。想起谁的话，可以再找他坐一会儿。"
 		if not _reunion_greeting(origin_id).is_empty(): opening = _reunion_greeting(origin_id)
-	var questions: Array = [{"label":"路上有人接应吗？","answer":"路书标着接应处，我们会沿那条路走。只是消息走得比人慢，到了再看看，别把旧信当成平安的保证。"}]
+	var questions: Array = [{"label":"路上有人接应吗？","answer":"路书上标着接应之处，我们照那条路走。只是消息走得比人慢，到了再看，别把旧信当作平安的凭据。"}]
 	if Data.effective_ending(ledger()) == Data.REUNION:
-		questions = [{"label":"远方的灯还要人守吗？","answer":"低负载回路只自动转发灯码和短讯，补油、排水与除冰仍要人做。队员从平原轮流出发巡检，补给在避难所接待；远站亮灯不表示那里随时有人。"}]
+		questions = [{"label":"远方的灯还要人守吗？","answer":"省力的慢传之路，只会自己传几句灯语和口信；添油、排水、除冰，仍要人动手。队员从平原轮班出发巡查，补给在驿馆里接待；远处的灯亮着，不代表人家时时都在。"}]
 	if origin_id == "home:patrol" and _proof_exists("watch_c5_snow:s3:causality"):
-		questions.append({"label":"你认识韩铎吗？","answer":"周照摸了摸旧路书：「从前一起巡过路。后来他领远征队出去，我守家园，石安接前哨。他那道撤守令，你已经从两份日志里查清了；如今能把话带回来，总好过只让彼此猜。」"})
+		questions.append({"label":"你认识韩铎吗？","answer":"周照摸了摸旧路书：「从前一同巡过路。后来他领远征队出门，我守家园，石安接了哨所。他那道撤守令，你已从两份手记里查明白了；如今能把话带回来，总强过叫彼此瞎猜。」"})
 	return {"kind":"camp_choice","giver":giver,"origin":_origin_pos(origin_id),"text":opening,"options":options,
 		"questions":questions,
-		"rules":"选择路线后仍需确认。生命、精力和冷却不会因赶路重置；世界时刻继续保留。只显示已取得线索的路线，联络站修复后可往返。"}
+		"rules":"选定路线后还须确认。赶路不回血、不回精力、不减冷却；世上的时辰照旧走。只列出已寻得线索的路线，驿站修好之后便可往返。"}
 
 ## 团聚后的每个人仍保留自己的牵挂；这里只呈现回访，不额外模拟巡检时钟。
 func _reunion_greeting(origin_id: String) -> String:
 	return {
-		"c2:liaison":"阿苇把沈渡的回话压在杯下。「这回真送到了。他就在这儿，用不着再隔着沼泽猜。下一趟轮到我巡林灯，回来还能接着听他说。」",
-		"c3:survivor":"沈渡挪出一张凳子。「给闻川捎句话，欠着的那顿饭还算数。以前总怕信送不到，这回总算能约个日子了。轮值回来，就到这里坐。」",
-		"c4:map_keeper":"罗墨把原图和撤守令并排铺开。「韩铎就在对面，我们一页页核对。哪一处救下了人，哪一处没顾上，都留原件，谁也不往纸外躲。」",
-		"c5:leader":"韩铎合上日志。「撤守令是我下的，救下了谁、漏算了什么，我都会把原件摊开交代。往后按班去巡检，不让谁再一个人硬撑。阿苇他们回来时，这里会有人等。」"
+		"c2:liaison":"阿苇把沈渡的回话压在杯下。「这回真送到了。他就在这儿，用不着再隔着沼泽猜。下一趟轮到我去巡林灯，回来还能接着听他说。」",
+		"c3:survivor":"沈渡挪出一张凳子。「给闻川捎句话，欠着的那顿饭还算数。从前总怕信送不到，这回总算能约个日子了。轮班回来，就到这儿坐。」",
+		"c4:map_keeper":"罗墨把原图和撤守令并排铺开。「韩铎统领就在对面，我们一页页对。哪一处救下了人，哪一处没顾上，原件都留着，谁也不往纸外躲。」",
+		"c5:leader":"韩铎合上手记。「撤守令是我下的，救下了谁、漏算了什么，我都把原件摊开交代。往后按班去巡查，不许谁再一个人硬撑。阿苇他们回来时，这儿自有人等。」"
 	}.get(origin_id, "")
 
 
@@ -516,7 +516,7 @@ func can_travel(terrain: String, origin_id: String) -> bool:
 	return false
 
 func request_travel(terrain: String, origin_id: String = "home:patrol") -> String:
-	if not can_travel(terrain, origin_id): return "尚未取得这条路线，或尚未修复当前联络站"
+	if not can_travel(terrain, origin_id): return "还没寻得这条路线，或眼下的驿站还没修好"
 	if terrain != "home":
 		for chapter: Dictionary in Catalog.main_chapters():
 			if chapter["terrain"] == terrain:
@@ -527,7 +527,7 @@ func request_travel(terrain: String, origin_id: String = "home:patrol") -> Strin
 func _on_travel_completed(terrain: String) -> void:
 	if terrain.begins_with("worldsite:") or terrain.begins_with("watchnet:"):
 		_save()
-		EventBus.hint_requested.emit("已抵达已获线索的安全接近处，请亲自核实现场；生态保持连续")
+		EventBus.hint_requested.emit("已走到线索所指的安稳落脚处，请亲自看明现场；野外生灵照常来去")
 		return
 	if not ledger().has("travel"): ledger()["travel"] = {"visited":[]}
 	if not ledger()["travel"].has("visited"): ledger()["travel"]["visited"] = []
@@ -536,7 +536,7 @@ func _on_travel_completed(terrain: String) -> void:
 	var player := _player()
 	if player != null: ledger()["travel"]["arrivals"][terrain] = [player.global_position.x,player.global_position.y]
 	_save()
-	EventBus.hint_requested.emit("已到达远征接应入口；旧记录并不保证前方安全")
+	EventBus.hint_requested.emit("已到远征的入口；旧记录保不了前头的平安")
 
 ## 旧档已完成章节也能重读当前叙事；菜单只列已验证的行动，绝不补记证据或再次结算。
 func _chapter_history_options(chapter_id: String = "") -> Array:
@@ -581,7 +581,7 @@ func action(action_id: String) -> String:
 			if parts.size()>2 and Data.ready(ledger(),"watch_c6_lava:s4"):
 				var pages: Array[String] = epilogue_pages()
 				var index := int(parts[2])
-				if index>=0 and index<pages.size(): EventBus.npc_dialogue.emit({"kind":"info","giver":"《断开的守望》后记","text":pages[index],"back_action":"campaign|epilogue_menu"})
+				if index>=0 and index<pages.size(): EventBus.npc_dialogue.emit({"kind":"info","giver":"《断灯记》后记","text":pages[index],"back_action":"campaign|epilogue_menu"})
 		"optional": return _optional.action(parts) if _optional!=null else ""
 		"dynamic": return _dynamic.action(parts) if _dynamic!=null else ""
 		"act": return perform_action(str(parts[2]), str(parts[3]) if parts.size()>3 else "") if parts.size()>2 else ""
@@ -592,7 +592,7 @@ func action(action_id: String) -> String:
 		"depart": return request_travel(str(parts[2]),str(parts[3])) if parts.size()>3 else ""
 		"shop":
 			if parts.size()>2 and _at_origin(str(parts[2])) and str(parts[2]) != "home:patrol" and _service_available(str(parts[2])):
-				EventBus.npc_dialogue.emit({"kind":"shop","giver":_object_title(str(parts[2])),"text":"补给已经摆出来了。看看有什么用得上，路上别空着背包。","rules":"价格与家园商店一致，购买前仍需确认。"})
+				EventBus.npc_dialogue.emit({"kind":"shop","giver":_object_title(str(parts[2])),"text":"补给已经摆出来了。看看什么用得上，路上别空着行囊。","rules":"价格与家园商店一致，购买前仍需确认。"})
 	return ""
 
 func _on_action(action_id: String) -> void:
@@ -642,7 +642,7 @@ func _earned_history(stage: Dictionary) -> String:
 func _object_title(object_id: String) -> String:
 	for obj: Dictionary in CampaignLayout.objects():
 		if obj["id"] == object_id: return str(obj["title"])
-	return "营地巡守周照" if object_id == "home:patrol" else "远征线索"
+	return "营中巡守周照" if object_id == "home:patrol" else "远征线索"
 
 func _chapter_for_object(object_id: String) -> Dictionary:
 	for a: Dictionary in _actions.values():
@@ -692,10 +692,10 @@ static func completed_summary(q: Dictionary, compact := false) -> String:
 		if Data.chapter_complete(q, str(chapter["id"])): latest = chapter
 	if latest.is_empty(): return ""
 	if str(latest["id"])=="watch_c6_lava":
-		var detail := "在联络站前往「平原团聚避难所」，探望阿苇、沈渡、罗墨和韩铎；远方信标保持低负载自动转发，由队员轮流巡检"
-		if compact: detail = "四人在平原避难所团聚，远方信标自动转发"
-		return "《断开的守望》已通关 · 归途团聚\n%s" % detail
-	return "%s · 已完成\n%s" % [str(latest["title"]), "联络站可远征或返回家园" if compact else "联络站已恢复，可在站点确认远征或返回家园"]
+		var detail := "在驿站选「平原团聚驿馆」，探望阿苇、沈渡、罗墨和韩铎；远方的烽灯照旧一灯传一灯，由队员轮班巡查"
+		if compact: detail = "四人在平原驿馆团聚，远方的烽灯一灯传一灯"
+		return "《断灯记》已通关 · 归途团聚\n%s" % detail
+	return "%s · 已完成\n%s" % [str(latest["title"]), "驿站可远征或返回家园" if compact else "驿站已修好，可在站点确认远征或返回家园"]
 
 
 func _world_position(object_id: String) -> Vector2:
@@ -744,17 +744,17 @@ func travel_destination(terrain: String) -> Vector2:
 
 ## 后记只消费此存档实际完成的行动；未发生的生态事件不虚构，也不催促补齐。
 func epilogue() -> String:
-	if Data.effective_ending(ledger()) != Data.REUNION: return "团聚名册还没有传回各站"
-	var lines: Array[String] = ["《断开的守望》· 此后的道路", "沿途留下的纸页终于接在一起：远征队先分队，人手顾不过来，韩铎才下令撤守。设备随后失灵，留下的人听不到彼此。世界之心重新接通了信标，却没有抹去各人走过的路。"]
+	if Data.effective_ending(ledger()) != Data.REUNION: return "团聚名册还没传回各站"
+	var lines: Array[String] = ["《断灯记》· 此后的道路", "沿途留下的纸页终于接在一起：远征队先分队，人手顾不过来，韩铎才下令撤守。灯机随后失灵，留下的人听不到彼此。世界之心重新接通了烽灯，却没有抹去各人走过的路。"]
 	var historical_choice := str(ledger().get("quests",{}).get("watch_c6_lava:s4",{}).get("choice",""))
-	var earlier_arrangement := "最初分散守站的安排仍记在旧名册上。后来，四人商定回营轮值。" if historical_choice == "distributed" else ("旧名册保留了集中安置的安排，四人又约好了后续轮值。" if historical_choice == "centralized" else "")
-	lines.append(earlier_arrangement + "阿苇、沈渡、罗墨和韩铎在平原避难所团聚，四人都在这里接待来访与补给。远方信标保持亮着，以低负载自动转发消息；他们约好轮流出发巡检，不再各自留守。想去探望，可在联络站选择「平原团聚避难所」。")
+	var earlier_arrangement := "最初分散守站的安排仍记在旧名册上。后来，四人商定回营轮班。" if historical_choice == "distributed" else ("旧名册留着集中安置的安排，四人又约好了往后的轮班。" if historical_choice == "centralized" else "")
+	lines.append(earlier_arrangement + "阿苇、沈渡、罗墨和韩铎在平原驿馆团聚，四人都在这儿接待来访与补给。远方的烽灯一直亮着，自己一灯传一灯地递着消息；他们约好轮班出发巡查，不再各自留守。想去探望，可在驿站选「平原团聚驿馆」。")
 	for chapter: String in ["watch_c4_hill","watch_c6_lava"]:
 		var stage := chapter+(":s3" if chapter=="watch_c4_hill" else ":s2")
 		var outcome := str(ledger().get("quests",{}).get(stage,{}).get("evidence",{}).get(stage+":passage",{}).get("outcome",""))
 		var species := "牛头王" if chapter=="watch_c4_hill" else "熔岩龟王"
-		var record := "封关档案" if chapter=="watch_c4_hill" else "中枢留存记录"
-		lines.append(("丘陵城塞：" if chapter=="watch_c4_hill" else "熔岩城塞：")+str({"defeated":"你击败了%s，带出了%s。" % [species,record],"absent":"你核对城塞时，没有发现%s。你查过空城，带出了%s。" % [species,record],"bypass":"你转动西侧绕行绞盘，从侧路取出了封关档案。"}.get(outcome,"你把沿途查明的经过带了回来。")))
+		var record := "封关文书" if chapter=="watch_c4_hill" else "灯枢遗录"
+		lines.append(("丘陵山寨：" if chapter=="watch_c4_hill" else "熔岩山寨：")+str({"defeated":"你击败了%s，带出了%s。" % [species,record],"absent":"你察看山寨时，没有见着%s。你探过空寨，带出了%s。" % [species,record],"bypass":"你摇动西侧绕行绞盘，从侧路取出了封关文书。"}.get(outcome,"你把沿途查明的经过带了回来。")))
 	var sides := 0
 	var regions := 0
 	for chain: Dictionary in Catalog.side_chains():
@@ -762,9 +762,9 @@ func epilogue() -> String:
 	for chain: Dictionary in Catalog.regional_arcs():
 		if Data.ready(ledger(),str(chain["id"])+":s3"): regions+=1
 	var swamp_route := str(ledger().get("quests",{}).get("watch_c3_swamp:s3",{}).get("choice",""))
-	var route_memory := "沼泽的浅滩石障被你打开，沈渡记得那条亲自走通的近路。" if swamp_route=="near" else "你沿沼泽西侧外缘接应沈渡，他记得那两个绕过危险的转折。"
+	var route_memory := "沼泽的浅滩石障叫你打开，沈渡记得那条你亲手走通的近路。" if swamp_route=="near" else "你沿沼泽西边外缘接应沈渡，他记得那两道绕开凶险的弯。"
 	lines.append("除此之外，%d份托付有了回应，%d处区域的通路或接应点完成了修整。%s那些未曾走近的人和地方，还留着各自的故事。"%[sides,regions,route_memory])
-	lines.append("石安仍守在最初的前哨路旁。旧检查点照常可用，你也仍能返回家园。路上的生灵继续来去，往后每一次出发，都还值得先看一眼脚下。")
+	lines.append("石安仍守在最初那条通往哨所的路旁。旧检查点照常可用，你也仍能返回家园。路上的生灵照旧来去，往后每一回动身，都还值得先看一眼脚下。")
 	return "\n".join(lines)
 
 
@@ -775,11 +775,11 @@ func epilogue_pages() -> Array[String]:
 
 func epilogue_payload() -> Dictionary:
 	var options: Array = []
-	var titles := ["失联的来由","他们在哪里","穿过两座城塞","留下的路"]
+	var titles := ["音断的来由","他们在哪里","穿过两座山寨","留下的路"]
 	for i in titles.size():
 		options.append({"label":titles[i],"action":"campaign|epilogue|"+str(i),"enabled":true,"utility":true,"consequence":"回看这段经过","risk":""})
-	return {"kind":"camp_choice","giver":"《断开的守望》· 后记","text":completed_summary(ledger()),"options":options,
-		"rules":"后记按已经完成的行动回顾。阅读不会改变团聚驻地、进度或奖励；城塞首领今后复生，也不会撤销既有救援、修复与支付收据。世界之心只恢复联络，不改变野外种群。"}
+	return {"kind":"camp_choice","giver":"《断灯记》· 后记","text":completed_summary(ledger()),"options":options,
+		"rules":"后记照已经办成的事回顾。读一读，不会改动团聚的住处、进度或赏钱；山寨的首领日后再复生，也不会撤销已有的救援、修复与领赏的凭据。世界之心只通音信，不改野外的族群。"}
 
 
 func _troll_departure_menu(story: Dictionary) -> Dictionary:
@@ -787,8 +787,8 @@ func _troll_departure_menu(story: Dictionary) -> Dictionary:
 	if story.get("kind","")=="camp_action" and story.has("action"):
 		options.append({"label":story.get("confirm_text","继续遗迹故事"),"action":story["action"],"enabled":true,
 			"consequence":"继续听他说下去，办完眼前的事","risk":"确认后才继续这段委托"})
-	options.append({"label":"返回林地联络站","action":"campaign|depart|forest|side_troll:giver","enabled":true,
-		"consequence":"沿已经走通的远征线路返回","risk":"赶路不会回复生命或精力"})
+	options.append({"label":"回林间驿站","action":"campaign|depart|forest|side_troll:giver","enabled":true,
+		"consequence":"沿走通的远征路回去","risk":"赶路不会回复生命或精力"})
 	options.append({"label":"返回家园营地","action":"campaign|depart|home|side_troll:giver","enabled":true,
 		"consequence":"明确选择返回家园","risk":"赶路不会回复生命或精力"})
 	return QuestPresentation.with_narrative({"kind":"camp_choice","giver":story.get("giver","遗迹守望者"),"text":QuestPresentation.action_prompt(story),"origin":_world_position("side_troll:giver"),"options":options}, story)

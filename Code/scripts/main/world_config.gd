@@ -60,14 +60,14 @@ static func checkpoints() -> Dictionary:
 	_checkpoints_generation = BiomeMap.current_generation()
 	_checkpoints = {"home": {"name": "家园营地", "position": spawn_pos(), "kind": "camp"}}
 	# 目录存在不代表已解锁；首章真实救援/修复完成后才由任务账本发现此点。
-	_checkpoints[OutpostLayout.CHECKPOINT_ID] = {"name": "修复的前哨", "position": OutpostLayout.checkpoint_position(), "kind": "outpost"}
+	_checkpoints[OutpostLayout.CHECKPOINT_ID] = {"name": "复原的哨所", "position": OutpostLayout.checkpoint_position(), "kind": "outpost"}
 	for lm: Dictionary in LandmarkRegistry.landmarks():
 		if LandmarkRegistry.NPC_BY_KIND.has(lm["kind"]):
 			_checkpoints["landmark:" + lm["id"]] = {"name": lm["kind"] + "营地",
 				"position": _safe_checkpoint_position(lm["pos"]), "kind": "camp"}
 	for dg: Dictionary in ObstacleField.dungeons():
 		# 480px 在中心净空圈内且在南门外，约三秒能返回挑战；不会站进城墙/岩浆。
-		_checkpoints["fortress:" + dg["patch_id"]] = {"name": "城塞南门",
+		_checkpoints["fortress:" + dg["patch_id"]] = {"name": "山寨南门",
 			"position": _safe_checkpoint_position(dg["center"] + Vector2(0, 480)),
 			"kind": "fortress"}
 	return _checkpoints

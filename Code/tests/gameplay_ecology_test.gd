@@ -222,7 +222,7 @@ func _kill(sim: EcologySim, name: String) -> void:
 
 func _test_local_hunt_and_three_survivors() -> void:
 	var sim := _quest_world()
-	var quest := _manager._gen_quest("test_hunter", "hunt", "营地猎人")
+	var quest := _manager._gen_quest("test_hunter", "hunt", "营地猎户")
 	_check(quest.get("species", "") == "火把哥布林" and int(quest.get("need", 0)) == 3
 			and quest.get("hunt_region", "") == "local", "本区仅 3 只时发 3 只任务，优先本区而非远处 10 只")
 	_manager.accept(quest)
@@ -232,21 +232,21 @@ func _test_local_hunt_and_three_survivors() -> void:
 	_check(GameState.quests["active"].is_empty() and GameState.quests["completed"].get("test_hunter", 0) == 1
 			and sim.player_extinct.has("火把哥布林"), "杀完仅存 3 只真实触发永久灭绝，委托仍完整结算")
 	_quest_world(0, 3)
-	quest = _manager._gen_quest("test_hunter", "hunt", "营地猎人")
+	quest = _manager._gen_quest("test_hunter", "hunt", "营地猎户")
 	_check(quest.get("hunt_region", "") == "neighbor", "本区无健康种群时优先邻区")
 	_quest_world(0, 0)
-	_check(_manager._gen_quest("test_hunter", "hunt", "营地猎人").is_empty(), "远处未探索存量不生成远征烂单")
+	_check(_manager._gen_quest("test_hunter", "hunt", "营地猎户").is_empty(), "远处未探索存量不生成远征烂单")
 	for inst: MonsterInstance in WorldSim.sim.instances.values():
 		if inst.is_alive:
 			var cell := Vector2i(inst.spawn_pos / WorldConfig.WORLD_SIZE * GameState.FOG_GRID)
 			GameState.fog_reveal_cell(cell.x, cell.y)
-	quest = _manager._gen_quest("test_hunter", "hunt", "营地猎人")
+	quest = _manager._gen_quest("test_hunter", "hunt", "营地猎户")
 	_check(quest.get("hunt_region", "") == "remote", "本区/邻区无目标时允许已探索据点")
 
 
 func _test_hunt_depletion_and_reload() -> void:
 	var sim := _quest_world(3, 0, 0)
-	var quest := _manager._gen_quest("test_hunter", "hunt", "营地猎人")
+	var quest := _manager._gen_quest("test_hunter", "hunt", "营地猎户")
 	_manager.accept(quest)
 	_kill(sim, "火把哥布林")
 	var natural := _find_alive(sim, "火把哥布林")
@@ -288,7 +288,7 @@ func _test_hunt_depletion_and_reload() -> void:
 
 func _test_hunt_migration_and_waiting() -> void:
 	var sim := _quest_world(3, 0, 0)
-	var quest := _manager._gen_quest("test_hunter", "hunt", "营地猎人")
+	var quest := _manager._gen_quest("test_hunter", "hunt", "营地猎户")
 	var old := _find_alive(sim, "火把哥布林")
 	old.age = old.lifespan
 	sim.tick()
@@ -307,7 +307,7 @@ func _test_hunt_migration_and_waiting() -> void:
 	_check(GameState.quests["active"].is_empty(), "迁入邻区的目标仍可击杀完成")
 	# 无已计击杀不白领奖励；明确等待，后来可行目标出现自动换单。
 	sim = _quest_world(3, 0, 0)
-	quest = _manager._gen_quest("test_hunter", "hunt", "营地猎人")
+	quest = _manager._gen_quest("test_hunter", "hunt", "营地猎户")
 	_manager.accept(quest)
 	for inst: MonsterInstance in sim.instances.values():
 		if inst.is_alive:

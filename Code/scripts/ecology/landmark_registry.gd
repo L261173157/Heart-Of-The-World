@@ -30,12 +30,19 @@ const DISCOVER_RADIUS := 400.0
 ## 靠近按攻击键交互。quest 类型：hunt=狩猎 / ransack=捣巢 / explore=探索 /
 ## collect=收集交付（P1）
 const NPC_BY_KIND := {
-	"石环": {"name": "营地猎人", "quest": "hunt"},
-	"荒废遗迹": {"name": "遗迹学者", "quest": "ransack"},
+	"石环": {"name": "营地猎户", "quest": "hunt"},
+	"荒废遗迹": {"name": "访古先生", "quest": "ransack"},
 	"精灵泉": {"name": "泉水守望者", "quest": "explore"},
-	"了望石塔": {"name": "瞭望者", "quest": "collect"},
+	"了望石塔": {"name": "瞭望人", "quest": "collect"},
 	"古树": {"name": "草药师", "quest": "collect"},
 }
+## 2026-11-25 文案中国化改了三位地标 NPC 的称呼。旧档的进行中委托与领奖回执把
+## giver 显示名存进了档，读档时按此表迁移（做法同 SpeciesCatalog.SPECIES_RENAME_MAP）。
+const NPC_RENAME_MAP := {"营地猎人": "营地猎户", "遗迹学者": "访古先生", "瞭望者": "瞭望人"}
+
+## 旧 NPC 称呼 → 现行称呼（未收录的名字原样返回）
+static func migrate_npc_name(old_name: String) -> String:
+	return str(NPC_RENAME_MAP.get(old_name, old_name))
 
 static var _cache: Array = []
 static var _seed_cached := -2147483648

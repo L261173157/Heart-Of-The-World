@@ -397,7 +397,7 @@ func _verify_ending_world(_legacy_label: String = "reunion") -> void:
 	_check(shelter != null and shelter.is_visible_in_tree(), "新旧终局均显示平原避难所实体")
 	for id: String in ["c2:beacon","c3:beacon","c4:beacon","c5:beacon","c6:beacon"]:
 		var beacon := _cp(id)
-		_check(beacon != null and beacon.repaired and str(beacon.service) == "低负载自动转发", "远方信标仍亮着并转为自动转发：" + id)
+		_check(beacon != null and beacon.repaired and str(beacon.service) == "一灯传一灯", "远方信标仍亮着并转为自动转发：" + id)
 		_check(not _campaign._service_available(id), "无人远站不能保留NPC商店：" + id)
 
 func _ending_services(_legacy_label: String = "reunion") -> void:

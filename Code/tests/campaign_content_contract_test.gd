@@ -4,7 +4,7 @@ extends SceneTree
 const Catalog := preload("res://scripts/main/campaign_catalog.gd")
 const Layout := preload("res://scripts/ecology/campaign_layout.gd")
 const MAIN_IDS := ["watch_c2_forest", "watch_c3_swamp", "watch_c4_hill", "watch_c5_snow", "watch_c6_lava"]
-const MAIN_TITLES := ["林间旧约", "沼泽双途", "丘陵封关", "雪原回声", "熔火之心"]
+const MAIN_TITLES := ["林间盟书", "沼泽双途", "丘陵封关", "雪原回声", "熔火之心"]
 const SIDE_IDS := ["side_patrol", "side_herbalist", "side_hunter", "side_scholar", "side_merchant", "side_watchman", "side_letter", "side_troll"]
 const REGION_IDS := ["region_plains", "region_forest", "region_swamp", "region_hill", "region_snow", "region_lava"]
 const RANDOM_IDS := ["random_wounded", "random_parcel", "random_sign", "random_rocks", "random_medicine", "random_message", "random_nest", "random_migration", "random_camp", "random_runes"]

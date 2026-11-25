@@ -422,7 +422,7 @@ func _setup_camp() -> void:
 	merchant.quest_kind = "shop"
 	merchant.color = Color(0.95, 0.8, 0.45)
 	merchant.interact_fn = func(_id: String, _kind: String, _giver: String) -> Dictionary:
-		return {"kind": "shop", "text": "风尘仆仆的猎人——看看营地补给吗？"}
+		return {"kind": "shop", "text": "这位少侠风尘仆仆——瞧瞧营地的补给么？"}
 	_landmark_root.add_child(merchant)
 	# 房屋可进：门前入口区明确交互 + 淡入淡出过场 → 世界内嵌室内口袋
 	_add_house_door(spawn + Vector2(-310, -46), 0)
@@ -447,7 +447,7 @@ func _setup_camp_quest_giver() -> void:
 	keeper.name = "CampEcologist"
 	keeper.position = WorldConfig.spawn_pos() + Vector2(-100, 75)
 	keeper.kind = "石环"
-	keeper.giver = "营地巡守周照"
+	keeper.giver = "营中巡守周照"
 	keeper.landmark_id = "camp_ecology"
 	keeper.quest_kind = "outpost"
 	keeper.color = Color("9fd5a6")
@@ -488,11 +488,11 @@ func _fade_teleport(player: Node2D, target: Vector2, campaign_arrival: String = 
 		if not campaign_arrival.is_empty():
 			var manager := get_tree().get_first_node_in_group("quest_manager") as QuestManager
 			if float(player.get("current_hp")) < departure_hp or _campaign_hostiles_near(player):
-				EventBus.hint_requested.emit("出发受到攻击，远征已取消；线索和接取记录保留")
+				EventBus.hint_requested.emit("动身时挨了打，远征作罢；线索与接下的记录都留着")
 				return
 			arrival_target = manager._campaign.travel_destination(campaign_arrival) if manager != null else Vector2.INF
 			if not arrival_target.is_finite():
-				EventBus.hint_requested.emit("接应点附近出现敌人，远征已取消；请稍后重新核对")
+				EventBus.hint_requested.emit("接应处近旁冒出了敌人，远征作罢；请待会儿再对一对")
 				return
 		player.teleport_to(arrival_target)
 		var streamer := get_node_or_null("ChunkStreamer") as ChunkStreamer
@@ -514,7 +514,7 @@ func _fade_teleport(player: Node2D, target: Vector2, campaign_arrival: String = 
 		if not campaign_arrival.is_empty():
 			EventBus.campaign_travel_completed.emit(campaign_arrival)
 		if target == WorldConfig.spawn_pos():
-			EventBus.hint_requested.emit("已返回营地"))
+			EventBus.hint_requested.emit("已回营地"))
 	tween.tween_interval(0.08)
 	tween.tween_property(_veil, "color:a", 0.0, 0.25)
 	tween.tween_callback(func() -> void:
@@ -536,14 +536,14 @@ func _on_return_to_town_requested() -> void:
 		EventBus.hint_requested.emit("已在营地")
 		return
 	if not player.can_begin_town_return():
-		EventBus.hint_requested.emit("停下并结束战斗动作后再回城")
+		EventBus.hint_requested.emit("先站稳、收了招，再回城")
 		return
 	_return_remaining = RETURN_CHANNEL_SECONDS
 	_return_activity = player.activity_serial
 	_return_origin = player.global_position
 	_return_hp = player.current_hp
 	EventBus.return_to_town_progress.emit(true, _return_remaining, RETURN_CHANNEL_SECONDS)
-	EventBus.hint_requested.emit("回城中：移动、攻击或受伤会打断")
+	EventBus.hint_requested.emit("回城途中：走动、出手或受伤都会打断")
 
 
 func _process_town_return(delta: float) -> void:
@@ -554,7 +554,7 @@ func _process_town_return(delta: float) -> void:
 			or player.global_position.distance_to(_return_origin) > 3.0 \
 			or player.current_hp < _return_hp or not player.can_begin_town_return():
 		_cancel_town_return()
-		EventBus.hint_requested.emit("回城已打断")
+		EventBus.hint_requested.emit("回城叫人打断了")
 		return
 	_return_remaining = maxf(0.0, _return_remaining - delta)
 	EventBus.return_to_town_progress.emit(_return_remaining > 0.0, _return_remaining, RETURN_CHANNEL_SECONDS)
@@ -765,7 +765,7 @@ func _process_dungeon_zone(player: Node) -> void:
 			if not _dungeon_announced.has(pid):
 				_dungeon_announced[pid] = true
 				var boss_name: String = WorldConfig.TERRAIN_BOSSES.get(dg["terrain"], "")
-				EventBus.world_event.emit("🏯 发现城塞——%s盘踞之地" % boss_name)
+				EventBus.world_event.emit("🏯 寻见山寨——%s盘踞之地" % boss_name)
 			break
 	if inside == _in_dungeon:
 		return
@@ -893,7 +893,7 @@ class DungeonChest extends Node2D:
 		if taken:
 			return
 		if locked:
-			EventBus.hint_requested.emit("🔒 宝箱被城主的力量封印着——讨伐%s再说" % boss_name)
+			EventBus.hint_requested.emit("🔒 宝箱叫寨主的神通封着——先讨伐%s再说" % boss_name)
 			return
 		if key_id != "" and GameState.count_item(key_id) < 1:
 			EventBus.hint_requested.emit("🗝 需要%s才能打开（%s）" % [
@@ -928,7 +928,7 @@ class DungeonChest extends Node2D:
 		_opening_chest = false
 		SfxManager.play("secret")
 		SfxManager.play("gold2")
-		EventBus.hint_requested.emit("📦 城塞宝箱 +%d 金币 +%s +%s" % [
+		EventBus.hint_requested.emit("📦 山寨宝箱 +%d 金币 +%s +%s" % [
 			gold, ItemCatalog.name_of(item1), ItemCatalog.name_of(item2)])
 		# 开箱光柱 + 爆散（美术 v5 fx 全量）
 		EventBus.fx_requested.emit("pillar", position, 2.0)
@@ -1496,7 +1496,7 @@ func _on_instance_spawned(inst: MonsterInstance) -> void:
 	# 已装配完成后的重生才播——初始撒放的重放不是"重生"）
 	if _stream_primed and inst.species.is_boss \
 			and _instance_in_view(inst, Vector2.INF) and inst.spawn_pos != Vector2.INF:
-		EventBus.world_event.emit("⚠️ %s 在城塞深处重生了" % inst.species.species_name)
+		EventBus.world_event.emit("⚠️ %s 在山寨深处重生了" % inst.species.species_name)
 		EventBus.fx_requested.emit("beams", inst.spawn_pos, 2.2)
 		SfxManager.play("alert")
 	# 击杀（Area2D 回调内）触发的分裂生成会处于物理刷新期，
@@ -1651,7 +1651,7 @@ func _spawn_monster_node(inst: MonsterInstance, generation: int = -1) -> void:
 	if inst.species.is_boss:
 		var boss_region: SimRegion = _sim.get_region(inst.region_id)
 		var boss_region_name: String = boss_region.display_name if boss_region != null else inst.region_id
-		EventBus.world_event.emit("⚔ %s 盘踞%s——它是这片生态的顶点" % [
+		EventBus.world_event.emit("⚔ %s 盘踞%s——它是这一方生态的霸王" % [
 			inst.species.species_name, boss_region_name])
 	elif inst.is_elite:
 		var now: float = Time.get_ticks_msec() / 1000.0
@@ -1855,14 +1855,14 @@ func _on_campaign_travel_requested(terrain: String, origin_id: String) -> void:
 	var player := get_tree().get_first_node_in_group("player") as Player
 	if manager == null or player == null or _teleporting or get_tree().paused: return
 	if not manager._campaign.can_travel(terrain, origin_id):
-		EventBus.hint_requested.emit("路线或出发位置已变化，请回到联络员身边确认")
+		EventBus.hint_requested.emit("路线或动身之处有了变化，请回到托付人身旁确认")
 		return
 	if not player.can_begin_town_return() or _campaign_hostiles_near(player):
-		EventBus.hint_requested.emit("附近仍在交战，请脱离战斗并停下后再出发")
+		EventBus.hint_requested.emit("近旁还在交战，请脱开战团、站稳了再动身")
 		return
 	var destination := manager._campaign.travel_destination(terrain)
 	if not destination.is_finite() or ObstacleField.blocks(destination, 16.0) or not ObstacleField.liquid_kind_at(destination).is_empty():
-		EventBus.hint_requested.emit("接应位置目前不可安全到达，路线记录保留")
+		EventBus.hint_requested.emit("眼下到不了接应之处，路线的记录都留着")
 		return
 	_fade_teleport(player, destination, terrain)
 

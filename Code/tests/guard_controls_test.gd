@@ -156,7 +156,7 @@ func _layout() -> void:
 		for name: String in names:
 			_check(not shield.get_global_rect().grow(4).intersects(_button(name).get_global_rect().grow(4)),
 				"盾钮与%s至少8px间隔%s" % [name, canvas])
-		EventBus.npc_dialogue.emit({"kind": "quest", "giver": "营地猎人", "text": "测试架盾不穿透对话", "quest": {"id": "guard_layout"}})
+		EventBus.npc_dialogue.emit({"kind": "quest", "giver": "营地猎户", "text": "测试架盾不穿透对话", "quest": {"id": "guard_layout"}})
 		await _frames(2)
 		_check(get_tree().paused and not TouchInput.guard_available, "阅读对话暂停且盾钮不可用%s" % canvas)
 		EventBus.dialogue_action.emit("cancel")
@@ -363,7 +363,7 @@ func _pause_modal_dialogue() -> void:
 		elif mode == "inventory":
 			await _tap_key(KEY_O)
 		else:
-			EventBus.npc_dialogue.emit({"kind": "quest", "giver": "营地猎人", "text": "持盾取消测试", "quest": {"id": "guard"}})
+			EventBus.npc_dialogue.emit({"kind": "quest", "giver": "营地猎户", "text": "持盾取消测试", "quest": {"id": "guard"}})
 		await _frames(2)
 		_check(_player.guard_charge == 0 and not TouchInput.guard_held
 			and _button("ShieldBtn").get("_touch_index") == -1, "%s进入立即取消盾触点及蓄力" % mode)

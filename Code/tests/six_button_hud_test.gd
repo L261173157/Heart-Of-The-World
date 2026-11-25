@@ -322,7 +322,7 @@ func alternate_clue_contract() -> void:
 	EventBus.camp_quest_action_requested.connect(func(action: String) -> void: branch_actions.append(action))
 	var root: Control = hud.get_node("Root")
 	var payload := {"kind": "camp_choice", "giver": "营地调查记录", "text": "目标存量不足；可保留据点，另找狩猎线索。", "options": [
-		{"action": "choose_hunt", "label": "有限狩猎", "enabled": false, "disabled_reason": "需要3只，当前仅2只", "consequence": "保留巢穴和至少1只存活个体", "risk": "数量仍会变化"},
+		{"action": "choose_hunt", "label": "留余狩猎", "enabled": false, "disabled_reason": "需要3只，当前仅2只", "consequence": "保留巢穴和至少1只存活个体", "risk": "数量仍会变化"},
 		{"action": "choose_ransack", "label": "捣毁巢穴", "consequence": "暂停繁衍120刻", "risk": "幸存者狂怒60秒"},
 		{"action": "find_hunt_clue", "label": "寻找其他狩猎线索", "utility": true, "consequence": "保留已有历史贡献，核对附近真实线索", "risk": "当前据点不会被改变"}]}
 	for size: Vector2 in [Vector2(1024, 640), Vector2(1024, 576), Vector2(1280, 720)]:
@@ -404,21 +404,21 @@ func outpost_ui_contract() -> void:
 	var cell := GameState.fog_cell_of(at)
 	GameState.fog_reveal_cell(cell.x, cell.y)
 	GameState.tracked_quest_id = "lost_outpost_v1"
-	var q := {"id": "lost_outpost_v1", "kind": "outpost", "title": "失联的前哨", "progress": 0, "need": 3,
-		"chapter_stage": "investigation", "target_object_id": "patrol_record", "target_name": "遗落的巡逻札记",
+	var q := {"id": "lost_outpost_v1", "kind": "outpost", "title": "哨音久绝", "progress": 0, "need": 3,
+		"chapter_stage": "investigation", "target_object_id": "patrol_record", "target_name": "道旁遗札",
 		"target_pos": [at.x, at.y], "ui_knowledge": "npc_intel", "ui_objective": "调查路上的札记", "bonus": ""}
 	map._quest_views = [q]
 	var view := map._select_target([])
-	check(view.get("name") == "遗落的巡逻札记" and view.get("precise", false), "前哨可见物件保留真实目标名称与精确指引")
+	check(view.get("name") == "道旁遗札" and view.get("precise", false), "前哨可见物件保留真实目标名称与精确指引")
 	var far := at + Vector2(9000, 0)
 	q["target_pos"] = [far.x, far.y]
 	view = map._select_target([])
 	map._seen_targets[q["id"]] = {"pos": at, "name": "旧札记", "kind": "clue"}
 	q["target_object_id"] = "entrance_record"
-	q["target_name"] = "门前的拖行痕迹"
+	q["target_name"] = "门前拖痕"
 	var fog_before := GameState.explored.duplicate()
 	view = map._select_target([])
-	check(view.get("name") == "门前的拖行痕迹" and not view.get("precise", true), "下一调查物件离屏仅给粗线索，不泄露精确目标")
+	check(view.get("name") == "门前拖痕" and not view.get("precise", true), "下一调查物件离屏仅给粗线索，不泄露精确目标")
 	check(view.get("knowledge") == "npc_intel" and not map._seen_targets.has(q["id"]), "同一章节切换物件清除上一物件的目击缓存")
 	check(GameState.explored == fog_before, "章节指引不揭开隐藏地图")
 	check(QuestPresentation.objective(q) == "调查路上的札记" and QuestPresentation.bonus_item(q) == "", "章节表现不继承旧随机委托奖励或匿名目标")
@@ -427,7 +427,7 @@ func outpost_ui_contract() -> void:
 	hud._on_quest_updated("")
 	check(hud.quest_label.text.contains("取回专用急救包") and not hud.quest_label.text.ends_with("第二段"), "追踪栏保留真实下一步，不能只显示章节序号")
 	var actions_before := branch_actions.size()
-	hud._open_dialogue({"kind": "camp_action", "action": "outpost:aid_bag", "giver": "巡守急救包", "text": "这是专用任务物资，不消耗背包药品。", "confirm_text": "取回急救包"})
+	hud._open_dialogue({"kind": "camp_action", "action": "outpost:aid_bag", "giver": "巡守药囊", "text": "这是专用任务物资，不消耗背包药品。", "confirm_text": "取回急救包"})
 	await settle()
 	check(get_tree().paused and GameState.dialogue_open, "主动查看任务物件暂停世界")
 	hud._on_dialogue_action("confirm")
@@ -445,10 +445,10 @@ func outpost_ui_contract() -> void:
 	hud._task_snapshot = []
 	GameState.tracked_quest_id = "__untracked__"
 	GameState.outpost_quest = {"stage": "completed", "last_summary": true, "evidence": {"next_clue_received": false}}
-	hud._on_quest_updated("✓ 失联的前哨已完成")
-	check(hud.quest_label.text.contains("留守巡守交流后续线索"), "完成修复后仍提示常驻巡守提供区域线索")
+	hud._on_quest_updated("✓ 哨音久绝 · 已完成")
+	check(hud.quest_label.text.contains("同留守的巡守打听后续线索"), "完成修复后仍提示常驻巡守提供区域线索")
 	GameState.outpost_quest["evidence"]["next_clue_received"] = true
-	hud._on_quest_updated("✓ 失联的前哨已完成")
+	hud._on_quest_updated("✓ 哨音久绝 · 已完成")
 	check(hud.quest_label.text.contains("可以自由探索"), "听完后续线索不强迫开启新任务或锁住探索")
 	GameState.outpost_quest = {}
 

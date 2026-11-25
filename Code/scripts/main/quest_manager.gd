@@ -87,10 +87,10 @@ func offer(landmark_id: String, quest_kind: String, giver: String) -> Dictionary
 					ItemCatalog.name_of(str(q.get("item", ""))), q["need"], view["ui_reward"]]}
 		return {"kind": "info", "state": "in_progress", "text": _npc_progress(q, view), "questions": _npc_questions(q), "rules": _npc_rules(q)}
 	if data["active"].size() >= MAX_ACTIVE:
-		return {"kind": "info", "state": "unavailable", "text": "你已经应下%d件事了。先把手头的忙完，我这边不催。" % MAX_ACTIVE}
+		return {"kind": "info", "state": "unavailable", "text": "你已应下%d桩事了。先把手头的办完，我这边不催。" % MAX_ACTIVE}
 	var quest := _gen_quest(landmark_id, quest_kind, giver)
 	if quest.is_empty():
-		return {"kind": "info", "state": "unavailable", "text": "眼下没什么适合托付的事。路上多留心，别为我白跑。"}
+		return {"kind": "info", "state": "unavailable", "text": "眼下没什么可托付的。路上多留神，别为我白跑。"}
 	var receipt: Dictionary = data.get("receipts", {}).get(landmark_id, {})
 	var previous := "上回多亏你了，报酬你已领过。\n" if not receipt.is_empty() else ""
 	return {"kind": "quest", "state": "completed" if not receipt.is_empty() else "available",
@@ -105,13 +105,13 @@ func _npc_request(quest: Dictionary) -> String:
 	var text := ""
 	match str(quest.get("kind", "")):
 		"hunt":
-			text = "这附近的%s还得留心。我想请你处理%d只，够了就收手，别追着把整片猎场清空。" % [quest.get("species", ""), need]
+			text = "这一带的%s须留神。想请你除%d只，够了就收手，莫赶尽杀绝，把整片猎场都清空。" % [quest.get("species", ""), need]
 		"ransack":
-			text = "巢区挤着来路，我想请你捣毁%d处巢穴，给调查遗迹留一点空隙。它们往后还可能重建，经过时仍要小心。" % need
+			text = "巢穴挤着来路，想请你捣%d处巢穴，给查访遗迹腾出些空隙。它们日后还可能重筑，路过时仍须留神。" % need
 		"collect":
-			text = "手边还缺%s×%d。你若找到了，先收好，再带回来交给我；这份材料的报酬我会备着。" % [ItemCatalog.name_of(str(quest.get("item", ""))), need]
+			text = "手头还缺%s×%d。你若寻着了，先收好，再带回来交给我；这份材料的赏钱，我给你备着。" % [ItemCatalog.name_of(str(quest.get("item", ""))), need]
 		_:
-			text = "我望得见近处，却看不清更远的路。替我找%d处还没发现过的地标，让这张图少留些空白。" % need if "瞭望" in giver or "了望" in giver else "泉边总有人问前面的路。你若能找到%d处还没发现过的地标，往后来的人也能多认一点方向。" % need
+			text = "我望得见近处，却望不清更远的路。替我寻%d处还没发现的地标，好叫这张图少留些空白。" % need if "瞭望" in giver or "了望" in giver else "泉边总有人问前头的路。你若能寻到%d处还没发现的地标，往后的人也能多认得几分方向。" % need
 	return text
 
 
@@ -121,20 +121,20 @@ func _npc_progress(quest: Dictionary, _view: Dictionary) -> String:
 	var need := int(quest.get("need", 1))
 	var text := ""
 	match str(quest.get("kind", "")):
-		"hunt": text = "已经处理%d只，还差%d只。若附近踪迹变了，先看清再动手。" % [progress, maxi(0, need - progress)]
-		"ransack": text = "已经捣毁%d处，还剩%d处。留心巢区，别被围住了。" % [progress, maxi(0, need - progress)]
-		"collect": text = "目前凑到%d份，还差%d份。先放在你那里，齐了再交给我。" % [progress, maxi(0, need - progress)]
-		_: text = "已经添上%d处，还盼着另外%d处的消息。慢慢找，记住回来时的路。" % [progress, maxi(0, need - progress)]
+		"hunt": text = "已经除了%d只，还差%d只。近旁的踪迹若变了，先看明白再动手。" % [progress, maxi(0, need - progress)]
+		"ransack": text = "已经捣了%d处，还剩%d处。留神巢穴，别叫它们围住了。" % [progress, maxi(0, need - progress)]
+		"collect": text = "眼下凑到%d份，还差%d份。先搁在你那儿，齐了再交给我。" % [progress, maxi(0, need - progress)]
+		_: text = "已经添上%d处，还盼着另外%d处的消息。慢慢寻，记好回来时的路。" % [progress, maxi(0, need - progress)]
 	return text
 
 
 func _npc_questions(quest: Dictionary) -> Array:
 	if quest.get("kind", "") != "hunt": return []
-	return [{"label": "去哪里找？", "answer": "先去%s看看。那是我能指给你的搜寻范围，到了再找%s的踪迹。" % [Presentation.hunt_area(quest), quest.get("species", "目标")]}]
+	return [{"label": "去哪里找？", "answer": "先去%s看看。那是我指给你的寻找之地，到了再寻%s的踪迹。" % [Presentation.hunt_area(quest), quest.get("species", "目标")]}]
 
 
 func _npc_rules(quest: Dictionary) -> String:
-	var policy := "收齐后回到委托人身旁，确认交付才扣除材料并领取报酬。" if Presentation.requires_claim(quest) else "达成后自动领取报酬，无需返回委托人。"
+	var policy := "收齐之后回到委托人身边，当面交付，才扣材料、领赏钱。" if Presentation.requires_claim(quest) else "办成之后赏钱自来，不必回去找委托人。"
 	return "报酬：" + Presentation.reward(quest) + "\n" + policy + "\n" + Presentation.objective(quest)
 
 
@@ -147,16 +147,16 @@ func accept(quest: Dictionary) -> String:
 		return _outpost.accept()
 	if quest.get("id", "") == Camp.Data.ID:
 		if not GameState.outpost_quest.is_empty() and not Outpost.Data.valid_legacy(GameState.camp_quest):
-			return "新前哨章节已包含一次生态奖励，不能另开重复的营地调查"
+			return "哨所一节已含一回生态的赏，不能再另开一回重复的营地调查"
 		return _camp.accept()
 	var data: Dictionary = GameState.quests
 	if str(quest.get("id", "")).is_empty() or int(quest.get("need", 0)) <= 0:
-		return "委托已失效，请重新交谈"
+		return "这桩委托已经作废，请重新交谈"
 	var landmark_id := str(quest.get("landmark_id", ""))
 	var receipt: Dictionary = data.get("receipts", {}).get(landmark_id, {})
 	if receipt.get("id", "") == quest["id"] or (quest.has("offer_index")
 			and int(quest["offer_index"]) != int(data["completed"].get(landmark_id, 0))):
-		return "此委托已领奖，请重新交谈查看下一单"
+		return "这桩委托已经领过赏，请重新交谈看下一桩"
 	for q: Dictionary in data["active"]:
 		if q["id"] == quest["id"] or (landmark_id != "" and q.get("landmark_id", "") == landmark_id):
 			return "委托已接取：%s（%d/%d）" % [q["title"], q["progress"], q["need"]]
@@ -488,14 +488,14 @@ func claim(quest_id: String) -> String:
 			return "请返回%s身边交付领奖" % quest.get("giver", "委托人")
 		_reconcile_collect()
 		if Presentation.state(quest) != "claimable":
-			return "材料不足：%d/%d，尚未交付" % [quest["progress"], quest["need"]]
+			return "材料不够：%d/%d，还没交付" % [quest["progress"], quest["need"]]
 		if not _complete(quest):
 			_push_hud()
-			return "当前无法结算，请稍后重试；材料和奖励仍保留"
+			return "这会儿结不了账，请待会儿再试；材料与赏钱都留着"
 		_push_hud()
 		GameState._queue_save()
 		return "交付成功 · 奖励已到账"
-	return "此委托已结算或失效"
+	return "这桩委托已经结清，或已作废"
 
 
 func _on_abandon_requested(quest_id: String) -> void:
@@ -665,7 +665,7 @@ func _push_hud() -> void:
 	EventBus.quest_list_changed.emit(views, selected_id)
 	if selected.is_empty():
 		if not active.is_empty():
-			EventBus.quest_updated.emit("委托未追踪 · 点击查看已有任务")
+			EventBus.quest_updated.emit("委托未追踪 · 点开看看手头的任务")
 			return
 		var campaign_summary := CampaignQuest.completed_summary(GameState.campaign_quest, true)
 		if not campaign_summary.is_empty():
@@ -678,7 +678,7 @@ func _push_hud() -> void:
 			EventBus.quest_updated.emit(_camp.receipt_text())
 			return
 		var receipt: Dictionary = GameState.quests.get("receipts", {}).get(GameState.quests.get("last_receipt", ""), {})
-		EventBus.quest_updated.emit(Presentation.receipt_text(receipt) if not receipt.is_empty() else "! 委托：找带 ! 的居民接取")
+		EventBus.quest_updated.emit(Presentation.receipt_text(receipt) if not receipt.is_empty() else "! 委托：找带 ! 的乡亲接取")
 		return
 	var view := Presentation.snapshot(selected)
 	var others := " +另 %d 项" % (active.size() - 1) if active.size() > 1 else ""
@@ -720,7 +720,7 @@ func outpost_visual_state() -> Dictionary:
 func outpost_state() -> Dictionary:
 	return _outpost.visual_state()
 
-func legacy_camp_offer(giver: String = "营地巡守周照") -> Dictionary:
+func legacy_camp_offer(giver: String = "营中巡守周照") -> Dictionary:
 	var payload := _camp.offer(giver)
 	payload["back_action"] = "outpost:menu"
 	return payload

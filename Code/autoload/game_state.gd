@@ -1243,6 +1243,10 @@ func _restore_save_data(data: Dictionary) -> bool:
 				# 崩溃，中断 _load——其后的物品栏/地标/保存时间全部丢失）
 				if typeof(qd.get("species", null)) == TYPE_STRING:
 					qd["species"] = SpeciesCatalog.migrate_name(qd["species"])
+				# 地标 NPC 称呼随文案中国化更名（2026-11-25）：giver 是存进档的显示名，
+				# 读档时一并迁移，旧档进行中的委托才不会顶着旧称呼（查无的名字原样保留）。
+				if typeof(qd.get("giver", null)) == TYPE_STRING:
+					qd["giver"] = LandmarkRegistry.migrate_npc_name(qd["giver"])
 				qd["need"] = maxi(1, int(qd["need"]))
 				qd["progress"] = clampi(_safe_int(qd.get("progress", 0), 0), 0, int(qd["need"]))
 				# 缺失此标志的 v9/早期存档保留自动交付，不能读档后强迫返程。
@@ -1267,7 +1271,7 @@ func _restore_save_data(data: Dictionary) -> bool:
 					"gold": maxi(0, _safe_int(receipt.get("gold"), 0)),
 					"xp": maxi(0, _safe_int(receipt.get("xp"), 0)),
 					"bonus": str(receipt.get("bonus", "")) if EconomyMath.knows_item(str(receipt.get("bonus", ""))) else "",
-					"giver": str(receipt.get("giver", "")), "kind": str(receipt.get("kind", ""))}
+					"giver": LandmarkRegistry.migrate_npc_name(str(receipt.get("giver", ""))), "kind": str(receipt.get("kind", ""))}
 		var last: Variant = saved_quests.get("last_receipt", "")
 		if typeof(last) == TYPE_STRING and quests["receipts"].has(last):
 			quests["last_receipt"] = last

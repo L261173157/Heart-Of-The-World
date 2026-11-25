@@ -9,14 +9,14 @@ const HALF_CELLS := Vector2i(19, 16)
 const OFFSET := Vector2(3456, -1536)
 const INTERACT_DISTANCE := 94.0
 const OBJECTS := {
-	"patrol_record": {"title": "遗落的巡逻札记", "kind": "record", "interaction_label": "调查札记"},
-	"entrance_record": {"title": "门前的拖行痕迹", "kind": "record", "offset": Vector2(-128, 544), "interaction_label": "调查拖痕"},
-	"wounded_patrol": {"title": "受伤的前哨巡守石安", "kind": "patrol", "offset": Vector2(-352, -192), "interaction_label": "交谈"},
-	"supply_record": {"title": "补给区清单", "kind": "record", "offset": Vector2(256, 96), "interaction_label": "查看清单"},
-	"aid_bag": {"title": "巡守急救包", "kind": "aid", "offset": Vector2(448, -320), "interaction_label": "拾取急救包"},
-	"repair_tools": {"title": "前哨维修工具", "kind": "tools", "offset": Vector2(448, 320), "interaction_label": "拾取工具"},
-	"signpost": {"title": "损坏的前哨路标", "kind": "signpost", "offset": Vector2(96, 576), "interaction_label": "检查路标"},
-	"survey_marker": {"title": "前哨观测点", "kind": "survey", "offset": Vector2(0, 160), "interaction_label": "观察周边"},
+	"patrol_record": {"title": "道旁遗札", "kind": "record", "interaction_label": "察看手札"},
+	"entrance_record": {"title": "门前拖痕", "kind": "record", "offset": Vector2(-128, 544), "interaction_label": "调查拖痕"},
+	"wounded_patrol": {"title": "受伤的巡守石安", "kind": "patrol", "offset": Vector2(-352, -192), "interaction_label": "交谈"},
+	"supply_record": {"title": "物资清单", "kind": "record", "offset": Vector2(256, 96), "interaction_label": "查看清单"},
+	"aid_bag": {"title": "巡守药囊", "kind": "aid", "offset": Vector2(448, -320), "interaction_label": "拿上药囊"},
+	"repair_tools": {"title": "哨所工具包", "kind": "tools", "offset": Vector2(448, 320), "interaction_label": "拿上工具包"},
+	"signpost": {"title": "倒下的哨所路标", "kind": "signpost", "offset": Vector2(96, 576), "interaction_label": "检查路标"},
+	"survey_marker": {"title": "哨所瞭望处", "kind": "survey", "offset": Vector2(0, 160), "interaction_label": "观察周边"},
 }
 
 static var _seed := -2147483648

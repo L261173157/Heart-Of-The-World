@@ -74,10 +74,10 @@ func _test_campaign_guidance() -> void:
 	_check(Data.accept_chapter(GameState.campaign_quest, "watch_c2_forest", 1), "章节展示夹具接取林地章")
 	var campaign: CampaignQuest = _qm._campaign
 	var view := campaign.snapshot("watch_c2_forest:s1")
-	_check(view.next_action == "与林地药师白榆交谈" and view.target_title == "林地药师白榆", "章节下一步包含实际交谈对象")
+	_check(view.next_action == "与林中药师白榆交谈" and view.target_title == "林中药师白榆", "章节下一步包含实际交谈对象")
 	GameState.tracked_quest_id = str(view.id)
 	_qm._push_hud()
-	_check(_hud.quest_label.text.contains("与林地药师白榆交谈"), "生产快照经管理器到真实HUD不截去NPC")
+	_check(_hud.quest_label.text.contains("与林中药师白榆交谈"), "生产快照经管理器到真实HUD不截去NPC")
 	_check(campaign.visual_state().get("target_object_id", "") == view.target_object_id, "初始世界投影复用已推送追踪快照")
 	EventBus.quest_track_requested.emit("")
 	_check(campaign.visual_state().get("target_object_id", "") == "", "明确取消跟踪立即清除世界目标")
@@ -92,10 +92,10 @@ func _test_campaign_guidance() -> void:
 		_check(Data.record(q, str(a.stage), id, {"position":[40000,40000],"tick":0}), "展示夹具记录前置 " + id)
 	q["puzzle_progress"] = {"watch_c2_forest:s2:runes":["dew"]}
 	view = campaign.snapshot("watch_c2_forest:s2")
-	_check(view.next_action == "触碰东方信号石" and view.step_progress == "符标 1/3", "机关展示使用当前真实符标与局部1/3")
+	_check(view.next_action == "触碰东边灯石" and view.step_progress == "符标 1/3", "机关展示使用当前真实符标与局部1/3")
 	GameState.tracked_quest_id = str(view.id)
 	_qm._push_hud()
-	_check(_hud.quest_label.text.contains("东方信号石") and _hud.quest_label.text.contains("符标 1/3"), "HUD显示当前符标和局部进度")
+	_check(_hud.quest_label.text.contains("东边灯石") and _hud.quest_label.text.contains("符标 1/3"), "HUD显示当前符标和局部进度")
 	var before := JSON.stringify(q)
 	campaign.snapshot("watch_c2_forest:s2")
 	_check(JSON.stringify(q) == before, "章节展示投影不制造行动证据或奖励")
@@ -158,7 +158,7 @@ func _test_hunt_clue() -> void:
 	WorldSim.set_process(false)
 	for i in 3:
 		sim.spawn_instance(goblin, region.id, 30, 0, 1.0, false, _player.position + Vector2(4000, i * 20))
-	var quest := _qm._gen_quest("guidance_hunter", "hunt", "营地猎人")
+	var quest := _qm._gen_quest("guidance_hunter", "hunt", "营地猎户")
 	_check(not quest.is_empty(), "真实生成器提供本区活体猎杀委托")
 	_qm.accept(quest)
 	EventBus.quest_track_requested.emit(str(quest.id))
@@ -182,7 +182,7 @@ func _test_hunt_clue() -> void:
 	WorldSim.stop()
 
 func _test_completion_receipt() -> void:
-	var quest := _qm._gen_quest("guidance_nest", "ransack", "遗迹学者")
+	var quest := _qm._gen_quest("guidance_nest", "ransack", "访古先生")
 	_qm.accept(quest)
 	var gold_before := GameState.gold
 	_hud._toast_timer = 0.0
@@ -250,7 +250,7 @@ func _test_chest_feedback() -> void:
 		_hud._process(2.1)
 		shown += "\n" + _hud.toast_label.text
 	_check(shown.contains("已存待领取：%s ×1" % ItemCatalog.name_of(supply)) and shown.contains("已存待领取：%s ×1" % ItemCatalog.name_of(material)), "双件宝箱的每张真实溢出收据都可见")
-	_check(shown.contains("城塞宝箱") and _hud._toast_backlog.is_empty(), "宝箱摘要在收据后显示且队列排空")
+	_check(shown.contains("山寨宝箱") and _hud._toast_backlog.is_empty(), "宝箱摘要在收据后显示且队列排空")
 	tutorial.free()
 	chest.free()
 
@@ -296,5 +296,5 @@ func _test_receipt_backdrop() -> void:
 	_check(label.text == "排队的普通提示" and not label.has_theme_stylebox_override("normal"), "排队切换到普通提示时也移除底板")
 
 func _test_context_target() -> void:
-	EventBus.context_interaction_changed.emit({"available":true, "target_id":"campaign:c2:herbalist", "target_title":"林地药师白榆", "label":"交谈"})
-	_check(_hud._context_target_label.text == "林地药师白榆" and (_hud._context_btn.get_node("Caption") as Label).text == "交谈", "独立交互显示实际对象并保留简短动作")
+	EventBus.context_interaction_changed.emit({"available":true, "target_id":"campaign:c2:herbalist", "target_title":"林中药师白榆", "label":"交谈"})
+	_check(_hud._context_target_label.text == "林中药师白榆" and (_hud._context_btn.get_node("Caption") as Label).text == "交谈", "独立交互显示实际对象并保留简短动作")

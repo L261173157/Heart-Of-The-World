@@ -203,8 +203,8 @@ func _enter_and_recover(take_tools := true, verify_front := false) -> bool:
 	if not await _walk_prop("entrance_record", Vector2(-40, 56)): return false
 	var first_text := _patrol_text
 	var second_text := str(_qm.outpost_object_payload("entrance_record").get("text", ""))
-	_check(first_text.contains("前哨") and first_text.contains("旧道") and not first_text.contains("维修工具")
-		and second_text.contains("拖痕") and second_text.contains("西侧") and second_text.contains("缺口") and first_text != second_text
+	_check(first_text.contains("哨所") and first_text.contains("旧道") and not first_text.contains("维修工具")
+		and second_text.contains("拖痕") and second_text.contains("西边") and second_text.contains("缺口") and first_text != second_text
 		and _qm._outpost.snapshot().target_object_id == "entrance_record",
 		"札记先指向前哨旧道，现场拖痕才揭示西侧缺口，与当前入口目标一致且不提前展开修复")
 	var investigation_wallet := _wallet()

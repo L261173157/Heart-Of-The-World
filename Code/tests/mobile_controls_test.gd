@@ -91,7 +91,7 @@ func _test_layout() -> void:
 			_check(button.size.x >= 80 and button.size.y >= 80, names[i] + "保留拇指触控面积")
 			for j in range(i + 1, names.size()):
 				_check(not button.get_global_rect().grow(4).intersects(_button(names[j]).get_global_rect().grow(4)), names[i] + "/" + names[j] + "至少8px间隔")
-		_hud._open_dialogue({"kind": "quest", "giver": "营地猎人", "text": "可接：探索地标\n奖励：金币与经验。发现尚未到访的地标，接下吗？", "quest": {"id": "layout"}})
+		_hud._open_dialogue({"kind": "quest", "giver": "营地猎户", "text": "可接：探索地标\n奖励：金币与经验。发现尚未到访的地标，接下吗？", "quest": {"id": "layout"}})
 		await _settle()
 		_check(root.get_global_rect().encloses(_hud._dialogue_panel.get_global_rect()), "对话和按钮保持安全区内")
 		_check(get_tree().paused and not _hud._can_use_mobile_controls(), "阅读对话暂停世界且阻止战斗触控")

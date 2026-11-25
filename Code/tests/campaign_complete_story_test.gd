@@ -241,7 +241,7 @@ func _visit_shi_an() -> void:
 	var before := _reading_state()
 	await _interact("wounded_patrol",false)
 	var words: String = _hud._dialogue_text.text
-	_check(words.contains("四人") and words.contains("平原") and words.contains("前哨我还守着"),"石安现场对话真实回应团聚，并承诺仍留前哨")
+	_check(words.contains("四人") and words.contains("平原") and words.contains("哨所俺还守着"),"石安现场对话真实回应团聚，并承诺仍留前哨")
 	_check(not words.contains("听听后续线索") and _same(before.wallet,_wallet()) and _same(before.outpost,_q()),"石安后日谈不重做首章或支付旧奖励")
 	_hud._close_dialogue()
 

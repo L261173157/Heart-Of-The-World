@@ -141,7 +141,7 @@ class OutpostObject extends Node2D:
 		visible = not taken
 		if taken: _near = false
 		if kind == "patrol":
-			title = "前哨巡守石安" if rescued else "受伤的前哨巡守石安"
+			title = "哨所巡守石安" if rescued else "受伤的巡守石安"
 			interaction_label = "交谈" if rescued or not evidence.get("aid_taken", false) else "救治巡守"
 			if _patrol != null:
 				_patrol.rotation = 0.0 if rescued else -PI / 2.0
@@ -149,7 +149,7 @@ class OutpostObject extends Node2D:
 				_patrol.position = Vector2(0, -4) if rescued else Vector2(0, -12)
 				_patrol.modulate = Color.WHITE if rescued else Color("c9b8ab")
 		elif kind == "signpost":
-			title = "前哨路标 · 已修复" if repaired else "损坏的前哨路标"
+			title = "哨所路标 · 已修好" if repaired else "倒下的哨所路标"
 			interaction_label = "查看路标" if repaired else "修复路标"
 		elif read:
 			title += " · 已调查" if outpost_id == "entrance_record" else " · 已读"

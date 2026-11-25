@@ -280,7 +280,7 @@ func _chapter_views() -> void:
 	await _capture("13-ecology-confirmation")
 	await _touch(_hud._dialogue_yes)
 	# A declared ordinary quest fixture verifies its real auto-settlement from the same actual nest destruction.
-	GameState.quests["active"].append({"id":"render-ransack", "landmark_id":"render-ransack", "title":"清理附近巢穴", "giver":"营地猎人", "kind":"ransack", "need":1, "progress":0, "gold":10, "xp":0})
+	GameState.quests["active"].append({"id":"render-ransack", "landmark_id":"render-ransack", "title":"清理附近巢穴", "giver":"营地猎户", "kind":"ransack", "need":1, "progress":0, "gold":10, "xp":0})
 	_qm._push_hud()
 	# 实际普攻破巢，镜头定位并不伪造任务事件或写入完成字段。
 	_player.teleport_to(pos + Vector2(0, 48))

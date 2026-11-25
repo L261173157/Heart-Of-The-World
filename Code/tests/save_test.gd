@@ -453,7 +453,7 @@ func _test_quests_and_settings() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(GameState.SAVE_PATH))
 	# 1) 正常往返（任务进行中 + 完成数 + 设置全键）
 	GameState.quests = {"active": [{
-		"id": "q_lm_x_0", "landmark_id": "lm_x", "giver": "营地猎人", "kind": "hunt",
+		"id": "q_lm_x_0", "landmark_id": "lm_x", "giver": "营地猎户", "kind": "hunt",
 		"species": "火把哥布林", "progress": 2, "need": 5, "title": "狩猎：击杀 火把哥布林 ×5",
 		"gold": 80, "xp": 40,
 	}], "completed": {"lm_x": 3}}
@@ -469,6 +469,8 @@ func _test_quests_and_settings() -> void:
 			and int(GameState.quests["active"][0]["progress"]) == 2
 			and int(GameState.quests["completed"].get("lm_x", 0)) == 3,
 			"任务进度读档往返（进行中条目+完成数）")
+	_check(str(GameState.quests["active"][0].get("giver", "")) == "营地猎户",
+			"现行 NPC 称呼读档原样保留（迁移表只动旧称呼）")
 	_check(bool(GameState.settings.get("auto_aim", false))
 			and str(GameState.settings.get("hero_skin", "")) == "white"
 			and not bool(GameState.settings.get("lantern_shadows", true))
@@ -482,10 +484,12 @@ func _test_quests_and_settings() -> void:
 		"quests": {
 			"active": [42, {"need": 3}, {"id": 7, "need": 2}, {"id": "q_c", "need": 2},
 				{"id": "q_a", "kind": "hunt", "title": "狩猎：击杀 獾王 ×4",
-				 "landmark_id": "lm_a", "need": 4, "progress": 99, "species": "獾王"},
+				 "landmark_id": "lm_a", "need": 4, "progress": 99, "species": "獾王", "giver": "营地猎人"},
 				{"id": "q_b", "kind": "ransack", "title": "捣毁巢穴 ×2",
-				 "landmark_id": "lm_b", "need": 2, "progress": 1}],
+				 "landmark_id": "lm_b", "need": 2, "progress": 1, "giver": "遗迹学者"}],
 			"completed": {"lm_ok": 2, "lm_bad": "x", "lm_neg": -1},
+			"receipts": {"lm_r": {"id": "q_r", "title": "探索：发现新地标 ×2", "gold": 5, "xp": 3,
+				"bonus": "", "giver": "瞭望者", "kind": "explore"}},
 		},
 		"settings": {"hero_skin": "rainbow", "auto_aim": "yes", "volume": 3.0,
 			"screen_shake": "off", "unknown_key": true},
@@ -497,6 +501,9 @@ func _test_quests_and_settings() -> void:
 	var qa: Dictionary = GameState.quests["active"][0]
 	_check(qa["id"] == "q_a" and qa["species"] == "牛头王" and int(qa["progress"]) == 4,
 			"任务物种更名迁移（獾王→牛头王）+ 进度超钳到 need")
+	_check(str(qa.get("giver", "")) == "营地猎户" and str(GameState.quests["active"][1].get("giver", "")) == "访古先生"
+			and str(GameState.quests["receipts"].get("lm_r", {}).get("giver", "")) == "瞭望人",
+			"NPC 称呼随文案更名迁移（营地猎人→营地猎户/遗迹学者→访古先生/瞭望者→瞭望人），回执同步")
 	_check(int(GameState.quests["completed"].get("lm_ok", 0)) == 2
 			and int(GameState.quests["completed"].get("lm_neg", -1)) == 0
 			and not GameState.quests["completed"].has("lm_bad"),
